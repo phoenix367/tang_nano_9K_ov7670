@@ -1,0 +1,21 @@
+-series GW1NR
+-device GW1NR-9
+-device_version C
+-package QFN88P
+-part_number GW1NR-LV9QN88PC6/I5
+
+
+-mod_name Gowin_ALU54
+-file_name gowin_alu54
+-path C:/Users/Ivan_Gubochkin/source/FPGA/camera_ov7670/src/gowin_alu54/
+-type ALU
+-file_type vlg
+-alu_mode 0
+-width_a 21
+-data_type_a unsigned
+-ina_reg bypass
+-width_b 5
+-data_type_b unsigned
+-inb_reg bypass
+-reset_mode async
+-out_reg registered

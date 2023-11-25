@@ -1,0 +1,10 @@
+[General]
+ipc_version=4
+file=gowin_dqce
+module=Gowin_DQCE
+target_device=gw1nr9c-004
+type=clock_dqce
+version=1.0
+
+[Config]
+Language=0
