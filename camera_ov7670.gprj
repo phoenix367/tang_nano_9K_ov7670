@@ -1,0 +1,75 @@
+<?xml version="1" encoding="UTF-8"?>
+<!DOCTYPE gowin-fpga-project>
+<Project>
+    <Template>FPGA</Template>
+    <Version>5</Version>
+    <Device name="GW1NR-9C" pn="GW1NR-LV9QN88PC6/I5">gw1nr9c-004</Device>
+    <FileList>
+        <File path="sim/frame_buffer_test_full_frame_23x17.sv" type="file.verilog" enable="0"/>
+        <File path="sim/frame_buffer_test_full_frame_640x480.sv" type="file.verilog" enable="0"/>
+        <File path="sim/frame_buffer_test_full_frame_multi_23x17.sv" type="file.verilog" enable="0"/>
+        <File path="sim/frame_buffer_test_init0.sv" type="file.verilog" enable="0"/>
+        <File path="sim/frame_buffer_test_init16.sv" type="file.verilog" enable="0"/>
+        <File path="sim/frame_buffer_test_init16_0.sv" type="file.verilog" enable="0"/>
+        <File path="sim/frame_buffer_test_init16_rnd_len.sv" type="file.verilog" enable="0"/>
+        <File path="sim/frame_buffer_test_init16_var_len.sv" type="file.verilog" enable="0"/>
+        <File path="sim/frame_buffer_test_init_rnd_len.sv" type="file.verilog" enable="0"/>
+        <File path="sim/frame_buffer_test_init_var_len.sv" type="file.verilog" enable="0"/>
+        <File path="sim/i2c_slave_model.sv" type="file.verilog" enable="0"/>
+        <File path="sim/psram_model.sv" type="file.verilog" enable="0"/>
+        <File path="sim/svlogger.sv" type="file.verilog" enable="0"/>
+        <File path="sim/test_bench.sv" type="file.verilog" enable="0"/>
+        <File path="sim/test_config.sv" type="file.verilog" enable="0"/>
+        <File path="sim/test_utils.sv" type="file.verilog" enable="0"/>
+        <File path="sim/tst_bench_top.v" type="file.verilog" enable="0"/>
+        <File path="sim/uploader_test_bench.sv" type="file.verilog" enable="0"/>
+        <File path="sim/video_test_bench.sv" type="file.verilog" enable="0"/>
+        <File path="sim/wb_master_model.v" type="file.verilog" enable="0"/>
+        <File path="src/VGA_timing.v" type="file.verilog" enable="1"/>
+        <File path="src/arbiter.v" type="file.verilog" enable="1"/>
+        <File path="src/camera_control.v" type="file.verilog" enable="1"/>
+        <File path="src/camera_control_defs.vh" type="file.verilog" enable="1"/>
+        <File path="src/device_delay.sv" type="file.verilog" enable="1"/>
+        <File path="src/fifo_top/fifo_cam_data.v" type="file.verilog" enable="1"/>
+        <File path="src/fsms/FrameUploader.sv" type="file.verilog" enable="1"/>
+        <File path="src/functions.v" type="file.verilog" enable="1"/>
+        <File path="src/gowin_alu54/gowin_alu54.v" type="file.verilog" enable="1"/>
+        <File path="src/gowin_clkdiv2/gowin_clkdiv2.v" type="file.verilog" enable="1"/>
+        <File path="src/gowin_dhcen/gowin_dhcen.v" type="file.verilog" enable="1"/>
+        <File path="src/gowin_dpb/img_row_biffer.v" type="file.verilog" enable="1"/>
+        <File path="src/gowin_dqce/gowin_dqce.v" type="file.verilog" enable="1"/>
+        <File path="src/gowin_rpll/memory_rpll.v" type="file.verilog" enable="1"/>
+        <File path="src/gowin_sdpb/gowin_sdpb.v" type="file.verilog" enable="1"/>
+        <File path="src/i2c_control_fsm.v" type="file.verilog" enable="1"/>
+        <File path="src/i2c_controller.v" type="file.verilog" enable="0"/>
+        <File path="src/i2c_master.v" type="file.verilog" enable="1"/>
+        <File path="src/i2c_master/i2c_master.v" type="file.verilog" enable="0"/>
+        <File path="src/i2c_master_bit_ctrl.v" type="file.verilog" enable="1"/>
+        <File path="src/i2c_master_byte_ctrl.v" type="file.verilog" enable="1"/>
+        <File path="src/i2c_master_defines.v" type="file.verilog" enable="1"/>
+        <File path="src/ov7670_default.sv" type="file.verilog" enable="1"/>
+        <File path="src/ov7670_regs.vh" type="file.verilog" enable="1"/>
+        <File path="src/psram_memory_interface_hs_2ch/psram_memory_interface_hs_2ch.v" type="file.verilog" enable="1"/>
+        <File path="src/psram_test.v" type="file.verilog" enable="1"/>
+        <File path="src/timescale.v" type="file.verilog" enable="1"/>
+        <File path="src/video_controller.sv" type="file.verilog" enable="1"/>
+        <File path="src/camera_ov7670.cst" type="file.cst" enable="1"/>
+        <File path="src/camera_control.sdc" type="file.sdc" enable="1"/>
+        <File path="src/camera_ov7670.rao" type="file.gao" enable="0"/>
+        <File path="src/camera_ov7670_2.rao" type="file.gao" enable="0"/>
+        <File path="sim/run_test_baseline.bat" type="file.other" enable="1"/>
+        <File path="sim/run_test_bench.bat" type="file.other" enable="1"/>
+        <File path="sim/run_test_frame_buffer_full_frame_23x17.bat" type="file.other" enable="1"/>
+        <File path="sim/run_test_frame_buffer_full_frame_640x480.bat" type="file.other" enable="1"/>
+        <File path="sim/run_test_frame_buffer_full_frame_multi_23x17.bat" type="file.other" enable="1"/>
+        <File path="sim/run_test_frame_buffer_init0.bat" type="file.other" enable="1"/>
+        <File path="sim/run_test_frame_buffer_init16.bat" type="file.other" enable="1"/>
+        <File path="sim/run_test_frame_buffer_init16_0.bat" type="file.other" enable="1"/>
+        <File path="sim/run_test_frame_buffer_init16_rnd_len.bat" type="file.other" enable="1"/>
+        <File path="sim/run_test_frame_buffer_init16_var_len.bat" type="file.other" enable="1"/>
+        <File path="sim/run_test_frame_buffer_init_rnd_len.bat" type="file.other" enable="1"/>
+        <File path="sim/run_test_frame_buffer_init_var_len.bat" type="file.other" enable="1"/>
+        <File path="sim/run_test_video.bat" type="file.other" enable="1"/>
+        <File path="src/cam_settings.mi" type="file.other" enable="1"/>
+    </FileList>
+</Project>
