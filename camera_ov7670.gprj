@@ -31,6 +31,7 @@
         <File path="src/camera_control_defs.vh" type="file.verilog" enable="1"/>
         <File path="src/device_delay.sv" type="file.verilog" enable="1"/>
         <File path="src/fifo_top/fifo_cam_data.v" type="file.verilog" enable="1"/>
+        <File path="src/fsms/FrameDownloader.sv" type="file.verilog" enable="1"/>
         <File path="src/fsms/FrameUploader.sv" type="file.verilog" enable="1"/>
         <File path="src/functions.v" type="file.verilog" enable="1"/>
         <File path="src/gowin_alu54/gowin_alu54.v" type="file.verilog" enable="1"/>
@@ -57,6 +58,9 @@
         <File path="src/camera_control.sdc" type="file.sdc" enable="1"/>
         <File path="src/camera_ov7670.rao" type="file.gao" enable="0"/>
         <File path="src/camera_ov7670_2.rao" type="file.gao" enable="0"/>
+        <File path="CMakeLists.txt" type="file.other" enable="1"/>
+        <File path="sim/CMakeLists.txt" type="file.other" enable="1"/>
+        <File path="sim/run_simulator.bat.in" type="file.other" enable="1"/>
         <File path="sim/run_test_baseline.bat" type="file.other" enable="1"/>
         <File path="sim/run_test_bench.bat" type="file.other" enable="1"/>
         <File path="sim/run_test_frame_buffer_full_frame_23x17.bat" type="file.other" enable="1"/>
@@ -70,6 +74,7 @@
         <File path="sim/run_test_frame_buffer_init_rnd_len.bat" type="file.other" enable="1"/>
         <File path="sim/run_test_frame_buffer_init_var_len.bat" type="file.other" enable="1"/>
         <File path="sim/run_test_video.bat" type="file.other" enable="1"/>
+        <File path="sim/test_config.sv.in" type="file.other" enable="1"/>
         <File path="src/cam_settings.mi" type="file.other" enable="1"/>
     </FileList>
 </Project>

@@ -15,7 +15,7 @@ localparam CAM_PIXEL_CLK = 2;
 localparam CAM_FRAME_WIDTH = 23;
 localparam CAM_FRAME_HEIGHT = 17;
 
-localparam WRITE_BASE_ADDR = 2 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 2 * 32;
+integer WRITE_BASE_ADDR; //= 2 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 2 * 32;
 
 reg clk, reset_n;
 reg fb_clk;
@@ -59,13 +59,13 @@ FIFO_cam q_cam_data_in(
     .Full(queue_load_full) //output Full
 );
 
-logic[15:0] data_items[CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT];
+logic[15:0] data_items[3 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT];
 logic upload_done;
 
 task send_frame_to_queue(output logic error);
     integer i;
 
-    logger.info(module_name, "Start pushing frame tot FIFO");
+    logger.info(module_name, "Start pushing frame to FIFO");
     error = 1'b0;
     write_to_queue(1, 17'h10000);
 
@@ -88,6 +88,8 @@ task send_frame_to_queue(output logic error);
 
         repeat(1) @(posedge upload_done);
         logger.info(module_name, "Received upload done signal");
+        
+        upload_done = #1 1'b0;
     end
 endtask
 
@@ -102,12 +104,9 @@ initial begin
 
     $sformat(module_name, "%m");
 
-    $sformat(str, "Initial write address: %0h", WRITE_BASE_ADDR);
-    logger.info(module_name, str);
-
     logger.info(module_name, " << Starting the Simulation >>");
     // initially values
-    for (i = 0; i < CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT; i = i + 1) begin
+    for (i = 0; i < 3 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT; i = i + 1) begin
         data_items[i] = $urandom();
     end
 
@@ -131,6 +130,17 @@ initial begin
     init_done_0 = 1'b1;
     
     for (i = 0; i < NUM_TEST_FRAMES; i = i + 1) begin
+        case (i)
+            0: WRITE_BASE_ADDR = 2 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 2 * 32;
+            1: WRITE_BASE_ADDR = 1 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 1 * 32;
+            2: WRITE_BASE_ADDR = 0;
+            3: WRITE_BASE_ADDR = 2 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 2 * 32;
+            4: WRITE_BASE_ADDR = 2 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 2 * 32;
+        endcase
+
+        $sformat(str, "Initial write address: %0h", WRITE_BASE_ADDR);
+        logger.info(module_name, str);
+
         send_frame_to_queue(error);
     end
 
@@ -147,95 +157,99 @@ initial begin
     logic error;
     integer upload_pixels;
 
-    error = 1'b0;
     upload_done = 1'b0;
-    upload_pixels = 0;
 
     repeat(1) @(posedge init_done_0);
     logger.info(module_name, "System initialized");
 
-    while (upload_pixels < CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT && error != 1'b1) begin
-        repeat(1) @(posedge mem_cmd_en);
-        if (mem_cmd != 1'b1) begin
-            error = 1'b1;
-            logger.error(module_name, "Unexpected memory command value");
-        end else begin
-            integer valid_words, read_base;
-            integer i;
-            
-            string str;
-
-            // We use 16-bit word for memory addresation. So because
-            // our pixels are also 16-bit we don't need to do any
-            // adjustment for the address (convert word to byte etc.).
-            valid_words = frame_buffer.frame_uploader.frame_addr_inc;
-            read_base = mem_addr - WRITE_BASE_ADDR;
-            if (mem_addr < WRITE_BASE_ADDR || read_base + valid_words > CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT) begin
+    while (1) begin
+        error = 1'b0;
+        upload_pixels = 0;
+        while (upload_done != 1'b0) #1;
+        
+        while (upload_pixels < CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT && error != 1'b1) begin
+            repeat(1) @(posedge mem_cmd_en);
+            if (mem_cmd != 1'b1) begin
                 error = 1'b1;
+                logger.error(module_name, "Unexpected memory command value");
+            end else begin
+                integer valid_words, read_base;
+                integer i;
+                
+                string str;
 
-                $sformat(str, "Invalid memory address: %0h", mem_addr);
-                logger.error(module_name, str);
-            end
-
-            $sformat(str, "Received valid pixels: %0d", valid_words);
-            logger.debug(module_name, str);
-            for (i = 0; i < 8 && error != 1'b1; i = i + 1) begin
-                logic [31:0] expected_data;
-
-                repeat(1) @(negedge fb_clk);
-                if (2 * i + 1 < valid_words) begin
-                    expected_data = {data_items[read_base + 2 * i + 1], data_items[read_base + 2 * i]};
-
-                    if (mem_w_data != expected_data) begin
-                        string str;
-
-                        $sformat(str, "Write data is invalid. Got %0h, expected %0h", mem_w_data, expected_data);
-                        logger.error(module_name, str);
-                        error = 1'b1;
-                    end
-                end else if (2 * i < valid_words) begin
-                    expected_data = {16'h0000, data_items[read_base + 2 * i]};
-
-                    if (mem_w_data[15:0] != expected_data[15:0]) begin
-                        string str;
-
-                        $sformat(str, "Write data is invalid. Got %0h, expected %0h", mem_w_data, expected_data);
-                        logger.error(module_name, str);
-                        error = 1'b1;
-                    end
-                end else begin
-                    $sformat(str, "No check memory data %0h for base_addr = %0d", mem_w_data, 2 * i);
-                    logger.debug(module_name, str);
-                end
-
-                $sformat(str, "Memory address: %0h, memory data: %0h <--> expected data: %0h", mem_addr, mem_w_data, expected_data);
-                logger.debug(module_name, str);
-
-                if (i == 0) begin
-                    if (!mem_cmd_en) begin
-                        logger.error(module_name, "CMD_EN signal in not set");
-                        error = 1'b1;
-                    end
-                end else if (mem_cmd_en) begin
-                    logger.error(module_name, "CMD_EN signal should not set");
+                // We use 16-bit word for memory addresation. So because
+                // our pixels are also 16-bit we don't need to do any
+                // adjustment for the address (convert word to byte etc.).
+                valid_words = frame_buffer.frame_uploader.frame_addr_inc;
+                read_base = mem_addr - WRITE_BASE_ADDR;
+                if (mem_addr < WRITE_BASE_ADDR || read_base + valid_words > CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT) begin
                     error = 1'b1;
+
+                    $sformat(str, "Invalid memory address: %0h", mem_addr);
+                    logger.error(module_name, str);
                 end
+
+                $sformat(str, "Received valid pixels: %0d", valid_words);
+                logger.debug(module_name, str);
+                for (i = 0; i < 8 && error != 1'b1; i = i + 1) begin
+                    logic [31:0] expected_data;
+
+                    repeat(1) @(negedge fb_clk);
+                    if (2 * i + 1 < valid_words) begin
+                        expected_data = {data_items[read_base + 2 * i + 1], data_items[read_base + 2 * i]};
+
+                        if (mem_w_data != expected_data) begin
+                            string str;
+
+                            $sformat(str, "Write data is invalid. Got %0h, expected %0h", mem_w_data, expected_data);
+                            logger.error(module_name, str);
+                            error = 1'b1;
+                        end
+                    end else if (2 * i < valid_words) begin
+                        expected_data = {16'h0000, data_items[read_base + 2 * i]};
+
+                        if (mem_w_data[15:0] != expected_data[15:0]) begin
+                            string str;
+
+                            $sformat(str, "Write data is invalid. Got %0h, expected %0h", mem_w_data, expected_data);
+                            logger.error(module_name, str);
+                            error = 1'b1;
+                        end
+                    end else begin
+                        $sformat(str, "No check memory data %0h for base_addr = %0d", mem_w_data, 2 * i);
+                        logger.debug(module_name, str);
+                    end
+
+                    $sformat(str, "Memory address: %0h, memory data: %0h <--> expected data: %0h", mem_addr, mem_w_data, expected_data);
+                    logger.debug(module_name, str);
+
+                    if (i == 0) begin
+                        if (!mem_cmd_en) begin
+                            logger.error(module_name, "CMD_EN signal in not set");
+                            error = 1'b1;
+                        end
+                    end else if (mem_cmd_en) begin
+                        logger.error(module_name, "CMD_EN signal should not set");
+                        error = 1'b1;
+                    end
+                end
+
+                upload_pixels = upload_pixels + valid_words;
             end
-
-            upload_pixels = upload_pixels + valid_words;
         end
-    end
 
-    if (upload_pixels != CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT) begin
-        error = 1'b1;
-        logger.error(module_name, "Invalid upload plixes count");
-    end
+        if (upload_pixels != CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT) begin
+            error = 1'b1;
+            logger.error(module_name, "Invalid upload plixes count");
+        end
 
-    if (error)
-        `TEST_FAIL
-    else begin
-        repeat(1) @(posedge frame_buffer.uploading_finished);
-        upload_done = 1'b1;
+        if (error)
+            `TEST_FAIL
+        else begin
+            repeat(1) @(posedge frame_buffer.uploading_finished);
+            upload_done = 1'b1;
+        end
     end
 end
 

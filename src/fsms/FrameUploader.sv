@@ -269,7 +269,7 @@ module FrameUploader
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n)
             write_rq <= `WRAP_SIM(#1) 1'b0;
-        else if (state == WRITE_MEMORY || state == WRITE_MEMORY_WAIT)
+        else if (state == WRITE_MEMORY || state == WRITE_MEMORY_WAIT || state == WAIT_TRANSACTION_COMPLETE)
             write_rq <= `WRAP_SIM(#1) 1'b1;
         else
             write_rq <= `WRAP_SIM(#1) 1'b0;

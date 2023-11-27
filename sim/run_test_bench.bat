@@ -8,7 +8,8 @@ set test_bench_files=run_test_frame_buffer_init16^
  run_test_frame_buffer_init16_var_len^
  run_test_frame_buffer_init16_rnd_len^
  run_test_frame_buffer_init16_0^
- run_test_frame_buffer_full_frame_23x17
+ run_test_frame_buffer_full_frame_23x17^
+ run_test_frame_buffer_full_frame_multi_23x17
 
 set output_dir="output"
 set tests_path=%cd%

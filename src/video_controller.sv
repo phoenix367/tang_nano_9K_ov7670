@@ -94,9 +94,6 @@ typedef enum {
 localparam int TOTAL_MEMORY_SIZE = 22'd1 << 21;
 localparam int BUFFER_MEMORY_REQ = 32 * INPUT_IMAGE_WIDTH * INPUT_IMAGE_HEIGHT * 2; // 16 bit per bixel
 
-//initial
-//    size_check : assert (TOTAL_MEMORY_SIZE >= BUFFER_MEMORY_REQ);
-
 function reg [5:0] burst_delay(input int burst);
     case (burst)
          16: burst_delay = 6'd15;
@@ -179,6 +176,32 @@ FrameUploader #(
                  .rd_en(load_rd_en), .write_rq(data_write_req),
                  .write_addr(addr), .mem_wr_en(mem_wr_en),
                  .write_data(wr_data), .upload_done(uploading_finished), .base_addr(base_addr));
+
+FrameDownloader #(
+    .FRAME_WIDTH(OUTPUT_IMAGE_WIDTH), 
+    .FRAME_HEIGHT(OUTPUT_IMAGE_HEIGHT),
+    .ORIG_FRAME_WIDTH(INPUT_IMAGE_WIDTH), 
+    .ORIG_FRAME_HEIGHT(INPUT_IMAGE_HEIGHT),
+    .MEMORY_BURST(MEMORY_BURST)
+`ifdef __ICARUS__
+    , .LOG_LEVEL(LOG_LEVEL)
+`endif
+) frame_downloader(
+    .clk(clk),
+    .reset_n(rst_n),
+    .start(),
+    .queue_full(),
+    .read_ack(),
+    .base_addr(),
+    .read_data(),
+    
+    .queue_data(),
+    .wr_en(),
+    .read_rq(),
+    .read_addr(),
+    .mem_rd_en(),
+    .download_done()
+);
 
 arbiter #(.width(NUM_DEVICES), .select_width($clog2(NUM_DEVICES))) shared_arbiter(
     .enable(1'b1), .select(), .valid(),

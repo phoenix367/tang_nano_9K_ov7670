@@ -1,0 +1,7 @@
+`ifndef __TEST_CONFIG__
+`define __TEST_CONFIG__
+`include "svlogger.sv"
+
+$<IF:$<BOOL:@DUMP_SIM_VARIABLES@>,`define ENABLE_DUMPVARS,`undef ENABLE_DUMPVARS>
+`define DEFAULT_LOG_LEVEL  `@TESTS_LOG_LEVEL@
+`endif
