@@ -38,9 +38,13 @@ module VideoController
       output load_clk_o,
       output load_rd_en,
       input load_queue_empty,
-      input [16:0] load_queue_data
+      input [16:0] load_queue_data,
 
       // Store queue interface
+      output store_clk_o,
+      output store_wr_en,
+      input store_queue_full,
+      output [16:0] store_queue_data
 );
 
 // Logger initialization

@@ -49,6 +49,13 @@ else()
     message(STATUS "Found Gowin simlib source file at ${SIMLIB_SRC}")
 endif()
 
+find_program(GOWIN_SYNTHESIS GowinSynthesis HINTS "${Gowin_PATH}/bin")
+if (NOT GOWIN_SYNTHESIS)
+    message(FATAL_ERROR "Gowin synthesis not found")
+else()
+    message(STATUS "Found Gowin synthesis at ${GOWIN_SYNTHESIS}")
+endif()
+
 set(SRC_FOLDER "${CMAKE_CURRENT_SOURCE_DIR}/src")
 set(SIM_SRC_FOLDER "${CMAKE_CURRENT_SOURCE_DIR}/sim")
 

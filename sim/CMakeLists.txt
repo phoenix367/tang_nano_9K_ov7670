@@ -1,15 +1,15 @@
 set(VIDEO_BUFFER_TEST_SOURCES
- "${SRC_FOLDER}/functions.v"
- "${SRC_FOLDER}/arbiter.v"
- "${SRC_FOLDER}/timescale.v"
- "${SRC_FOLDER}/ov7670_default.sv"
- "${SRC_FOLDER}/gowin_rpll/memory_rpll.v"
- "${SRC_FOLDER}/gowin_sdpb/gowin_sdpb.v"
- "${SRC_FOLDER}/gowin_alu54/gowin_alu54.v"
- "${SRC_FOLDER}/fifo_top/fifo_cam_data.vo"
- "${SRC_FOLDER}/video_controller.sv"
- "${SRC_FOLDER}/fsms/FrameUploader.sv"
- "${SRC_FOLDER}/fsms/FrameDownloader.sv"
+    "${SRC_FOLDER}/functions.v"
+    "${SRC_FOLDER}/arbiter.v"
+    "${SRC_FOLDER}/timescale.v"
+    "${SRC_FOLDER}/ov7670_default.sv"
+    "${SRC_FOLDER}/gowin_rpll/memory_rpll.v"
+    "${SRC_FOLDER}/gowin_sdpb/gowin_sdpb.v"
+    "${SRC_FOLDER}/gowin_alu54/gowin_alu54.v"
+    "${SRC_FOLDER}/fifo_top/fifo_cam_data.vo"
+    "${SRC_FOLDER}/video_controller.sv"
+    "${SRC_FOLDER}/fsms/FrameUploader.sv"
+    "${SRC_FOLDER}/fsms/FrameDownloader.sv"
 )
 
 set(TESTS_LIST 
@@ -72,11 +72,26 @@ foreach (TEST_NAME IN LISTS TESTS_LIST)
         ${TEST_TARGET_NAME} ALL DEPENDS ${TEST_OUTPUT_FILE}
         SOURCES ${VIDEO_BUFFER_TEST_SOURCES} ${TEST_SOURCES} "${SIMLIB_SRC}"
     )
-
     source_group("Functional Sources" FILES ${VIDEO_BUFFER_TEST_SOURCES})
     source_group("Test Sources" FILES ${TEST_SOURCES})
     source_group("Device library" FILES "${SIMLIB_SRC}")
 
+   # add_custom_command(
+   #     OUTPUT "${WORKING_TEST_DIR}/my_file.stamp"
+   #     COMMAND "${VERILOG_SIM}" 
+   #             -n 
+   #             "${TEST_OUTPUT_FILE}"
+   #     COMMAND ${CMAKE_COMMAND} -E touch "${WORKING_TEST_DIR}/my_file.stamp"
+   #     DEPENDS ${TEST_TARGET_NAME}
+   # )
+    set(TEST_TARGET_NAME_SIM "${TEST_NAME}_SIM")
+    add_custom_target(${TEST_TARGET_NAME_SIM} 
+        COMMAND "${VERILOG_SIM}" 
+                -n 
+                "${TEST_OUTPUT_FILE}"
+        COMMENT "Run simulation for test \"${TEST_NAME}\"..."
+        DEPENDS "${TEST_OUTPUT_FILE}"
+    )
 
     add_test(NAME ${TEST_NAME_RUN} 
         COMMAND "${WORKING_TEST_DIR}/${RUN_SIM_SCRIPT_NAME}"
@@ -84,7 +99,9 @@ foreach (TEST_NAME IN LISTS TESTS_LIST)
 
     set_tests_properties(${TEST_NAME_RUN} PROPERTIES DEPENDS ${TEST_OUTPUT_FILE}
         WORKING_DIRECTORY "${WORKING_TEST_DIR}")
-    set_target_properties(${TEST_TARGET_NAME} PROPERTIES FOLDER "Tests/FrameBuffer")
+
+    set_target_properties(${TEST_TARGET_NAME} PROPERTIES FOLDER "Tests/FrameBuffer/Build")
+    set_target_properties(${TEST_TARGET_NAME_SIM} PROPERTIES FOLDER "Tests/FrameBuffer/Sim")
     #file(MAKE_DIRECTORY ${WORKING_TEST_DIR})
     #set_property(DIRECTORY ${WORKING_TEST_DIR} PROPERTY ADDITIONAL_CLEAN_FILES "*")
 endforeach()
