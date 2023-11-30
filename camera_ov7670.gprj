@@ -41,6 +41,7 @@
         <File path="src/gowin_dqce/gowin_dqce.v" type="file.verilog" enable="1"/>
         <File path="src/gowin_rpll/memory_rpll.v" type="file.verilog" enable="1"/>
         <File path="src/gowin_sdpb/gowin_sdpb.v" type="file.verilog" enable="1"/>
+        <File path="src/gowin_sdpb_dn/gowin_sdpb_dn.v" type="file.verilog" enable="1"/>
         <File path="src/i2c_control_fsm.v" type="file.verilog" enable="1"/>
         <File path="src/i2c_controller.v" type="file.verilog" enable="0"/>
         <File path="src/i2c_master.v" type="file.verilog" enable="1"/>
@@ -75,6 +76,7 @@
         <File path="sim/run_test_frame_buffer_init_var_len.bat" type="file.other" enable="1"/>
         <File path="sim/run_test_video.bat" type="file.other" enable="1"/>
         <File path="sim/test_config.sv.in" type="file.other" enable="1"/>
+        <File path="src/CMakeLists.txt" type="file.other" enable="1"/>
         <File path="src/cam_settings.mi" type="file.other" enable="1"/>
     </FileList>
 </Project>

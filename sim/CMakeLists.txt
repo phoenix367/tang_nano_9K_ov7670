@@ -5,6 +5,7 @@ set(VIDEO_BUFFER_TEST_SOURCES
     "${SRC_FOLDER}/ov7670_default.sv"
     "${SRC_FOLDER}/gowin_rpll/memory_rpll.v"
     "${SRC_FOLDER}/gowin_sdpb/gowin_sdpb.v"
+    "${SRC_FOLDER}/gowin_sdpb_dn/gowin_sdpb_dn.v"
     "${SRC_FOLDER}/gowin_alu54/gowin_alu54.v"
     "${SRC_FOLDER}/fifo_top/fifo_cam_data.vo"
     "${SRC_FOLDER}/video_controller.sv"
@@ -91,6 +92,7 @@ foreach (TEST_NAME IN LISTS TESTS_LIST)
                 "${TEST_OUTPUT_FILE}"
         COMMENT "Run simulation for test \"${TEST_NAME}\"..."
         DEPENDS "${TEST_OUTPUT_FILE}"
+        WORKING_DIRECTORY "${WORKING_TEST_DIR}"
     )
 
     add_test(NAME ${TEST_NAME_RUN} 

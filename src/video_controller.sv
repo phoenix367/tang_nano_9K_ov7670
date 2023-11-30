@@ -66,6 +66,7 @@ localparam NUM_DEVICES = 4;  // Max number of devices have access to shared fram
 localparam FRAME_UPLOADER_IDX = 0;
 localparam FRAME_DOWNLOADER_IDX = 1;
 localparam DATA_WRITER_IDX = 2;
+localparam DATA_READER_IDX = 2;
 
 localparam FRAME_COUNTER_WIDTH = $clog2(`max2(INPUT_IMAGE_WIDTH, INPUT_IMAGE_HEIGHT) + 1);
 
@@ -80,6 +81,18 @@ typedef enum {
     UPLOADING_RELEASE_BUFFER,
     UPLOADING_RELEASE_BUFFER_WAIT
 } UploadingStates;
+
+typedef enum {
+    DOWNLOADING_IDLE,
+    DOWNLOADING_START_WAITE,
+    DOWNLOADING_LOCK_BUFFER,
+    DOWNLOADING_FIND_BUFFER,
+    DOWNLOADING_SELECT_BUFFER,
+    DOWNLOADING_START_PROCESS_FRAME,
+    DOWNLOADING_FRAME_DONE_WAIT,
+    DOWNLOADING_RELEASE_BUFFER,
+    DOWNLOADING_RELEASE_BUFFER_WAIT
+} DownloadingStates;
 
 typedef enum {
     BUFFER_AVAILABLE,
@@ -145,6 +158,7 @@ BufferStates buffer_states[NUM_FRAMES - 1:0];
 reg producer_req;  // Flag to request buffer metadata access for frame data uploader
 reg consumer_req;  // Flag to reqeust buffer metadata access for frame data receiver
 wire data_write_req;
+wire data_read_req;
 
 reg [1:0] upload_buffer_idx;
 
@@ -152,20 +166,32 @@ reg [FRAME_COUNTER_WIDTH - 1:0] upload_row_counter;
 reg [FRAME_COUNTER_WIDTH - 1:0] upload_col_counter;
 
 reg [20:0] base_addr;
+reg [20:0] read_base_addr;
 
 wire [NUM_DEVICES - 1:0] shared_req;
 wire [NUM_DEVICES - 1:0] shared_grant;
 wire mem_wr_en;
+wire mem_rd_en;
 wire start_uploading;
 wire uploading_finished;
 
-assign shared_req = {1'b0, data_write_req, consumer_req, producer_req};
+wire start_downloading;
+
+assign shared_req = {data_read_req, data_write_req, consumer_req, producer_req};
 assign start_uploading = (uploading_state == UPLOADING_START_PROCESS_FRAME);
 
 assign load_clk_o = clk;
+assign store_clk_o = clk;
 
 assign cmd = (mem_wr_en) ? 1'b1 : 1'b0;
-assign cmd_en = (mem_wr_en) ? 1'b1 : 1'b0;
+assign cmd_en = (mem_wr_en | mem_rd_en) ? 1'b1 : 1'b0;
+
+`ifdef __ICARUS__
+always @(mem_wr_en or mem_rd_en)
+    if (mem_wr_en == 1'b1 && mem_rd_en == 1'b1) begin
+        logger.critical(module_name, "Invalid read and write signals");
+    end
+`endif
 
 FrameUploader #(
     .FRAME_WIDTH(INPUT_IMAGE_WIDTH), 
@@ -193,17 +219,17 @@ FrameDownloader #(
 ) frame_downloader(
     .clk(clk),
     .reset_n(rst_n),
-    .start(),
-    .queue_full(),
-    .read_ack(),
-    .base_addr(),
-    .read_data(),
+    .start(start_downloading),
+    .queue_full(store_queue_full),
+    .read_ack(shared_grant[DATA_WRITER_IDX]),
+    .base_addr(read_base_addr),
+    .read_data(rd_data),
     
-    .queue_data(),
-    .wr_en(),
-    .read_rq(),
+    .queue_data(store_queue_data),
+    .wr_en(store_wr_en),
+    .read_rq(data_read_req),
     .read_addr(),
-    .mem_rd_en(),
+    .mem_rd_en(mem_rd_en),
     .download_done()
 );
 

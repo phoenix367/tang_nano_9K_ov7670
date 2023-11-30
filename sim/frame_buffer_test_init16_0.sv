@@ -3,6 +3,8 @@
 `include "test_utils.sv"
 `include "test_config.sv"
 
+import FrameUploaderTypes::*;
+
 module main();
 
 localparam LOG_LEVEL = `SVL_VERBOSE_INFO;
@@ -20,6 +22,7 @@ wire [16:0] cam_data_queue_out;
 wire [16:0] cam_data_queue_out_d;
 wire queue_load_empty;
 wire queue_load_empty_d;
+
 wire queue_load_clk;
 
 assign #1 queue_load_empty_d = queue_load_empty;
@@ -184,7 +187,7 @@ initial begin
             end
 
             repeat(1) @(negedge fb_clk);
-            if (frame_buffer.frame_uploader.state != 'd1) begin
+            if (frame_buffer.frame_uploader.state != CHECK_QUEUE) begin
                 error = 1'b1;
                 logger.error(module_name, "Unexpected uploading FSM state");
             end

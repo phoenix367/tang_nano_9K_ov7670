@@ -100,6 +100,11 @@ module VGA_timing
     wire queue_load_empty;
     wire [16:0] cam_data_queue_out;
 
+    wire queue_store_clk;
+    wire queue_store_wr_en;
+    wire queue_store_full;
+    wire [16:0] video_data_queue_in;
+
     assign addr1 = 21'h0;
     assign wr_data1 = 32'h0;
     assign cmd_1 = 1'b0;
@@ -157,7 +162,12 @@ VideoController #(
                       .load_clk_o(queue_load_clk),
                       .load_rd_en(queue_load_rd_en),
                       .load_queue_empty(queue_load_empty),
-                      .load_queue_data(cam_data_queue_out)
+                      .load_queue_data(cam_data_queue_out),
+
+                      .store_clk_o(queue_store_clk),
+                      .store_wr_en(queue_store_wr_en),
+                      .store_queue_full(queue_store_full),
+                      .store_queue_data(video_data_queue_in)
                   );
 /*
 psram_test u_test0(
@@ -211,6 +221,19 @@ psram_test u_test1(
 		.Q(cam_data_queue_out), //output [16:0] Q
 		.Empty(queue_load_empty), //output Empty
 		.Full() //output Full
+	);
+
+	FIFO_cam q_cam_data_out(
+		.Data(video_data_queue_in), //input [16:0] Data
+		.WrReset(~nRST), //input WrReset
+		.RdReset(~nRST), //input RdReset
+		.WrClk(queue_store_clk), //input WrClk
+		.RdClk(LCD_CLK), //input RdClk
+		.WrEn(queue_store_wr_en), //input WrEn
+		.RdEn(), //input RdEn
+		.Q(), //output [16:0] Q
+		.Empty(), //output Empty
+		.Full(queue_store_full) //output Full
 	);
 
 	always @(posedge PixelClk or negedge nRST)

@@ -10,8 +10,19 @@
 `include "svlogger.sv"
 `endif
 
-// Filename: FrameUploader.sv
-// Created by HDL-FSM-Editor at Mon Nov 13 03:25:32 2023
+package FrameUploaderTypes;
+    typedef enum bit[7:0] {
+        FRAME_PROCESSING_START_WAIT = 8'b00000001, 
+        CHECK_QUEUE                 = 8'b00000010, 
+        FRAME_PROCESSING_DONE       = 8'b00000100, 
+        FRAME_PROCESSING_WRITE_CYC  = 8'b00001000, 
+        READ_QUEUE_DATA             = 8'b00010000, 
+        WAIT_TRANSACTION_COMPLETE   = 8'b00100000, 
+        WRITE_MEMORY                = 8'b01000000, 
+        WRITE_MEMORY_WAIT           = 8'b10000000
+    } t_state;
+endpackage
+
 module FrameUploader
     #(
 `ifdef __ICARUS__
@@ -41,6 +52,8 @@ module FrameUploader
         
     );
 
+    import FrameUploaderTypes::*;
+
 // Logger initialization
 `ifdef __ICARUS__
     `INITIALIZE_LOGGER
@@ -51,16 +64,6 @@ module FrameUploader
     localparam FRAME_PIXELS_NUM = FRAME_WIDTH * FRAME_HEIGHT;
     localparam TCMD = 19;
 
-    typedef enum bit[4:0] {
-        FRAME_PROCESSING_START_WAIT = 5'h00, 
-        CHECK_QUEUE                 = 5'h01, 
-        FRAME_PROCESSING_DONE       = 5'h02, 
-        FRAME_PROCESSING_WRITE_CYC  = 5'h03, 
-        READ_QUEUE_DATA             = 5'h04, 
-        WAIT_TRANSACTION_COMPLETE   = 5'h05, 
-        WRITE_MEMORY                = 5'h06, 
-        WRITE_MEMORY_WAIT           = 5'h07
-    } t_state;
 
     t_state state;
     //reg [15:0] upload_cache[MEMORY_BURST / 2];
@@ -111,6 +114,7 @@ module FrameUploader
     initial begin
         frame_addr_counter <= `WRAP_SIM(#1) 'd0;
         cmd_cyc_counter <= `WRAP_SIM(#1) 'd0;
+        write_counter <= `WRAP_SIM(#1) 'd0;
     end
 
     always @(posedge clk or negedge reset_n) begin

@@ -3,6 +3,8 @@
 `include "test_utils.sv"
 `include "test_config.sv"
 
+import FrameUploaderTypes::*;
+
 module main();
 
 localparam LOG_LEVEL = `DEFAULT_LOG_LEVEL;
