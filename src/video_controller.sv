@@ -151,6 +151,9 @@ localparam NUM128 = get_num128(MEMORY_BURST);
 UploadingStates uploading_state;
 UploadingStates uploading_next_state;
 
+DownloadingStates downloading_state;
+DownloadingStates downloading_next_state;
+
 reg [7:0] uploading_start_cnt;
 reg [20:0] frame_addresses[NUM_FRAMES - 1:0];
 BufferStates buffer_states[NUM_FRAMES - 1:0];
@@ -161,11 +164,12 @@ wire data_write_req;
 wire data_read_req;
 
 reg [1:0] upload_buffer_idx;
+reg [1:0] download_buffer_idx;
 
 reg [FRAME_COUNTER_WIDTH - 1:0] upload_row_counter;
 reg [FRAME_COUNTER_WIDTH - 1:0] upload_col_counter;
 
-reg [20:0] base_addr;
+reg [20:0] write_base_addr;
 reg [20:0] read_base_addr;
 
 wire [NUM_DEVICES - 1:0] shared_req;
@@ -205,7 +209,7 @@ FrameUploader #(
                  .queue_data(load_queue_data), .write_ack(shared_grant[DATA_WRITER_IDX]),
                  .rd_en(load_rd_en), .write_rq(data_write_req),
                  .write_addr(addr), .mem_wr_en(mem_wr_en),
-                 .write_data(wr_data), .upload_done(uploading_finished), .base_addr(base_addr));
+                 .write_data(wr_data), .upload_done(uploading_finished), .base_addr(write_base_addr));
 
 FrameDownloader #(
     .FRAME_WIDTH(OUTPUT_IMAGE_WIDTH), 
@@ -299,33 +303,102 @@ task find_upload_buffer_idx(output reg [1:0] o_idx);
     o_idx = idx[1:0];
 endtask
 
+task find_download_buffer_idx(output reg [1:0] o_idx);
+    integer i;
+    reg [2:0] idx;
+`ifdef __ICARUS__
+            string format_str;
+`endif
+
+    idx = 3'b111;
+
+    for (i = 'd0; i < NUM_FRAMES; i = i + 1) begin
+        if (buffer_states[i] == BUFFER_UPDATED)
+            idx = i[1:0];
+    end
+
+    if (idx === 3'b111)
+        for (i = 'd0; i < NUM_FRAMES; i = i + 1) begin
+            if (buffer_states[i] == BUFFER_AVAILABLE)
+                idx = i[1:0];
+        end
+
+    if (idx === 3'b111)
+        for (i = 'd0; i < NUM_FRAMES; i = i + 1) begin
+            if (buffer_states[i] == BUFFER_DISPLAYED)
+                idx = i[1:0];
+        end
+
+`ifdef __ICARUS__
+    if (idx === 3'b111) begin
+        logger.error(module_name, "Can't find available buffer for data download");
+        $fatal;
+    end else begin
+        $sformat(format_str, "Select buffer %0d for frame data downloading", idx);
+        logger.info(module_name, format_str);
+    end
+`endif
+    o_idx = idx[1:0];
+endtask
+
+task initialize_buffer_states;
+    integer o;
+
+    for (o = 0; o < NUM_FRAMES; o = o + 1)
+        buffer_states[o] <= `WRAP_SIM(#1) BUFFER_AVAILABLE;
+
+    write_base_addr <= `WRAP_SIM(#1) 'd0;
+    upload_buffer_idx <= `WRAP_SIM(#1) 'd0;
+
+    read_base_addr <= `WRAP_SIM(#1) 'd0;
+    download_buffer_idx <= `WRAP_SIM(#1) 'd0;
+endtask
+
+initial
+    initialize_buffer_states();
+
 always@(posedge clk or negedge rst_n)
     if(!rst_n) begin
-        integer o;
-
-        producer_req <= `WRAP_SIM(#1) 1'b0;
-        consumer_req <= `WRAP_SIM(#1) 1'b0;
-
-        for (o = 0; o < NUM_FRAMES; o = o + 1)
-            buffer_states[o] <= `WRAP_SIM(#1) BUFFER_AVAILABLE;
-        base_addr <= `WRAP_SIM(#1) 'd0;
+        initialize_buffer_states();
     end else begin
-        if (uploading_state == UPLOADING_LOCK_BUFFER)
-            producer_req <= `WRAP_SIM(#1) 1'b1;
-        else if (uploading_state == UPLOADING_FIND_BUFFER) begin
+        if (downloading_state == DOWNLOADING_FIND_BUFFER) begin
+            `WRAP_SIM(#1) find_download_buffer_idx(download_buffer_idx);
+        end else if (downloading_state == DOWNLOADING_SELECT_BUFFER) begin
+            buffer_states[download_buffer_idx] <= `WRAP_SIM(#1) BUFFER_WRITE_BUSY;
+            read_base_addr <= `WRAP_SIM(#1) frame_addresses[download_buffer_idx];
+        end else if (downloading_state == DOWNLOADING_RELEASE_BUFFER) begin
+            buffer_states[download_buffer_idx] <= `WRAP_SIM(#1) BUFFER_DISPLAYED;
+        end
+
+        if (uploading_state == UPLOADING_FIND_BUFFER)
             `WRAP_SIM(#1) find_upload_buffer_idx(upload_buffer_idx);
-        end else if (uploading_state == UPLOADING_SELECT_BUFFER) begin
-            producer_req <= `WRAP_SIM(#1) 1'b0;
+        else if (uploading_state == UPLOADING_SELECT_BUFFER) begin
             buffer_states[upload_buffer_idx] <= `WRAP_SIM(#1) BUFFER_WRITE_BUSY;
-            base_addr <= `WRAP_SIM(#1) frame_addresses[upload_buffer_idx];
-        end else if (uploading_state == UPLOADING_RELEASE_BUFFER_WAIT) begin
-            producer_req <= `WRAP_SIM(#1) 1'b1;
+            write_base_addr <= `WRAP_SIM(#1) frame_addresses[upload_buffer_idx];
         end else if (uploading_state == UPLOADING_RELEASE_BUFFER) begin
-            producer_req <= `WRAP_SIM(#1) 1'b0;
             buffer_states[upload_buffer_idx] <= `WRAP_SIM(#1) BUFFER_UPDATED;
         end
     end
 
+// ============ Frame uploading logic ============
+initial begin
+    uploading_state <= `WRAP_SIM(#1) UPLOADING_IDLE;
+end
+
+always@(posedge clk or negedge rst_n)
+    if(!rst_n) begin
+        producer_req <= `WRAP_SIM(#1) 1'b0;
+    end else begin
+        if (uploading_state == UPLOADING_LOCK_BUFFER)
+            producer_req <= `WRAP_SIM(#1) 1'b1;
+        else if (uploading_state == UPLOADING_SELECT_BUFFER) begin
+            producer_req <= `WRAP_SIM(#1) 1'b0;
+        end else if (uploading_state == UPLOADING_RELEASE_BUFFER_WAIT) begin
+            producer_req <= `WRAP_SIM(#1) 1'b1;
+        end else if (uploading_state == UPLOADING_RELEASE_BUFFER) begin
+            producer_req <= `WRAP_SIM(#1) 1'b0;
+        end
+    end
 
 always@(posedge clk or negedge rst_n)
     if(!rst_n)
@@ -362,6 +435,51 @@ always @(*) begin
             uploading_next_state = UPLOADING_IDLE;
     endcase
 end
+
+// ============ Frame downloading logic ============
+
+initial begin
+    downloading_state <= `WRAP_SIM(#1) DOWNLOADING_IDLE;
+end
+
+always@(posedge clk or negedge rst_n)
+    if(!rst_n) begin
+        consumer_req <= `WRAP_SIM(#1) 1'b0;
+    end else begin
+        if (downloading_state == DOWNLOADING_LOCK_BUFFER)
+            consumer_req <= `WRAP_SIM(#1) 1'b1;
+        else if (downloading_state == DOWNLOADING_SELECT_BUFFER) begin
+            consumer_req <= `WRAP_SIM(#1) 1'b0;
+        end
+    end
+
+always@(posedge clk or negedge rst_n)
+    if(!rst_n)
+        downloading_state <= `WRAP_SIM(#1) DOWNLOADING_IDLE;
+    else 
+        downloading_state <= `WRAP_SIM(#1) downloading_next_state;
+
+always @(*) begin
+    downloading_next_state = downloading_state;
+    case (downloading_state)
+        DOWNLOADING_IDLE:
+            downloading_next_state = DOWNLOADING_START_WAITE;
+        DOWNLOADING_START_WAITE:
+            if (uploading_start_cnt == MEMORY_INITIAL_DELAY) begin
+                downloading_next_state = DOWNLOADING_LOCK_BUFFER;
+            end
+        DOWNLOADING_LOCK_BUFFER:
+            if (shared_grant[FRAME_DOWNLOADER_IDX] == 1'b1)
+                downloading_next_state = DOWNLOADING_FIND_BUFFER;
+        DOWNLOADING_FIND_BUFFER: 
+            downloading_next_state = DOWNLOADING_SELECT_BUFFER;
+        DOWNLOADING_SELECT_BUFFER:
+            downloading_next_state = DOWNLOADING_START_PROCESS_FRAME;
+    endcase
+end
+
+initial
+    uploading_start_cnt <= `WRAP_SIM(#1) 'd0;
 
 always @(posedge clk or negedge rst_n)
     if (!rst_n)

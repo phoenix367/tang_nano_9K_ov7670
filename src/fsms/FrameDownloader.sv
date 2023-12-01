@@ -12,7 +12,8 @@
 
 package FrameDownloaderTypes;
     typedef enum bit[7:0] {
-        FRAME_PROCESSING_START_WAIT = 8'b00000001
+        FRAME_PROCESSING_START_WAIT      = 8'b00000001,
+        FRAME_PROCESSING_WRITE_CYC       = 8'b00000010
     } t_state;
 endpackage
 
@@ -78,6 +79,8 @@ module FrameDownloader
     assign read_addr = frame_addr_counter;
     assign read_counter_next = read_counter + 1'b1;
 
+    assign mem_word = read_data;
+
     Gowin_ALU54 frame_addr_adder(
         .dout(adder_out), //output [21:0] dout
         .caso(), //output [54:0] caso
@@ -117,6 +120,27 @@ module FrameDownloader
         if (!reset_n)
             cmd_cyc_counter <= `WRAP_SIM(#1) 'd0;
         else begin
+            // State Machine:
+            case (state)
+                FRAME_PROCESSING_START_WAIT: begin
+                    frame_addr_counter <= `WRAP_SIM(#1) base_addr;
+                    if (start == 1'b1) begin
+`ifdef __ICARUS__
+                        string str_msg;
+`endif
+
+                        pixel_counter <= `WRAP_SIM(#1) 'd0;
+                        state <= `WRAP_SIM(#1) FRAME_PROCESSING_WRITE_CYC;
+                        frame_download_cycle <= `WRAP_SIM(#1) 1'b0;
+                        frame_addr_inc <= `WRAP_SIM(#1) 'd0;
+ 
+`ifdef __ICARUS__
+                        $sformat(str_msg, "Start frame uploading at memory addr %0h", base_addr);
+                        logger.info(module_name, str_msg);
+`endif
+                    end
+                end
+            endcase
         end
     end
 endmodule
