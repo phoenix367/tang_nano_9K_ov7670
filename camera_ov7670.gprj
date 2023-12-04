@@ -15,6 +15,7 @@
         <File path="sim/frame_buffer_test_init16_var_len.sv" type="file.verilog" enable="0"/>
         <File path="sim/frame_buffer_test_init_rnd_len.sv" type="file.verilog" enable="0"/>
         <File path="sim/frame_buffer_test_init_var_len.sv" type="file.verilog" enable="0"/>
+        <File path="sim/frame_buffer_test_read_frame_23x17.sv" type="file.verilog" enable="0"/>
         <File path="sim/i2c_slave_model.sv" type="file.verilog" enable="0"/>
         <File path="sim/psram_model.sv" type="file.verilog" enable="0"/>
         <File path="sim/svlogger.sv" type="file.verilog" enable="0"/>

@@ -254,7 +254,12 @@ VideoController #(
                       .load_clk_o(queue_load_clk),
                       .load_rd_en(queue_load_rd_en),
                       .load_queue_empty(queue_load_empty_d),
-                      .load_queue_data(cam_data_queue_out_d)
+                      .load_queue_data(cam_data_queue_out_d),
+
+                      .store_clk_o(),
+                      .store_wr_en(),
+                      .store_queue_full(1'b1),
+                      .store_queue_data()
                   );
 
 always @(posedge memory_clk or negedge reset_n) begin

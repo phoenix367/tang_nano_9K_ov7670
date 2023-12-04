@@ -184,6 +184,8 @@ wire start_downloading;
 assign shared_req = {data_read_req, data_write_req, consumer_req, producer_req};
 assign start_uploading = (uploading_state == UPLOADING_START_PROCESS_FRAME);
 
+assign start_downloading = (downloading_state == DOWNLOADING_START_PROCESS_FRAME);
+
 assign load_clk_o = clk;
 assign store_clk_o = clk;
 
@@ -197,6 +199,19 @@ always @(mem_wr_en or mem_rd_en)
     end
 `endif
 
+wire [20:0] read_addr_o;
+wire [20:0] write_addr_o;
+
+always_comb begin
+    if (cmd_en) begin
+        if (cmd)
+            addr = write_addr_o;
+        else
+            addr = read_addr_o;
+    end else
+        addr = 'd0;
+end
+
 FrameUploader #(
     .FRAME_WIDTH(INPUT_IMAGE_WIDTH), 
     .FRAME_HEIGHT(INPUT_IMAGE_HEIGHT),
@@ -208,7 +223,7 @@ FrameUploader #(
                  .start(start_uploading), .queue_empty(load_queue_empty),
                  .queue_data(load_queue_data), .write_ack(shared_grant[DATA_WRITER_IDX]),
                  .rd_en(load_rd_en), .write_rq(data_write_req),
-                 .write_addr(addr), .mem_wr_en(mem_wr_en),
+                 .write_addr(write_addr_o), .mem_wr_en(mem_wr_en),
                  .write_data(wr_data), .upload_done(uploading_finished), .base_addr(write_base_addr));
 
 FrameDownloader #(
@@ -228,11 +243,12 @@ FrameDownloader #(
     .read_ack(shared_grant[DATA_WRITER_IDX]),
     .base_addr(read_base_addr),
     .read_data(rd_data),
+    .rd_data_valid(rd_data_valid),
     
     .queue_data(store_queue_data),
     .wr_en(store_wr_en),
     .read_rq(data_read_req),
-    .read_addr(),
+    .read_addr(read_addr_o),
     .mem_rd_en(mem_rd_en),
     .download_done()
 );
@@ -475,6 +491,7 @@ always @(*) begin
             downloading_next_state = DOWNLOADING_SELECT_BUFFER;
         DOWNLOADING_SELECT_BUFFER:
             downloading_next_state = DOWNLOADING_START_PROCESS_FRAME;
+        DOWNLOADING_START_PROCESS_FRAME: ;
     endcase
 end
 
@@ -527,232 +544,4 @@ always@(posedge clk or negedge rst_n)
         //wr_data_add <= `WRAP_SIM(#1)  'b0;
     end
 
-/*
-reg   [31:0]                    wr_data_add;
-reg   [31:0]                    check_data;
-reg   [5:0]                     next_state;
-reg   [5:0]                     curr_state;
-reg   [7:0]                     start_cnt;
-reg   [5:0]                     WR_CNT;
-reg   [5:0]                     RD_CNT;
-reg   [16:0]                    WR_CYC_CNT;
-reg   [16:0]                    RD_CYC_CNT;
-reg   [5:0]                     WAITE_CNT;
-reg                             WR_DONE;
-reg                             RD_DONE;
-reg                             DATA_W_END;
-reg                             DATA_R_END;
-reg                             error_d;
-reg   [20:0]          addr_add_w;
-reg   [20:0]          addr_add_r;
-
-always@(posedge clk or negedge rst_n)
-    if(!rst_n)
-        curr_state <= IDLE;
-    else 
-        curr_state <= next_state;
-
-always@(*)begin
-    next_state = curr_state;
-    case(curr_state)
-        IDLE: 
-            next_state = START_WAITE;
-        
-        START_WAITE: 
-            if(start_cnt  == 'd152)
-                next_state = WRITE_ALL_ADDR;
-        
-        WRITE_ALL_ADDR:
-            if(WR_DONE && DATA_W_END) 
-            next_state = WRITE_WAITE;
-        
-        WRITE_WAITE: 
-            if(WAITE_CNT == 'd63)
-                next_state = READ_ALL_ADDR;
-        
-        READ_ALL_ADDR:
-            if(RD_DONE && DATA_R_END)
-            next_state = CYC_DONE_WAITE;
-            
-        CYC_DONE_WAITE:  
-            next_state = IDLE;  
-      
-        default: next_state = IDLE;
-       endcase
-      end
-
-//===== ST_MC_CTRL=====
-
-always@(posedge clk or negedge rst_n)
-    if(!rst_n)
-     start_cnt <= 'b0;
-    else if(curr_state == CYC_DONE_WAITE)
-     start_cnt <= 'b0;
-    else if(start_cnt  == 'd152)
-     start_cnt <= start_cnt;
-    else if((curr_state ==  START_WAITE) && init_done)
-     start_cnt <= start_cnt + 1'b1;
-
-always@(posedge clk or negedge rst_n)
-    if(!rst_n)
-     WAITE_CNT <= 'b0;
-    else if(curr_state == CYC_DONE_WAITE)
-     WAITE_CNT <= 'b0;
-    else if(WAITE_CNT == 'd63)
-     WAITE_CNT <= WAITE_CNT;
-    else if(curr_state == WRITE_WAITE) 
-     WAITE_CNT <= WAITE_CNT + 1'b1;
-
-
-//=====BURST WRITE =====
-
-always@(posedge clk or negedge rst_n)
-    if(!rst_n)
-     WR_CNT <= 'd0;
-    else if(WR_CNT == (TCMD128 - 1'b1))
-     WR_CNT <= 'd0;
-    else if(curr_state == WRITE_ALL_ADDR)
-     WR_CNT <= WR_CNT + 1'b1;
-
-always@(posedge clk or negedge rst_n)
-    if(!rst_n)
-     WR_CYC_CNT <= 'd0;
-    else if(curr_state == CYC_DONE_WAITE)
-     WR_CYC_CNT <= 'd0;
-    else if((cmd == 1'b1) && (cmd_en == 1'b1))
-     WR_CYC_CNT <= WR_CYC_CNT + 1'b1;
-
-always@(posedge clk or negedge rst_n)
-    if(!rst_n)
-     WR_DONE <= 'd0;
-    else if(curr_state == CYC_DONE_WAITE)
-     WR_DONE <= 'd0;
-    else if(WR_CYC_CNT == ADDR_RANGE)
-     WR_DONE <= 1'b1;
-
-always@(posedge clk or negedge rst_n)
-    if(!rst_n)
-     DATA_W_END <= 'd0;
-    else if(curr_state == CYC_DONE_WAITE)
-     DATA_W_END <= 'd0;
-    else if(WR_CNT == (TCMD128 - 2'd2))
-     DATA_W_END <= 1'b1;
-    else 
-     DATA_W_END <= 1'b0;
-
-//=====BURST READ =====
-  
-always@(posedge clk or negedge rst_n)
-    if(!rst_n)
-     RD_CNT <= 'd0;
-     else if(RD_CNT == (TCMD128 - 1'b1))
-     RD_CNT <= 'd0;
-    else if(curr_state == READ_ALL_ADDR)
-     RD_CNT <= RD_CNT + 1'b1;
-
-always@(posedge clk or negedge rst_n)
-    if(!rst_n)
-     RD_CYC_CNT <= 'd0;
-    else if(curr_state == CYC_DONE_WAITE)
-     RD_CYC_CNT <= 'd0;
-    else if((cmd == 1'b0) && (cmd_en == 1'b1))
-     RD_CYC_CNT <= RD_CYC_CNT + 1'b1;
-
-always@(posedge clk or negedge rst_n)
-    if(!rst_n)
-     RD_DONE <= 'd0;
-    else if(curr_state == CYC_DONE_WAITE)
-     RD_DONE <= 'd0;
-    else if(RD_CYC_CNT == ADDR_RANGE)
-     RD_DONE <= 1'b1; 
-
-always@(posedge clk or negedge rst_n)
-    if(!rst_n)
-     DATA_R_END <= 'd0;
-    else if(curr_state == CYC_DONE_WAITE)
-     DATA_R_END <= 'd0;
-    else if(RD_CNT == (TCMD128 - 2'd2))
-     DATA_R_END <= 1'b1;
-    else 
-     DATA_R_END <= 1'b0;
-
-//===== pSRAM CTRL =====
-always@(posedge clk or negedge rst_n)
- if(!rst_n)
-   begin
-   cmd         <= 1'b0;
-   cmd_en      <= 1'b0;
-   addr        <=  'b0;
-   wr_data     <=  'b0;
-   data_mask   <=  'b0;
-   addr_add_w  <=  'b0;
-   addr_add_r  <=  'b0;
-   wr_data_add <=  'b0;
-   end
- else if((WR_CNT == 'd0) && (curr_state == WRITE_ALL_ADDR))
-   begin
-   cmd         <= 1'b1;
-   cmd_en      <= 1'b1;
-   addr        <= addr_add_w;
-   wr_data     <= wr_data_add;              
-   data_mask   <=  'b0;
-   addr_add_w  <= addr_add_w + NUM128 * 6'd2;
-   wr_data_add <= wr_data_add + 1'b1;   
-   end
- else if((WR_CNT !== 'd0) && (WR_CNT < NUM128) && (curr_state == WRITE_ALL_ADDR))
-   begin
-   cmd         <= 1'b0;
-   cmd_en      <= 1'b0;
-   addr        <=  'b0;
-   wr_data     <= wr_data_add;              
-   data_mask   <=  'b0;  
-   addr_add_w  <= addr_add_w;
-   wr_data_add <= wr_data_add + 1'b1;  
-   end
- else if((RD_CNT == 'd0) && (curr_state == READ_ALL_ADDR))
-   begin
-   cmd         <= 1'b0;
-   cmd_en      <= 1'b1;
-   addr        <= addr_add_r;              
-   data_mask   <=  'b0;
-   addr_add_r  <= addr_add_r + NUM128 * 6'd2;
-   end
- else if(curr_state == CYC_DONE_WAITE)
-   begin
-   cmd         <= 1'b0;
-   cmd_en      <= 1'b0;
-   addr        <=  'b0;
-   wr_data     <=  'b0;
-   data_mask   <=  'b0;
-   addr_add_w  <=  'b0;
-   addr_add_r  <=  'b0;
-   wr_data_add <=  'b0;
-   end
- else
-   begin
-   cmd         <= 1'b0;
-   cmd_en      <= 1'b0;
-   addr        <=  'b0;
-   wr_data     <=  'b0;
-   data_mask   <=  'b0;
-   end
-
-//=====check read_valid and read data=====
-
-always@(posedge clk or negedge rst_n)
- if(!rst_n)
-    check_data <= 'b0;
- else if(curr_state == WRITE_ALL_ADDR)
-    check_data <= 'b0;
- else if(rd_data_valid)
-    check_data <= check_data + 1'b1;
-
-always@(posedge clk or negedge rst_n)
- if(!rst_n)
-  error_d <= 1'b0;
- else if(rd_data_valid && (check_data !== rd_data))
-  error_d <= 1'b1;
-
-assign error = error_d;
-*/
 endmodule
