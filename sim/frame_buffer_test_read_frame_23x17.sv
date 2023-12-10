@@ -28,15 +28,8 @@ reg cam_data_in_wr_en;
 wire memory_clk;
 
 wire queue_load_rd_en;
-wire [16:0] cam_data_queue_out;
-wire [16:0] cam_data_queue_out_d;
-wire queue_load_empty;
-wire queue_load_full;
-wire queue_load_empty_d;
-wire queue_load_clk;
-
-assign #1 queue_load_empty_d = queue_load_empty;
-assign #1 cam_data_queue_out_d = cam_data_queue_out;
+wire [16:0] cam_data_out;
+wire cam_out_full;
 
 reg init_done_0;
 
@@ -52,17 +45,17 @@ wire [31:0] mem_w_data;
 reg [31:0] mem_r_data;
 reg mem_r_data_valid;
 
-FIFO_cam q_cam_data_in(
-    .Data(cam_data_in), //input [16:0] Data
+FIFO_cam q_cam_data_out(
+    .Data(cam_data_out), //input [16:0] Data
     .WrReset(~reset_n), //input WrReset
     .RdReset(~reset_n), //input RdReset
-    .WrClk(clk), //input WrClk
-    .RdClk(queue_load_clk), //input RdClk
-    .WrEn(cam_data_in_wr_en), //input WrEn
-    .RdEn(queue_load_rd_en), //input RdEn
-    .Q(cam_data_queue_out), //output [16:0] Q
-    .Empty(queue_load_empty), //output Empty
-    .Full(queue_load_full) //output Full
+    .WrClk(cam_clk_o), //input WrClk
+    .RdClk(), //input RdClk
+    .WrEn(cam_wr_en), //input WrEn
+    .RdEn(), //input RdEn
+    .Q(), //output [16:0] Q
+    .Empty(), //output Empty
+    .Full(cam_out_full) //output Full
 );
 
 logic[15:0] data_items[3 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 3 * 32];
@@ -112,8 +105,6 @@ initial begin
         `TEST_FAIL
     else begin
         string str;
-        $sformat(str, "Pushed to FIFO %0d pixels", i);
-        logger.info(module_name, str);
 
         repeat(1) @(posedge upload_done);
         logger.info(module_name, "Received upload done signal");
@@ -141,18 +132,22 @@ initial begin
     while (download_pixels != LCD_FRAME_WIDTH * LCD_FRAME_HEIGHT && !error) begin
         repeat(1) @(posedge mem_cmd_en);
         if (mem_cmd == 1'b0) begin
-            integer j;
+            integer j, base_addr;
 
+            logger.info(module_name, "Mem read command received");
+
+            base_addr = mem_addr;
             for (j = 0; j < 4; j = j + 1)
                 repeat(1) @(posedge fb_clk);
 
             for (j = 0; j < 8; j = j + 1) begin
                 repeat(1) @(posedge fb_clk);
-                mem_r_data_valid = 1'b1;
+                mem_r_data_valid = #1 1'b1;
+                mem_r_data = {data_items[base_addr + 2 * j + 1], data_items[base_addr + 2 * j]};
             end
 
             repeat(1) @(posedge fb_clk);
-            mem_r_data_valid = 1'b0;
+            mem_r_data_valid = #1 1'b0;
         end
     end
 
@@ -184,19 +179,19 @@ VideoController #(
                       .addr(mem_addr),
                       .wr_data(mem_w_data),
                       .rd_data(mem_r_data),
-                      .rd_data_valid(),
+                      .rd_data_valid(mem_r_data_valid),
                       .error(),
                       .data_mask(),
 
                       .load_clk_o(),
                       .load_rd_en(),
                       .load_queue_empty(1'b1),
-                      .load_queue_data('d0),
+                      .load_queue_data(17'd0),
 
-                      .store_clk_o(),
-                      .store_wr_en(),
-                      .store_queue_full(1'b1),
-                      .store_queue_data()
+                      .store_clk_o(cam_clk_o),
+                      .store_wr_en(cam_wr_en),
+                      .store_queue_full(cam_out_full),
+                      .store_queue_data(cam_data_out)
                   );
 
 always @(posedge memory_clk or negedge reset_n) begin

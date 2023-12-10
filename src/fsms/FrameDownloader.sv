@@ -18,7 +18,11 @@ package FrameDownloaderTypes;
         CHECK_QUEUE                      = 8'd04,
         START_READ_CYC                   = 8'd05,
         START_READ_ROW                   = 8'd07,
-        READ_ROW_CYC                     = 8'd08
+        READ_ROW_CYC                     = 8'd08,
+        START_READ_FROM_MEMORY           = 8'd09,
+        READ_FROM_MEMORY_CYC             = 8'd10,
+        READ_MEMORY_WAIT                 = 8'd11,
+        QUEUE_UPLOAD_CYC                 = 8'd12
     } t_state;
 endpackage
 
@@ -75,7 +79,7 @@ module FrameDownloader
     reg [4:0] read_counter_next;
     reg [5:0] cmd_cyc_counter;
     reg [20:0] pixel_counter;
-    reg cache_in_en;
+    //reg cache_in_en;
     reg cache_out_en;
     reg frame_download_cycle;
     reg adder_ce;
@@ -85,6 +89,7 @@ module FrameDownloader
 
     wire [31:0] mem_word;
     wire [21:0] adder_out;
+    wire [15:0] cache_out;
 
     assign cache_addr_next = cache_addr + 1'b1;
     assign read_addr = frame_addr_counter;
@@ -103,9 +108,9 @@ module FrameDownloader
     );
 
     Gowin_SDPB_DN download_cache(
-        .dout(), 
+        .dout(cache_out), 
         .clka(clk), 
-        .cea(cache_in_en), 
+        .cea(rd_data_valid), 
         .reseta(~reset_n), 
         .clkb(clk), 
         .ceb(cache_out_en), 
@@ -139,6 +144,8 @@ module FrameDownloader
 
             col_counter <= `WRAP_SIM(#1) 'd0;
             row_counter <= `WRAP_SIM(#1) 'd0;
+
+            state <= `WRAP_SIM(#1) FRAME_PROCESSING_START_WAIT;
         end else begin
             // State Machine:
             case (state)
@@ -219,8 +226,43 @@ module FrameDownloader
                 end
                 READ_ROW_CYC: begin
                     wr_en <= `WRAP_SIM(#1) 1'b0;
-                    if (col_counter < FRAME_WIDTH) begin
+                    if (col_counter !== FRAME_WIDTH) begin
+                        state <= `WRAP_SIM(#1) START_READ_FROM_MEMORY;
                     end else begin
+                    end
+                end
+                START_READ_FROM_MEMORY: begin
+                    read_rq <= `WRAP_SIM(#1) 1'b1;
+                    state <= `WRAP_SIM(#1) READ_MEMORY_WAIT;
+                end
+                READ_MEMORY_WAIT: begin
+                    if (read_ack) begin
+                        state <= `WRAP_SIM(#1) READ_FROM_MEMORY_CYC;
+                        mem_rd_en <= `WRAP_SIM(#1) 1'b1;
+                        read_counter <= `WRAP_SIM(#1) 'd0;
+                    end
+                end
+                READ_FROM_MEMORY_CYC: begin
+                    mem_rd_en <= `WRAP_SIM(#1) 1'b0;
+                    if (rd_data_valid && read_counter !== 5'd8)
+                        read_counter <= `WRAP_SIM(#1) read_counter_next;
+                    else if (read_counter === 5'd8) begin
+                        state <= `WRAP_SIM(#1) QUEUE_UPLOAD_CYC;
+                        cache_addr <= `WRAP_SIM(#1) 'd0;
+                        wr_en <= `WRAP_SIM(#1) 1'b1;
+                        cache_out_en <= `WRAP_SIM(#1) 1'b1;
+                    end
+                end
+                QUEUE_UPLOAD_CYC: begin
+                    if (col_counter !== FRAME_WIDTH && cache_addr !== 5'd16) begin
+                        if (!queue_full) begin
+                            col_counter <= `WRAP_SIM(#1) col_counter + 1'b1;
+                            cache_addr <= `WRAP_SIM(#1) cache_addr_next;
+                            queue_data <= `WRAP_SIM(#1) {1'b0, cache_out};
+                        end
+                    end else begin
+                        wr_en <= `WRAP_SIM(#1) 1'b0;
+                        cache_out_en <= `WRAP_SIM(#1) 1'b0;
                     end
                 end
             endcase

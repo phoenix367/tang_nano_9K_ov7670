@@ -66,7 +66,7 @@ localparam NUM_DEVICES = 4;  // Max number of devices have access to shared fram
 localparam FRAME_UPLOADER_IDX = 0;
 localparam FRAME_DOWNLOADER_IDX = 1;
 localparam DATA_WRITER_IDX = 2;
-localparam DATA_READER_IDX = 2;
+localparam DATA_READER_IDX = 3;
 
 localparam FRAME_COUNTER_WIDTH = $clog2(`max2(INPUT_IMAGE_WIDTH, INPUT_IMAGE_HEIGHT) + 1);
 
@@ -176,15 +176,16 @@ wire [NUM_DEVICES - 1:0] shared_req;
 wire [NUM_DEVICES - 1:0] shared_grant;
 wire mem_wr_en;
 wire mem_rd_en;
-wire start_uploading;
 wire uploading_finished;
+wire downloading_finished;
 
-wire start_downloading;
+reg start_uploading;
+reg start_downloading;
 
 assign shared_req = {data_read_req, data_write_req, consumer_req, producer_req};
-assign start_uploading = (uploading_state == UPLOADING_START_PROCESS_FRAME);
+//assign start_uploading = (uploading_state == UPLOADING_START_PROCESS_FRAME);
 
-assign start_downloading = (downloading_state == DOWNLOADING_START_PROCESS_FRAME);
+//assign start_downloading = (downloading_state == DOWNLOADING_START_PROCESS_FRAME);
 
 assign load_clk_o = clk;
 assign store_clk_o = clk;
@@ -240,7 +241,7 @@ FrameDownloader #(
     .reset_n(rst_n),
     .start(start_downloading),
     .queue_full(store_queue_full),
-    .read_ack(shared_grant[DATA_WRITER_IDX]),
+    .read_ack(shared_grant[DATA_READER_IDX]),
     .base_addr(read_base_addr),
     .read_data(rd_data),
     .rd_data_valid(rd_data_valid),
@@ -250,7 +251,7 @@ FrameDownloader #(
     .read_rq(data_read_req),
     .read_addr(read_addr_o),
     .mem_rd_en(mem_rd_en),
-    .download_done()
+    .download_done(donwloading_finished)
 );
 
 arbiter #(.width(NUM_DEVICES), .select_width($clog2(NUM_DEVICES))) shared_arbiter(
@@ -416,6 +417,17 @@ always@(posedge clk or negedge rst_n)
         end
     end
 
+initial
+    start_uploading <= `WRAP_SIM(#1) 1'b0;
+
+always@(posedge clk or negedge rst_n)
+    if(!rst_n)
+        start_uploading <= `WRAP_SIM(#1) 1'b0;
+    else if (uploading_state == UPLOADING_SELECT_BUFFER)
+        start_uploading <= `WRAP_SIM(#1) 1'b1;
+    else
+        start_uploading <= `WRAP_SIM(#1) 1'b0;
+
 always@(posedge clk or negedge rst_n)
     if(!rst_n)
         uploading_state <= `WRAP_SIM(#1) UPLOADING_IDLE;
@@ -466,8 +478,23 @@ always@(posedge clk or negedge rst_n)
             consumer_req <= `WRAP_SIM(#1) 1'b1;
         else if (downloading_state == DOWNLOADING_SELECT_BUFFER) begin
             consumer_req <= `WRAP_SIM(#1) 1'b0;
+        end else if (downloading_state == DOWNLOADING_RELEASE_BUFFER_WAIT) begin
+            consumer_req <= `WRAP_SIM(#1) 1'b1;
+        end else if (downloading_state == DOWNLOADING_RELEASE_BUFFER) begin
+            consumer_req <= `WRAP_SIM(#1) 1'b0;
         end
     end
+
+initial
+    start_downloading <= `WRAP_SIM(#1) 1'b0;
+
+always@(posedge clk or negedge rst_n)
+    if(!rst_n)
+        start_downloading <= `WRAP_SIM(#1) 1'b0;
+    else if (downloading_state == DOWNLOADING_SELECT_BUFFER)
+        start_downloading <= `WRAP_SIM(#1) 1'b1;
+    else
+        start_downloading <= `WRAP_SIM(#1) 1'b0;
 
 always@(posedge clk or negedge rst_n)
     if(!rst_n)
@@ -491,7 +518,12 @@ always @(*) begin
             downloading_next_state = DOWNLOADING_SELECT_BUFFER;
         DOWNLOADING_SELECT_BUFFER:
             downloading_next_state = DOWNLOADING_START_PROCESS_FRAME;
-        DOWNLOADING_START_PROCESS_FRAME: ;
+        DOWNLOADING_START_PROCESS_FRAME:
+            downloading_next_state = DOWNLOADING_FRAME_DONE_WAIT;
+        DOWNLOADING_FRAME_DONE_WAIT:
+            if (downloading_finished)
+                downloading_next_state = DOWNLOADING_RELEASE_BUFFER_WAIT;
+        DOWNLOADING_RELEASE_BUFFER_WAIT: ;
     endcase
 end
 
