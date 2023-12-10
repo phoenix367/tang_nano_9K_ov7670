@@ -38,23 +38,30 @@ DataLogger #(.verbosity(LOG_LEVEL)) logger();
 
 wire mem_cmd;
 wire mem_cmd_en;
+wire lcd_clock;
 
 wire [20:0] mem_addr;
 wire [31:0] mem_w_data;
+wire [16:0] queue_data_out;
+wire [16:0] queue_data_out_d;
+wire queue_empty_o;
+
+assign #1 queue_data_out_d = queue_data_out;
 
 reg [31:0] mem_r_data;
 reg mem_r_data_valid;
+reg queue_rd_en;
 
 FIFO_cam q_cam_data_out(
     .Data(cam_data_out), //input [16:0] Data
     .WrReset(~reset_n), //input WrReset
     .RdReset(~reset_n), //input RdReset
     .WrClk(cam_clk_o), //input WrClk
-    .RdClk(), //input RdClk
+    .RdClk(lcd_clock), //input RdClk
     .WrEn(cam_wr_en), //input WrEn
-    .RdEn(), //input RdEn
-    .Q(), //output [16:0] Q
-    .Empty(), //output Empty
+    .RdEn(queue_rd_en), //input RdEn
+    .Q(queue_data_out), //output [16:0] Q
+    .Empty(queue_empty_o), //output Empty
     .Full(cam_out_full) //output Full
 );
 
@@ -71,6 +78,7 @@ initial begin
 `endif
 
     error = 1'b0;
+    queue_rd_en = 1'b0;
     $sformat(module_name, "%m");
 
     $sformat(str, "Initial write address: %0h", READ_BASE_ADDR);
@@ -159,7 +167,8 @@ initial begin
     end
 end
 
-SDRAM_rPLL sdram_clock(.reset(~reset_n), .clkin(clk), .clkout(memory_clk), .lock(pll_lock));
+SDRAM_rPLL sdram_clock(.reset(~reset_n), .clkin(clk), .clkout(memory_clk), .lock(pll_lock),
+                       .clkoutd(lcd_clock));
 
 VideoController #(
 .MEMORY_BURST(32),
@@ -201,21 +210,80 @@ always @(posedge memory_clk or negedge reset_n) begin
         fb_clk <= #1 ~fb_clk;
 end
 
-task write_to_queue(input integer delay, input reg[16:0] data_i);
-    begin
-		// wait initial delay
-		repeat(delay) @(posedge clk);
+initial begin
+    integer col_counter, row_counter, i;
+    integer cycles_to_wait, base_address;
+    string str;
 
-        #1;
-        cam_data_in = data_i;
-        cam_data_in_wr_en = 1'b1;
+    col_counter = 0;
+    row_counter = 0;
+    base_address = 1 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 1 * 32;
 
-        @(posedge clk);
+    $sformat(str, "Downloaded frame base address %0h", base_address);
+    logger.info(module_name, str);
 
-        #1;
-        cam_data_in_wr_en = 1'b0;
+    repeat(1) @(posedge cam_out_full);
+    cycles_to_wait = ($urandom() % 10) + 1;
+
+    for (i = 0; i != cycles_to_wait; i = i + 1)
+        repeat(1) @(posedge lcd_clock);
+
+    queue_rd_en = #1 1'b1;
+    repeat(1) @(posedge lcd_clock);
+    $display("Frame start %0h", queue_data_out_d);
+
+    if (queue_data_out_d !== 17'h10000) begin
+        logger.error(module_name, "Frame start sequence not found");
+
+        `TEST_FAIL
     end
-endtask
+
+    for (i = 0; i < LCD_FRAME_HEIGHT; i = i + 1) begin
+        integer j;
+
+        repeat(1) @(posedge lcd_clock);
+
+        $display("Row start %0h", queue_data_out_d);
+        if (queue_data_out_d !== 17'h10001) begin
+            logger.error(module_name, "Row start sequence not found");
+
+            `TEST_FAIL
+        end
+
+        for (j = 0; j < LCD_FRAME_WIDTH; j = j + 1) begin
+            logic [16:0] pixel_value;
+            repeat(1) @(posedge lcd_clock);
+            $display("Pixel %0h <-- %0d, %0d", queue_data_out_d, j, i);
+
+            pixel_value = data_items[base_address + i * LCD_FRAME_WIDTH + j];
+            if (pixel_value !== {1'b0, queue_data_out_d}) begin
+                string str;
+
+                $sformat(str, "Invalid pixel value. Got %0h, expected %0h", queue_data_out_d, pixel_value);
+                logger.error(module_name, str);
+                `TEST_FAIL
+            end
+        end
+    end
+
+    repeat(1) @(posedge lcd_clock);
+
+    if (queue_data_out_d != 17'h1FFFF) begin
+        logger.error(module_name, "Frame stop sequence not found");
+
+        `TEST_FAIL
+    end else begin
+        logger.info(module_name, "Frame end");
+    end
+end
+
+initial begin
+    repeat(1) @(posedge lcd_clock);
+    repeat(1) @(posedge queue_empty_o);
+    logger.error(module_name, "Output queue emitted unexpected empty signal");
+
+    `TEST_FAIL
+end
 
 always #900000 begin
     logger.error(module_name, "System hangs");

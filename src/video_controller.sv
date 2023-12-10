@@ -246,12 +246,12 @@ FrameDownloader #(
     .read_data(rd_data),
     .rd_data_valid(rd_data_valid),
     
-    .queue_data(store_queue_data),
+    .queue_data_o(store_queue_data),
     .wr_en(store_wr_en),
     .read_rq(data_read_req),
     .read_addr(read_addr_o),
     .mem_rd_en(mem_rd_en),
-    .download_done(donwloading_finished)
+    .download_done(downloading_finished)
 );
 
 arbiter #(.width(NUM_DEVICES), .select_width($clog2(NUM_DEVICES))) shared_arbiter(

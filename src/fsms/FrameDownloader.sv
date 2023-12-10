@@ -22,7 +22,9 @@ package FrameDownloaderTypes;
         START_READ_FROM_MEMORY           = 8'd09,
         READ_FROM_MEMORY_CYC             = 8'd10,
         READ_MEMORY_WAIT                 = 8'd11,
-        QUEUE_UPLOAD_CYC                 = 8'd12
+        QUEUE_UPLOAD_CYC                 = 8'd12,
+        QUEUE_UPLOAD_DONE                = 8'd13,
+        ADJUST_ROW_ADDRESS               = 8'd14
     } t_state;
 endpackage
 
@@ -49,7 +51,7 @@ module FrameDownloader
         input reg [31:0] read_data,
         input rd_data_valid,
         
-        output reg [16:0] queue_data,
+        output [16:0] queue_data_o,
         output reg wr_en,
         output reg read_rq,
         output [20:0] read_addr,
@@ -62,8 +64,6 @@ module FrameDownloader
     localparam CACHE_SIZE = MEMORY_BURST / 2;
     localparam BURST_CYCLES = MEMORY_BURST / 4;
 
-    localparam FRAME_PIXELS_NUM = FRAME_WIDTH * FRAME_HEIGHT;
-
 // Logger initialization
 `ifdef __ICARUS__
     `INITIALIZE_LOGGER
@@ -73,12 +73,11 @@ module FrameDownloader
 
     reg [20:0] frame_addr_counter;
     reg [4:0] cache_addr;
-    reg [4:0] frame_addr_inc;
+    reg [10:0] frame_addr_inc;
     reg [4:0] cache_addr_next;
     reg [4:0] read_counter;
     reg [4:0] read_counter_next;
     reg [5:0] cmd_cyc_counter;
-    reg [20:0] pixel_counter;
     //reg cache_in_en;
     reg cache_out_en;
     reg frame_download_cycle;
@@ -86,6 +85,8 @@ module FrameDownloader
 
     reg [10:0] col_counter;
     reg [10:0] row_counter;
+
+    reg [16:0] queue_data;
 
     wire [31:0] mem_word;
     wire [21:0] adder_out;
@@ -96,6 +97,8 @@ module FrameDownloader
     assign read_counter_next = read_counter + 1'b1;
 
     assign mem_word = read_data;
+
+    assign queue_data_o = (state == QUEUE_UPLOAD_CYC || state == QUEUE_UPLOAD_DONE) ? cache_out : queue_data;
 
     Gowin_ALU54 frame_addr_adder(
         .dout(adder_out), //output [21:0] dout
@@ -126,7 +129,6 @@ module FrameDownloader
         mem_rd_en <= `WRAP_SIM(#1) 1'b0;
         download_done <= `WRAP_SIM(#1) 1'b0;
         wr_en <= `WRAP_SIM(#1) 1'b0;
-        download_done <= `WRAP_SIM(#1) 1'b0;
     end
 
     initial begin
@@ -146,31 +148,42 @@ module FrameDownloader
             row_counter <= `WRAP_SIM(#1) 'd0;
 
             state <= `WRAP_SIM(#1) FRAME_PROCESSING_START_WAIT;
+            adder_ce <= `WRAP_SIM(#1) 1'b0;
+            read_counter <= `WRAP_SIM(#1) 'd0;
+            cache_addr <= `WRAP_SIM(#1) 'd0;
+            frame_addr_inc <= `WRAP_SIM(#1) 'd0;
+
+            download_done <= `WRAP_SIM(#1) 1'b0;
+            cache_out_en <= `WRAP_SIM(#1) 1'b0;
         end else begin
             // State Machine:
             case (state)
                 FRAME_PROCESSING_START_WAIT: begin
                     frame_addr_counter <= `WRAP_SIM(#1) base_addr;
+                    download_done <= `WRAP_SIM(#1) 1'b0;
+
                     if (start == 1'b1) begin
 `ifdef __ICARUS__
                         string str_msg;
 `endif
 
-                        pixel_counter <= `WRAP_SIM(#1) 'd0;
                         state <= `WRAP_SIM(#1) FRAME_PROCESSING_READ_CYC;
                         frame_download_cycle <= `WRAP_SIM(#1) 1'b0;
                         frame_addr_inc <= `WRAP_SIM(#1) 'd0;
+
+                        adder_ce <= `WRAP_SIM(#1) 1'b1;
  
 `ifdef __ICARUS__
-                        $sformat(str_msg, "Start frame uploading at memory addr %0h", base_addr);
+                        $sformat(str_msg, "Start frame downloading at memory addr %0h", base_addr);
                         logger.info(module_name, str_msg);
 `endif
                     end
                 end
                 FRAME_PROCESSING_READ_CYC: begin
                     wr_en <= `WRAP_SIM(#1) 1'b0;
+                    adder_ce <= `WRAP_SIM(#1) 1'b0;
 
-                    if (pixel_counter === FRAME_PIXELS_NUM) begin
+                    if (row_counter === FRAME_HEIGHT) begin
 `ifdef __ICARUS__
                         string str_msg;
 `endif
@@ -178,7 +191,8 @@ module FrameDownloader
                         state <= `WRAP_SIM(#1) FRAME_PROCESSING_DONE;
 
 `ifdef __ICARUS__
-                        $sformat(str_msg, "Received %0d pixels for frame at address %0h", FRAME_PIXELS_NUM, base_addr);
+                        $sformat(str_msg, "Received %0d pixels for frame at address %0h", 
+                                 FRAME_HEIGHT * FRAME_WIDTH, base_addr);
                         logger.debug(module_name, str_msg);
 `endif
                     end else begin
@@ -196,9 +210,13 @@ module FrameDownloader
                             queue_data <= `WRAP_SIM(#1) 17'h10000;
                             wr_en <= `WRAP_SIM(#1) 1'b1;
 
+                            frame_download_cycle <= `WRAP_SIM(#1) 1'b1;
                             col_counter <= `WRAP_SIM(#1) 'd0;
                             row_counter <= `WRAP_SIM(#1) 'd0;
                         end else begin
+`ifdef __ICARUS__
+                            logger.critical(module_name, "Inconsisted state in CHECK_QUEUE");
+`endif
                         end
                     end
                 START_READ_CYC: begin
@@ -207,11 +225,11 @@ module FrameDownloader
                 end
                 START_READ_ROW: begin
                     if (row_counter === FRAME_HEIGHT) begin
-`ifdef __ICARUS__
-                        logger.info(module_name, "Finalized frame downloading");
-`endif                        
-
                         if (!queue_full) begin
+`ifdef __ICARUS__
+                            logger.info(module_name, "Finalized frame downloading");
+`endif                        
+                            
                             queue_data <= `WRAP_SIM(#1) 17'h1FFFF;
                             wr_en <= `WRAP_SIM(#1) 1'b1;
                             state <= `WRAP_SIM(#1) FRAME_PROCESSING_READ_CYC;
@@ -227,8 +245,13 @@ module FrameDownloader
                 READ_ROW_CYC: begin
                     wr_en <= `WRAP_SIM(#1) 1'b0;
                     if (col_counter !== FRAME_WIDTH) begin
+                        adder_ce <= `WRAP_SIM(#1) 1'b0;
                         state <= `WRAP_SIM(#1) START_READ_FROM_MEMORY;
                     end else begin
+                        row_counter <= `WRAP_SIM(#1) row_counter + 1'b1;
+                        frame_addr_inc <= `WRAP_SIM(#1) ORIG_FRAME_HEIGHT - FRAME_HEIGHT;
+                        adder_ce <= `WRAP_SIM(#1) 1'b1;
+                        state <= `WRAP_SIM(#1) ADJUST_ROW_ADDRESS;
                     end
                 end
                 START_READ_FROM_MEMORY: begin
@@ -240,6 +263,7 @@ module FrameDownloader
                         state <= `WRAP_SIM(#1) READ_FROM_MEMORY_CYC;
                         mem_rd_en <= `WRAP_SIM(#1) 1'b1;
                         read_counter <= `WRAP_SIM(#1) 'd0;
+                        frame_addr_counter <= `WRAP_SIM(#1) adder_out[20:0];
                     end
                 end
                 READ_FROM_MEMORY_CYC: begin
@@ -249,21 +273,39 @@ module FrameDownloader
                     else if (read_counter === 5'd8) begin
                         state <= `WRAP_SIM(#1) QUEUE_UPLOAD_CYC;
                         cache_addr <= `WRAP_SIM(#1) 'd0;
-                        wr_en <= `WRAP_SIM(#1) 1'b1;
                         cache_out_en <= `WRAP_SIM(#1) 1'b1;
                     end
                 end
                 QUEUE_UPLOAD_CYC: begin
                     if (col_counter !== FRAME_WIDTH && cache_addr !== 5'd16) begin
+                        wr_en <= `WRAP_SIM(#1) 1'b1;
+                            
                         if (!queue_full) begin
                             col_counter <= `WRAP_SIM(#1) col_counter + 1'b1;
                             cache_addr <= `WRAP_SIM(#1) cache_addr_next;
-                            queue_data <= `WRAP_SIM(#1) {1'b0, cache_out};
                         end
-                    end else begin
+                    end else if (!queue_full) begin
                         wr_en <= `WRAP_SIM(#1) 1'b0;
-                        cache_out_en <= `WRAP_SIM(#1) 1'b0;
+                        state <= `WRAP_SIM(#1) QUEUE_UPLOAD_DONE;
                     end
+                end
+                QUEUE_UPLOAD_DONE: begin
+                    wr_en <= `WRAP_SIM(#1) 1'b0;
+                    cache_out_en <= `WRAP_SIM(#1) 1'b0;
+                    frame_addr_inc <= `WRAP_SIM(#1) cache_addr;
+                    adder_ce <= `WRAP_SIM(#1) 1'b1;
+
+                    state <= `WRAP_SIM(#1) READ_ROW_CYC;
+                end
+                ADJUST_ROW_ADDRESS: begin
+                    adder_ce <= `WRAP_SIM(#1) 1'b0;
+                    frame_addr_counter <= `WRAP_SIM(#1) adder_out[20:0];
+                    
+                    state <= `WRAP_SIM(#1) START_READ_CYC;
+                end
+                FRAME_PROCESSING_DONE: begin
+                    download_done <= `WRAP_SIM(#1) 1'b1;
+                    state <= `WRAP_SIM(#1) FRAME_PROCESSING_READ_CYC;
                 end
             endcase
         end
