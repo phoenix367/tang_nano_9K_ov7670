@@ -104,7 +104,7 @@ module FrameDownloader
         .dout(adder_out), //output [21:0] dout
         .caso(), //output [54:0] caso
         .a(frame_addr_counter), //input [20:0] a
-        .b(frame_addr_inc), //input [4:0] b
+        .b(frame_addr_inc),
         .ce(adder_ce), //input ce
         .clk(clk), //input clk
         .reset(~reset_n) //input reset

@@ -141,8 +141,10 @@ initial begin
         repeat(1) @(posedge mem_cmd_en);
         if (mem_cmd == 1'b0) begin
             integer j, base_addr;
+            string str;
 
-            logger.info(module_name, "Mem read command received");
+            $sformat(str, "Mem read command received. Rad base address %0h", mem_addr);
+            logger.info(module_name, str);
 
             base_addr = mem_addr;
             for (j = 0; j < 4; j = j + 1)

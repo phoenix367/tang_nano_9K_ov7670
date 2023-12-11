@@ -5,7 +5,7 @@
 //Part Number: GW1NR-LV9QN88PC6/I5
 //Device: GW1NR-9
 //Device Version: C
-//Created Time: Sun Dec 10 16:33:50 2023
+//Created Time: Mon Dec 11 04:15:00 2023
 
 module Gowin_ALU54 (dout, caso, a, b, ce, clk, reset);
 
@@ -36,8 +36,8 @@ ALU54D alu54d_inst (
     .RESET(reset)
 );
 
-defparam alu54d_inst.AREG = 1'b1;
-defparam alu54d_inst.BREG = 1'b1;
+defparam alu54d_inst.AREG = 1'b0;
+defparam alu54d_inst.BREG = 1'b0;
 defparam alu54d_inst.ASIGN_REG = 1'b0;
 defparam alu54d_inst.BSIGN_REG = 1'b0;
 defparam alu54d_inst.ACCLOAD_REG = 1'b0;

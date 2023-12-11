@@ -13,9 +13,9 @@
 -alu_mode 0
 -width_a 21
 -data_type_a unsigned
--ina_reg registered
+-ina_reg bypass
 -width_b 11
 -data_type_b unsigned
--inb_reg registered
+-inb_reg bypass
 -reset_mode async
 -out_reg registered
