@@ -30,6 +30,9 @@ wire memory_clk;
 wire queue_load_rd_en;
 wire [16:0] cam_data_out;
 wire cam_out_full;
+wire cam_out_full_d;
+
+assign #1 cam_out_full_d = cam_out_full;
 
 reg init_done_0;
 
@@ -201,7 +204,7 @@ VideoController #(
 
                       .store_clk_o(cam_clk_o),
                       .store_wr_en(cam_wr_en),
-                      .store_queue_full(cam_out_full),
+                      .store_queue_full(cam_out_full_d),
                       .store_queue_data(cam_data_out)
                   );
 
@@ -257,7 +260,7 @@ initial begin
             repeat(1) @(posedge lcd_clock);
             $display("Pixel %0h <-- %0d, %0d", queue_data_out_d, j, i);
 
-            pixel_value = data_items[base_address + i * LCD_FRAME_WIDTH + j];
+            pixel_value = data_items[base_address + i * CAM_FRAME_WIDTH + j];
             if (pixel_value !== {1'b0, queue_data_out_d}) begin
                 string str;
 

@@ -24,7 +24,8 @@ package FrameDownloaderTypes;
         READ_MEMORY_WAIT                 = 8'd11,
         QUEUE_UPLOAD_CYC                 = 8'd12,
         QUEUE_UPLOAD_DONE                = 8'd13,
-        ADJUST_ROW_ADDRESS               = 8'd14
+        ADJUST_ROW_ADDRESS               = 8'd14,
+        CACHE_COUNTER_INCREMENT          = 8'd15
     } t_state;
 endpackage
 
@@ -98,7 +99,10 @@ module FrameDownloader
 
     assign mem_word = read_data;
 
-    assign queue_data_o = (state == QUEUE_UPLOAD_CYC || state == QUEUE_UPLOAD_DONE) ? cache_out : queue_data;
+    assign `WRAP_SIM(#1) queue_data_o = (state == QUEUE_UPLOAD_CYC || 
+                                         state == QUEUE_UPLOAD_DONE ||
+                                         state == CACHE_COUNTER_INCREMENT) ? 
+                                        cache_out : queue_data;
 
     Gowin_ALU54 frame_addr_adder(
         .dout(adder_out), //output [21:0] dout
@@ -220,6 +224,7 @@ module FrameDownloader
                         end
                     end
                 START_READ_CYC: begin
+                    adder_ce <= `WRAP_SIM(#1) 1'b0;
                     wr_en <= `WRAP_SIM(#1) 1'b0;
                     state <= `WRAP_SIM(#1) START_READ_ROW;
                 end
@@ -249,7 +254,7 @@ module FrameDownloader
                         state <= `WRAP_SIM(#1) START_READ_FROM_MEMORY;
                     end else begin
                         row_counter <= `WRAP_SIM(#1) row_counter + 1'b1;
-                        frame_addr_inc <= `WRAP_SIM(#1) ORIG_FRAME_HEIGHT - FRAME_HEIGHT;
+                        frame_addr_inc <= `WRAP_SIM(#1) ORIG_FRAME_WIDTH - FRAME_WIDTH;
                         adder_ce <= `WRAP_SIM(#1) 1'b1;
                         state <= `WRAP_SIM(#1) ADJUST_ROW_ADDRESS;
                     end
@@ -277,17 +282,23 @@ module FrameDownloader
                     end
                 end
                 QUEUE_UPLOAD_CYC: begin
-                    if (col_counter !== FRAME_WIDTH && cache_addr !== 5'd16) begin
+                    if (queue_full)
+                        ; // Do nothing
+                    else if (col_counter !== FRAME_WIDTH && cache_addr !== 5'd16) begin
                         wr_en <= `WRAP_SIM(#1) 1'b1;
                             
-                        if (!queue_full) begin
-                            col_counter <= `WRAP_SIM(#1) col_counter + 1'b1;
-                            cache_addr <= `WRAP_SIM(#1) cache_addr_next;
-                        end
-                    end else if (!queue_full) begin
+                        state <= `WRAP_SIM(#1) CACHE_COUNTER_INCREMENT;
+                    end else begin
                         wr_en <= `WRAP_SIM(#1) 1'b0;
                         state <= `WRAP_SIM(#1) QUEUE_UPLOAD_DONE;
                     end
+                end
+                CACHE_COUNTER_INCREMENT: begin
+                    wr_en <= `WRAP_SIM(#1) 1'b0;
+                    col_counter <= `WRAP_SIM(#1) col_counter + 1'b1;
+                    cache_addr <= `WRAP_SIM(#1) cache_addr_next;
+                    
+                    state <= `WRAP_SIM(#1) QUEUE_UPLOAD_CYC;
                 end
                 QUEUE_UPLOAD_DONE: begin
                     wr_en <= `WRAP_SIM(#1) 1'b0;
@@ -298,7 +309,6 @@ module FrameDownloader
                     state <= `WRAP_SIM(#1) READ_ROW_CYC;
                 end
                 ADJUST_ROW_ADDRESS: begin
-                    adder_ce <= `WRAP_SIM(#1) 1'b0;
                     frame_addr_counter <= `WRAP_SIM(#1) adder_out[20:0];
                     
                     state <= `WRAP_SIM(#1) START_READ_CYC;

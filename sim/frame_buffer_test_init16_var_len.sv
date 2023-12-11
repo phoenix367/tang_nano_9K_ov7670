@@ -125,6 +125,11 @@ initial begin
                 logger.error(module_name, "Memory command invalid");
                 error = 1'b1;
             end else begin
+                if (mem_addr != 21'h096040 + cyc * NUM_ITEMS_BATCH) begin
+                    logger.error(module_name, "Invalid write address");
+                    error = 1'b1;
+                end
+
                 for (i = 0; i < 8 && error != 1'b1; i = i + 1) begin
                     logic [31:0] expected_data;
                     integer base_addr;
@@ -134,11 +139,6 @@ initial begin
                     
                     $sformat(str, "Memory address: %0h, base_addr = %0d", mem_addr, base_addr);
                     logger.debug(module_name, str);
-
-                    if (mem_addr != 21'h096040 + cyc * NUM_ITEMS_BATCH) begin
-                        logger.error(module_name, "Invalid write address");
-                        error = 1'b1;
-                    end
 
                     if (base_addr + 1 < NUM_ITEMS_BATCH + n) begin
                         expected_data = {data_items[base_addr + 1], 

@@ -124,13 +124,13 @@ initial begin
             logger.error(module_name, "Memory command invalid");
             error = 1'b1;
         end else begin
+            if (mem_addr != 21'h096040) begin
+                logger.error(module_name, "Invalid write address");
+                error = 1'b1;
+            end
+
             for (i = 0; i < 8 && error != 1'b1; i = i + 1) begin
                 logic [31:0] expected_data;
-
-                if (mem_addr != 21'h096040) begin
-                    logger.error(module_name, "Invalid write address");
-                    error = 1'b1;
-                end
 
                 repeat(1) @(negedge fb_clk);
                 if (2 * i + 1 < n) begin

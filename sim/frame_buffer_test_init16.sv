@@ -121,53 +121,6 @@ initial begin
     for (i = 0; i < NUM_ITEMS_CHECK; i = i + 1)
         write_to_queue(1, {1'b0, data_items[i]});
 
-    //write_to_queue(1, 17'h0AA55);
-    //write_to_queue(1, 17'h01122);
-/*
-    write_to_queue(1, 17'h10000);
-    write_to_queue(1, 17'h00000);
-    write_to_queue(1, 17'h01111);
-    write_to_queue(1, 17'h02222);
-    write_to_queue(1, 17'h03333);
-    write_to_queue(1, 17'h04444);
-    write_to_queue(1, 17'h05555);
-    write_to_queue(1, 17'h06666);
-    write_to_queue(1, 17'h07777);
-    write_to_queue(1, 17'h08888);
-    write_to_queue(1, 17'h09999);
-    write_to_queue(1, 17'h0AAAA);
-    write_to_queue(1, 17'h0BBBB);
-    write_to_queue(1, 17'h0CCCC);
-    write_to_queue(1, 17'h0DDDD);
-    write_to_queue(1, 17'h0EEEE);
-    write_to_queue(1, 17'h0FFFF);
-
-    write_to_queue(1, 17'h0F8F5);
-    write_to_queue(1, 17'h00000);
-    write_to_queue(1, 17'h0EEEE);
-    write_to_queue(1, 17'h01111);
-    write_to_queue(1, 17'h0DDDD);
-    write_to_queue(1, 17'h02222);
-    write_to_queue(1, 17'h0CCCC);
-    write_to_queue(1, 17'h03333);
-    write_to_queue(1, 17'h0BBBB);
-    write_to_queue(1, 17'h04444);
-    write_to_queue(1, 17'h0AAAA);
-    write_to_queue(1, 17'h05555);
-    write_to_queue(1, 17'h09999);
-    write_to_queue(1, 17'h06666);
-    write_to_queue(1, 17'h08888);
-    //write_to_queue(1, 17'h07777);
-
-
-    repeat(1) @(posedge pll_lock);
-    #3840;
-
-    write_to_queue(1, 17'h01168);
-
-    #520;
-    write_to_queue(1, 17'h10000);
-*/
     init_done_0 = 1'b1;
 
     repeat(1) @(posedge mem_cmd_en);
@@ -176,16 +129,16 @@ initial begin
         logger.error(module_name, "Memory command invalid");
         error = 1'b1;
     end else begin
+        if (mem_addr != 21'h096040) begin
+            logger.error(module_name, "Invalid write address");
+            error = 1'b1;
+        end
+
         for (i = 0; i < 8 && error != 1'b1; i = i + 1) begin
             logic [31:0] expected_data;
 
             expected_data = {data_items[2 * i + 1], data_items[2 * i]};
             repeat(1) @(negedge fb_clk);
-
-            if (mem_addr != 21'h096040) begin
-                logger.error(module_name, "Invalid write address");
-                error = 1'b1;
-            end
 
             if (mem_w_data != expected_data) begin
                 string str;

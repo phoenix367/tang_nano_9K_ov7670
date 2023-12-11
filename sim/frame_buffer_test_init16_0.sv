@@ -106,16 +106,16 @@ initial begin
         logger.error(module_name, "Memory command invalid");
         error = 1'b1;
     end else begin
+        if (mem_addr != 21'h096040) begin
+            logger.error(module_name, "Invalid write address");
+            error = 1'b1;
+        end
+
         for (i = 0; i < 8 && error != 1'b1; i = i + 1) begin
             logic [31:0] expected_data;
 
             expected_data = {data_items[2 * i + 1], data_items[2 * i]};
             repeat(1) @(negedge fb_clk);
-
-            if (mem_addr != 21'h096040) begin
-                logger.error(module_name, "Invalid write address");
-                error = 1'b1;
-            end
 
             if (mem_w_data != expected_data) begin
                 string str;
@@ -181,7 +181,7 @@ initial begin
                 logger.error(module_name, "Unexpected uploading start signal value");
             end
 
-            if (mem_addr !== 21'h04B020) begin
+            if (mem_addr !== 21'h000000) begin
                 error = 1'b1;
                 logger.error(module_name, "Unexpected memory address value");
             end
