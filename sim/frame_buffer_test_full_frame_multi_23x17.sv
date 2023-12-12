@@ -132,8 +132,8 @@ initial begin
     for (i = 0; i < NUM_TEST_FRAMES; i = i + 1) begin
         case (i)
             0: WRITE_BASE_ADDR = 2 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 2 * 32;
-            1: WRITE_BASE_ADDR = 1 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 1 * 32;
-            2: WRITE_BASE_ADDR = 0;
+            1: WRITE_BASE_ADDR = 0;
+            2: WRITE_BASE_ADDR = 2 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 2 * 32;
             3: WRITE_BASE_ADDR = 2 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 2 * 32;
             4: WRITE_BASE_ADDR = 2 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 2 * 32;
         endcase

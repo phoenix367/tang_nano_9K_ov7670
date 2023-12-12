@@ -3,8 +3,6 @@
 `include "test_utils.sv"
 `include "test_config.sv"
 
-import FrameUploaderTypes::*;
-
 module main();
 
 localparam LOG_LEVEL = `DEFAULT_LOG_LEVEL;
@@ -55,6 +53,8 @@ reg [31:0] mem_r_data;
 reg mem_r_data_valid;
 reg queue_rd_en;
 
+reg frame_end_signal;
+
 FIFO_cam q_cam_data_out(
     .Data(cam_data_out), //input [16:0] Data
     .WrReset(~reset_n), //input WrReset
@@ -69,7 +69,6 @@ FIFO_cam q_cam_data_out(
 );
 
 logic[15:0] data_items[3 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 3 * 32];
-logic upload_done;
 
 initial begin
     integer i;
@@ -117,8 +116,8 @@ initial begin
     else begin
         string str;
 
-        repeat(1) @(posedge upload_done);
-        logger.info(module_name, "Received upload done signal");
+        repeat(1) @(posedge frame_end_signal);
+        logger.info(module_name, "Received frame download done signal");
 
         `TEST_PASS
     end
@@ -131,11 +130,11 @@ initial begin
     integer download_pixels;
 
     error = 1'b0;
-    upload_done = 1'b0;
     download_pixels = 0;
 
     mem_r_data = 'd0;
     mem_r_data_valid = 1'b0;
+    frame_end_signal = 1'b0;
 
     repeat(1) @(posedge init_done_0);
     logger.info(module_name, "System initialized");
@@ -146,8 +145,8 @@ initial begin
             integer j, base_addr;
             string str;
 
-            $sformat(str, "Mem read command received. Rad base address %0h", mem_addr);
-            logger.info(module_name, str);
+            $sformat(str, "Mem read command received. Read base address %0h", mem_addr);
+            logger.debug(module_name, str);
 
             base_addr = mem_addr;
             for (j = 0; j < 4; j = j + 1)
@@ -166,10 +165,6 @@ initial begin
 
     if (error)
         `TEST_FAIL
-    else begin
-        repeat(1) @(posedge frame_buffer.uploading_finished);
-        upload_done = 1'b1;
-    end
 end
 
 SDRAM_rPLL sdram_clock(.reset(~reset_n), .clkin(clk), .clkout(memory_clk), .lock(pll_lock),
@@ -235,20 +230,19 @@ initial begin
 
     queue_rd_en = #1 1'b1;
     repeat(1) @(posedge lcd_clock);
-    $display("Frame start %0h", queue_data_out_d);
 
     if (queue_data_out_d !== 17'h10000) begin
         logger.error(module_name, "Frame start sequence not found");
 
         `TEST_FAIL
-    end
+    end else
+        logger.info(module_name, "Frame start sequence received");
 
     for (i = 0; i < LCD_FRAME_HEIGHT; i = i + 1) begin
         integer j;
 
         repeat(1) @(posedge lcd_clock);
 
-        $display("Row start %0h", queue_data_out_d);
         if (queue_data_out_d !== 17'h10001) begin
             logger.error(module_name, "Row start sequence not found");
 
@@ -258,7 +252,6 @@ initial begin
         for (j = 0; j < LCD_FRAME_WIDTH; j = j + 1) begin
             logic [16:0] pixel_value;
             repeat(1) @(posedge lcd_clock);
-            $display("Pixel %0h <-- %0d, %0d", queue_data_out_d, j, i);
 
             pixel_value = data_items[base_address + i * CAM_FRAME_WIDTH + j];
             if (pixel_value !== {1'b0, queue_data_out_d}) begin
@@ -279,15 +272,20 @@ initial begin
         `TEST_FAIL
     end else begin
         logger.info(module_name, "Frame end");
+        frame_end_signal = 1'b1;
     end
 end
 
 initial begin
     repeat(1) @(posedge lcd_clock);
-    repeat(1) @(posedge queue_empty_o);
-    logger.error(module_name, "Output queue emitted unexpected empty signal");
 
-    `TEST_FAIL
+    #1;
+    repeat(1) @(posedge queue_empty_o);
+    if (!frame_end_signal) begin
+        logger.error(module_name, "Output queue emitted unexpected empty signal");
+
+        `TEST_FAIL
+    end
 end
 
 always #900000 begin
