@@ -26,6 +26,8 @@ set(TESTS_LIST
     frame_buffer_test_read_frame_23x17
     frame_buffer_test_read_frame_23x17_2
     frame_buffer_test_read_frame_multi_23x17
+    frame_buffer_test_read_frame_multi_23x17_2
+    frame_buffer_test_read_write_frame_23x17
 )
 
 set(BASE_TEST_DIR "${CMAKE_CURRENT_BINARY_DIR}/tests")

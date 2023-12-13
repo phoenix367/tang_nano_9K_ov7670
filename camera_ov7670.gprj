@@ -18,6 +18,8 @@
         <File path="sim/frame_buffer_test_read_frame_23x17.sv" type="file.verilog" enable="0"/>
         <File path="sim/frame_buffer_test_read_frame_23x17_2.sv" type="file.verilog" enable="0"/>
         <File path="sim/frame_buffer_test_read_frame_multi_23x17.sv" type="file.verilog" enable="0"/>
+        <File path="sim/frame_buffer_test_read_frame_multi_23x17_2.sv" type="file.verilog" enable="0"/>
+        <File path="sim/frame_buffer_test_read_write_frame_23x17.sv" type="file.verilog" enable="0"/>
         <File path="sim/i2c_slave_model.sv" type="file.verilog" enable="0"/>
         <File path="sim/psram_model.sv" type="file.verilog" enable="0"/>
         <File path="sim/svlogger.sv" type="file.verilog" enable="0"/>

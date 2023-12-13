@@ -11,8 +11,8 @@ localparam NUM_ITEMS_BATCH = 16;
 
 // Camera timing parameters
 localparam CAM_PIXEL_CLK = 2;
-localparam CAM_FRAME_WIDTH = 640;
-localparam CAM_FRAME_HEIGHT = 480;
+localparam CAM_FRAME_WIDTH = 23;
+localparam CAM_FRAME_HEIGHT = 17;
 localparam LCD_FRAME_WIDTH = 23;
 localparam LCD_FRAME_HEIGHT = 17;
 
