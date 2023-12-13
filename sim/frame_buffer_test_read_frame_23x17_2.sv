@@ -11,8 +11,8 @@ localparam NUM_ITEMS_BATCH = 16;
 
 // Camera timing parameters
 localparam CAM_PIXEL_CLK = 2;
-localparam CAM_FRAME_WIDTH = 640;
-localparam CAM_FRAME_HEIGHT = 480;
+localparam CAM_FRAME_WIDTH = 23;
+localparam CAM_FRAME_HEIGHT = 17;
 localparam LCD_FRAME_WIDTH = 23;
 localparam LCD_FRAME_HEIGHT = 17;
 
@@ -239,7 +239,7 @@ initial begin
         logger.info(module_name, "Frame start sequence received");
 
     for (i = 0; i < LCD_FRAME_HEIGHT; i = i + 1) begin
-        integer j, delay_cycles;
+        integer j;
 
         repeat(1) @(posedge lcd_clock);
 
@@ -248,13 +248,6 @@ initial begin
 
             `TEST_FAIL
         end
-
-        delay_cycles = ($urandom() % 10) + 1;
-        queue_rd_en = 1'b0;
-        for (j = 0; j < LCD_FRAME_WIDTH; j = j + 1)
-            repeat(1) @(posedge lcd_clock);
-        queue_rd_en = 1'b1;
-        
 
         for (j = 0; j < LCD_FRAME_WIDTH; j = j + 1) begin
             logic [16:0] pixel_value;

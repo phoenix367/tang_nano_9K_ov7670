@@ -147,6 +147,7 @@ module FrameDownloader
         if (!reset_n) begin
             cmd_cyc_counter <= `WRAP_SIM(#1) 'd0;
             queue_data <= `WRAP_SIM(#1) 'd0;
+            read_rq <= `WRAP_SIM(#1) 1'b0;
 
             col_counter <= `WRAP_SIM(#1) 'd0;
             row_counter <= `WRAP_SIM(#1) 'd0;
@@ -176,6 +177,7 @@ module FrameDownloader
                         frame_addr_inc <= `WRAP_SIM(#1) 'd0;
 
                         adder_ce <= `WRAP_SIM(#1) 1'b1;
+                        row_counter <= `WRAP_SIM(#1) 'd0;
  
 `ifdef __ICARUS__
                         $sformat(str_msg, "Start frame downloading at memory addr %0h", base_addr);
@@ -216,7 +218,6 @@ module FrameDownloader
 
                             frame_download_cycle <= `WRAP_SIM(#1) 1'b1;
                             col_counter <= `WRAP_SIM(#1) 'd0;
-                            row_counter <= `WRAP_SIM(#1) 'd0;
                         end else begin
 `ifdef __ICARUS__
                             logger.critical(module_name, "Inconsisted state in CHECK_QUEUE");
@@ -279,6 +280,7 @@ module FrameDownloader
                         state <= `WRAP_SIM(#1) QUEUE_UPLOAD_CYC;
                         cache_addr <= `WRAP_SIM(#1) 'd0;
                         cache_out_en <= `WRAP_SIM(#1) 1'b1;
+                        read_rq <= `WRAP_SIM(#1) 1'b0;
                     end
                 end
                 QUEUE_UPLOAD_CYC: begin
@@ -315,7 +317,7 @@ module FrameDownloader
                 end
                 FRAME_PROCESSING_DONE: begin
                     download_done <= `WRAP_SIM(#1) 1'b1;
-                    state <= `WRAP_SIM(#1) FRAME_PROCESSING_READ_CYC;
+                    state <= `WRAP_SIM(#1) FRAME_PROCESSING_START_WAIT;
                 end
             endcase
         end

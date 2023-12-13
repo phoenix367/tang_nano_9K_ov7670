@@ -523,7 +523,11 @@ always @(*) begin
         DOWNLOADING_FRAME_DONE_WAIT:
             if (downloading_finished)
                 downloading_next_state = DOWNLOADING_RELEASE_BUFFER_WAIT;
-        DOWNLOADING_RELEASE_BUFFER_WAIT: ;
+        DOWNLOADING_RELEASE_BUFFER_WAIT:
+            if (shared_grant[FRAME_DOWNLOADER_IDX] == 1'b1)
+                downloading_next_state = DOWNLOADING_RELEASE_BUFFER;
+        DOWNLOADING_RELEASE_BUFFER:
+            downloading_next_state = DOWNLOADING_IDLE;
     endcase
 end
 
