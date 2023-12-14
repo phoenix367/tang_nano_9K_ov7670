@@ -29,6 +29,7 @@ module VGA_timing
     output reg debug_led,
     input memory_clk,
     input pll_lock,
+    input screen_clk,
     output[1:0]           O_psram_ck,
     output[1:0]           O_psram_ck_n,
     inout [1:0]           IO_psram_rwds,

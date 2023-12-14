@@ -302,13 +302,22 @@ initial begin
     error = 1'b0;
     repeat(1) @(posedge init_done_0);
 
-    for (i = 0; i < 5; i = i + 1) begin
+    for (i = 0; i < 10; i = i + 1) begin
         case (i)
             0: WRITE_BASE_ADDR = 2 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 2 * 32;
             1: WRITE_BASE_ADDR = 0;
             2: WRITE_BASE_ADDR = 1 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 1 * 32;
             3: WRITE_BASE_ADDR = 1 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 1 * 32;
             4: WRITE_BASE_ADDR = 2 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 2 * 32;
+            5: WRITE_BASE_ADDR = 2 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 2 * 32;
+            6: WRITE_BASE_ADDR = 0;
+            7: WRITE_BASE_ADDR = 2 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 2 * 32;
+            8: WRITE_BASE_ADDR = 1 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 1 * 32;
+            9: WRITE_BASE_ADDR = 2 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 2 * 32;
+        default: begin
+            logger.error(module_name, "Unhandled upload frame index");
+            `TEST_FAIL
+        end
         endcase
 
         $sformat(str, "Initial write address: %0h", WRITE_BASE_ADDR);
@@ -374,11 +383,11 @@ initial begin
         row_counter = 0;
 
         case (frame_counter)
-            0, 3, 4:
+            0, 3:
                 base_address = 1 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 1 * 32;
             1:
                 base_address = 2 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 2 * 32;
-            2:
+            2, 4:
                 base_address = 'd0;
             default: begin
                 logger.error(module_name, "Unknown base address for specified frame");

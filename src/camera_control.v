@@ -85,7 +85,13 @@ assign cam_pwdn = 1'b0;
 
 //assign LCD_CLK = /*sys_clk*/ video_clk_i;
 
-SDRAM_rPLL sdram_clock(.reset(~sys_rst_n), .clkin(sys_clk), .clkout(memory_clk), .lock(pll_lock));
+SDRAM_rPLL sdram_clock(
+    .reset(~sys_rst_n), 
+    .clkin(sys_clk), 
+    .clkout(memory_clk), 
+    .clkoutd(screen_clk),
+    .lock(pll_lock)
+);
 
 VGA_timing	VGA_timing_inst(
     .PixelClk	(	video_clk_i		),
@@ -105,10 +111,13 @@ VGA_timing	VGA_timing_inst(
     .debug_led(debug_led),
     .memory_clk(memory_clk),
     .pll_lock(pll_lock),
-.O_psram_ck(O_psram_ck),
-                                .O_psram_ck_n(O_psram_ck_n), .IO_psram_rwds(IO_psram_rwds),
-                                .O_psram_reset_n(O_psram_reset_n), .IO_psram_dq(IO_psram_dq),
-                                .O_psram_cs_n(O_psram_cs_n)
+    .screen_clk(screen_clk),
+    .O_psram_ck(O_psram_ck),
+    .O_psram_ck_n(O_psram_ck_n), 
+    .IO_psram_rwds(IO_psram_rwds),
+    .O_psram_reset_n(O_psram_reset_n), 
+    .IO_psram_dq(IO_psram_dq),
+    .O_psram_cs_n(O_psram_cs_n)
 );
 
 i2c_master_top i2c_master(

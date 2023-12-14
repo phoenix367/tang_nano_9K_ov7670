@@ -1,3 +1,5 @@
+set(CTEST_PARALLEL_LEVEL 4)
+
 set(VIDEO_BUFFER_TEST_SOURCES
     "${SRC_FOLDER}/functions.v"
     "${SRC_FOLDER}/arbiter.v"
@@ -11,6 +13,7 @@ set(VIDEO_BUFFER_TEST_SOURCES
     "${SRC_FOLDER}/video_controller.sv"
     "${SRC_FOLDER}/fsms/FrameUploader.sv"
     "${SRC_FOLDER}/fsms/FrameDownloader.sv"
+    "${SRC_FOLDER}/lcd_controller.sv"
 )
 
 set(TESTS_LIST 
@@ -28,6 +31,7 @@ set(TESTS_LIST
     frame_buffer_test_read_frame_multi_23x17
     frame_buffer_test_read_frame_multi_23x17_2
     frame_buffer_test_read_write_frame_23x17
+    lcd_controller_test
 )
 
 set(BASE_TEST_DIR "${CMAKE_CURRENT_BINARY_DIR}/tests")

@@ -21,6 +21,7 @@
         <File path="sim/frame_buffer_test_read_frame_multi_23x17_2.sv" type="file.verilog" enable="0"/>
         <File path="sim/frame_buffer_test_read_write_frame_23x17.sv" type="file.verilog" enable="0"/>
         <File path="sim/i2c_slave_model.sv" type="file.verilog" enable="0"/>
+        <File path="sim/lcd_controller_test.sv" type="file.verilog" enable="0"/>
         <File path="sim/psram_model.sv" type="file.verilog" enable="0"/>
         <File path="sim/svlogger.sv" type="file.verilog" enable="0"/>
         <File path="sim/test_bench.sv" type="file.verilog" enable="0"/>
@@ -54,6 +55,7 @@
         <File path="src/i2c_master_bit_ctrl.v" type="file.verilog" enable="1"/>
         <File path="src/i2c_master_byte_ctrl.v" type="file.verilog" enable="1"/>
         <File path="src/i2c_master_defines.v" type="file.verilog" enable="1"/>
+        <File path="src/lcd_controller.sv" type="file.verilog" enable="1"/>
         <File path="src/ov7670_default.sv" type="file.verilog" enable="1"/>
         <File path="src/ov7670_regs.vh" type="file.verilog" enable="1"/>
         <File path="src/psram_memory_interface_hs_2ch/psram_memory_interface_hs_2ch.v" type="file.verilog" enable="1"/>
