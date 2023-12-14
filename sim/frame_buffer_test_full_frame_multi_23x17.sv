@@ -90,7 +90,8 @@ task send_frame_to_queue(output logic error);
         logger.info(module_name, "Received upload done signal");
         
         upload_done = #1 1'b0;
-    end
+    end else
+        `TEST_FAIL
 endtask
 
 initial begin

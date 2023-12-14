@@ -122,10 +122,8 @@ always #18.519 clk=~clk;
 
 initial begin
     logic error;
-    integer download_pixels;
 
     error = 1'b0;
-    download_pixels = 0;
 
     mem_r_data = 'd0;
     mem_r_data_valid = 1'b0;
@@ -134,7 +132,7 @@ initial begin
     repeat(1) @(posedge init_done_0);
     logger.info(module_name, "System initialized");
 
-    while (download_pixels != LCD_FRAME_WIDTH * LCD_FRAME_HEIGHT && !error) begin
+    while (!error) begin
         repeat(1) @(posedge mem_cmd_en);
         if (mem_cmd == 1'b0) begin
             integer j, base_addr;
