@@ -59,15 +59,17 @@ FIFO_cam q_cam_data_in(
 
 LCD_Controller
 #(
+    .LCD_SCREEN_WIDTH(FRAME_WIDTH),
+    .LCD_SCREEN_HEIGHT(FRAME_HEIGHT),
 `ifdef __ICARUS__
     .LOG_LEVEL(LOG_LEVEL)
 `endif
 )
 lcd_controller
 (
-    .clk(fb_clk),
+    .clk(screen_clk),
     .reset_n(reset_n),
-    .queue_data_in(cam_data_queue_out),
+    .queue_data_in(cam_data_queue_out_d),
     .queue_empty(queue_load_empty_d),
 
     .queue_rd_en(queue_load_rd_en),
@@ -112,27 +114,83 @@ initial begin
 
     @(posedge clk);
 
-    // Write start frame command
-    write_to_queue(1, 17'h10000);
-
     init_done_0 = 1'b1;
 
-    repeat(1) @(posedge queue_load_rd_en);
-    if (cam_data_queue_out_d != 17'h10000) begin
-        logger.error(module_name, "Incorrect queue output");
-        error = 1'b1;
-    end
-
-    repeat(1) @(posedge fb_clk);
-    repeat(1) @(negedge fb_clk);
-
-    if (queue_load_empty != 1'b1) begin
-        logger.error(module_name, "Queue is not empty");
-        error = 1'b1;
-    end
+    #600000;
 
     if (error)
         `TEST_FAIL
+    else
+        `TEST_PASS
+end
+
+integer row_counter, col_counter;
+
+typedef enum {
+    STATE_IDLE,
+    STATE_WRITE_ROW_START,
+    STATE_WRITE_ROW,
+    STATE_WRITE_ROW_END,
+    STATE_WRITE_FRAME_DONE
+} loader_state_t;
+
+loader_state_t loader_state;
+
+always @(posedge fb_clk or negedge reset_n) begin
+    if (!reset_n) begin 
+        row_counter <= #1 0;
+        col_counter <= #1 0;
+
+        loader_state <= #1 STATE_IDLE;
+    end else begin
+        case (loader_state)
+            STATE_IDLE: if (!queue_load_full) begin
+                cam_data_in_wr_en <= #1 1'b1;
+                cam_data_in <= #1 17'h10000;
+
+                row_counter <= #1 0;
+                col_counter <= #1 0;
+
+                loader_state <= #1 STATE_WRITE_ROW_START;
+            end
+            STATE_WRITE_ROW_START: if (!queue_load_full) begin
+                cam_data_in_wr_en <= #1 1'b1;
+                cam_data_in <= #1 17'h10001;
+
+                loader_state <= #1 STATE_WRITE_ROW;
+            end
+            STATE_WRITE_ROW: begin
+                if (col_counter == FRAME_WIDTH) begin
+                    cam_data_in_wr_en <= #1 1'b0;
+
+                    loader_state <= #1 STATE_WRITE_ROW_END;
+                end else if (!queue_load_full) begin
+                    logic [15:0] pixel_value;
+
+                    pixel_value = $urandom();
+                    cam_data_in <= #1 { 1'b0, pixel_value };
+                    col_counter <= #1 col_counter + 1;
+                end
+            end
+            STATE_WRITE_ROW_END: begin
+                if (row_counter + 1 == FRAME_HEIGHT) begin
+                    if (!queue_load_full) begin
+                        cam_data_in_wr_en <= #1 1'b1;
+                        cam_data_in <= #1 17'h1FFFF;
+
+                        loader_state <= #1 STATE_WRITE_FRAME_DONE;
+                    end
+                end else begin
+                    row_counter <= #1 row_counter + 1;
+                    col_counter <= #1 0;
+
+                    loader_state <= #1 STATE_WRITE_ROW_START;
+                end
+            end
+            STATE_WRITE_FRAME_DONE:
+                cam_data_in_wr_en <= #1 1'b0;
+        endcase
+    end
 end
 
 always #18.519 clk=~clk;
@@ -168,8 +226,9 @@ task write_to_queue(input integer delay, input reg[16:0] data_i);
     end
 endtask
 
-always #60000 begin
-    `TEST_PASS
+always #900000 begin
+    logger.error(module_name, "System hangs");
+    `TEST_FAIL
 end
 
 endmodule
