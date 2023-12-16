@@ -109,7 +109,6 @@ typedef enum {
 } FrameProcessingStates;
 
 localparam int TOTAL_MEMORY_SIZE = 22'd1 << 21;
-localparam int BUFFER_MEMORY_REQ = 32 * INPUT_IMAGE_WIDTH * INPUT_IMAGE_HEIGHT * 2; // 16 bit per bixel
 
 function reg [5:0] burst_delay(input int burst);
     case (burst)
