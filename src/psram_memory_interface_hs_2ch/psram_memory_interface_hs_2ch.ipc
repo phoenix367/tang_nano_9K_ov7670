@@ -22,5 +22,5 @@ PASR=full
 PSRAM_WIDTH=8
 REFRESH_RATE=normal
 SHIFT_DELAY=152
-SIMULATION=true
+SIMULATION=false
 Synthesis_tool=GowinSynthesis

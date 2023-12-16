@@ -194,6 +194,7 @@ module LCD_Controller
                 end
                 PROCESS_ROW_BACK: begin
                     if (H_PixelCount == PixelForHS) begin
+                        V_PixelCount <= `WRAP_SIM(#1) V_PixelCount + 1'b1;
                         H_PixelCount <= `WRAP_SIM(#1) 'd0;
                         state <= `WRAP_SIM(#1) PROCESS_ROW_FRONT;
                     end else
@@ -202,7 +203,7 @@ module LCD_Controller
                 PROCESS_FRAME_BACK: begin
                     if (V_PixelCount == PixelForVS) begin
                         H_PixelCount <= `WRAP_SIM(#1) 'd0;
-                        state <= `WRAP_SIM(#1) PROCESS_ROW_FRONT;
+                        state <= `WRAP_SIM(#1) LCD_CONTROLLER_IDLE;
 
 `ifdef __ICARUS__
                         logger.info(module_name, "LCD frame generation completed");
@@ -210,8 +211,14 @@ module LCD_Controller
                     end else if(  H_PixelCount == PixelForHS ) begin
                         V_PixelCount <= `WRAP_SIM(#1) V_PixelCount + 1'b1;
                         H_PixelCount <= `WRAP_SIM(#1) 'd0;
-                    end else
+                    end else begin
+                        if (H_PixelCount <= H_SyncWidth)
+                            LCD_HSYNC <= `WRAP_SIM(#1) 1'b1;
+                        else
+                            LCD_HSYNC <= `WRAP_SIM(#1) 1'b0;
+
                         H_PixelCount <= `WRAP_SIM(#1) H_PixelCount + 1'b1;
+                    end
                 end
             endcase
         end

@@ -160,7 +160,7 @@ always @(posedge fb_clk or negedge reset_n) begin
                 loader_state <= #1 STATE_WRITE_ROW;
             end
             STATE_WRITE_ROW: begin
-                if (col_counter == FRAME_WIDTH) begin
+                if (col_counter == FRAME_WIDTH && !queue_load_full) begin
                     cam_data_in_wr_en <= #1 1'b0;
 
                     loader_state <= #1 STATE_WRITE_ROW_END;

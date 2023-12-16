@@ -25,7 +25,7 @@ module VGA_timing
     input cam_vsync,
     input href,
     input [7:0] p_data,
-    output reg LCD_CLK,
+    output LCD_CLK,
     output reg debug_led,
     input memory_clk,
     input pll_lock,
@@ -229,9 +229,9 @@ psram_test u_test1(
 		.WrReset(~nRST), //input WrReset
 		.RdReset(~nRST), //input RdReset
 		.WrClk(queue_store_clk), //input WrClk
-		.RdClk(LCD_CLK), //input RdClk
+		.RdClk(lcd_read_clk), //input RdClk
 		.WrEn(queue_store_wr_en), //input WrEn
-		.RdEn(), //input RdEn
+		.RdEn(lcd_queue_rd_en), //input RdEn
 		.Q(), //output [16:0] Q
 		.Empty(), //output Empty
 		.Full(queue_store_full) //output Full
@@ -327,167 +327,237 @@ psram_test u_test1(
         end
 	end
 
-    //Gowin_CLKDIV2 clkd_div(.hclkin(PixelClk), .clkout(LCD_CLK), .resetn(nRST));
-    //assign LCD_CLK = PixelClk;
+    assign LCD_CLK = screen_clk;
 
-    // Horizen count to Hsync, then next Horizen line.
+    wire [16:0] lcd_queue_data_in;
+    wire [16:0] lcd_queue_data_out;
+    wire lcd_read_clk;
+    wire lcd_queue_rd_en;
+    wire lcd_queue_empty;
 
-    parameter       H_Pixel_Valid    = 16'd480; 
-    parameter       H_FrontPorch     = 16'd50;//16'd50;
-    parameter       H_BackPorch      = 16'd254;  
+    wire lcd_queue_full;
+    wire lcd_queue_wr_en;
 
-    parameter       PixelForHS       = H_Pixel_Valid + H_FrontPorch + H_BackPorch;
+	FIFO_cam lcd_Debug_queue(
+		.Data(lcd_queue_data_in), //input [16:0] Data
+		.WrReset(~nRST), //input WrReset
+		.RdReset(~nRST), //input RdReset
+		.WrClk(clk_2), //input WrClk
+		.RdClk(lcd_read_clk), //input RdClk
+		.WrEn(lcd_queue_wr_en), //input WrEn
+		.RdEn(lcd_queue_rd_en), //input RdEn
+		.Q(lcd_queue_data_out), //output [16:0] Q
+		.Empty(lcd_queue_empty), //output Empty
+		.Full(lcd_queue_full) //output Full
+	);
 
-    parameter       V_Pixel_Valid    = 16'd272; 
-    parameter       V_FrontPorch     = 16'd20;  
-    parameter       V_BackPorch      = 16'd10;    
+    DebugPatternGenerator
+    #(
+        .FRAME_WIDTH(480),
+        .FRAME_HEIGHT(272)
+    )
 
-    parameter       PixelForVS       = V_Pixel_Valid + V_FrontPorch + V_BackPorch;
+    pattern_generator
+    (
+        .clk(clk_2),
+        .reset_n(nRST),
+
+        .queue_full(lcd_queue_full),
+        
+        .queue_data(lcd_queue_data_in),
+        .queue_wr_en(lcd_queue_wr_en)
+    );
+
+    LCD_Controller
+    #(
+    `ifdef __ICARUS__
+        .LOG_LEVEL(LOG_LEVEL),
+    `endif
+
+        .LCD_SCREEN_WIDTH(480),
+        .LCD_SCREEN_HEIGHT(272)
+    )
+
+    lcd_controller
+    (
+        .clk(screen_clk),
+        .reset_n(nRST),
+        .queue_data_in(lcd_queue_data_out),
+        .queue_empty(lcd_queue_empty),
+
+        .queue_rd_en(lcd_queue_rd_en),
+        .queue_clk(lcd_read_clk),
+
+        .LCD_DE(LCD_DE),
+        .LCD_HSYNC(LCD_HSYNC),
+        .LCD_VSYNC(LCD_VSYNC),
+
+        .LCD_B(LCD_B),
+        .LCD_G(LCD_G),
+        .LCD_R(LCD_R)
+    );
+
+//    //Gowin_CLKDIV2 clkd_div(.hclkin(PixelClk), .clkout(LCD_CLK), .resetn(nRST));
+//    //assign LCD_CLK = PixelClk;
+//
+//    // Horizen count to Hsync, then next Horizen line.
+
+//    parameter       H_Pixel_Valid    = 16'd480; 
+//    parameter       H_FrontPorch     = 16'd50;//16'd50;
+//    parameter       H_BackPorch      = 16'd254;  
+
+//    parameter       PixelForHS       = H_Pixel_Valid + H_FrontPorch + H_BackPorch;
+
+//    parameter       V_Pixel_Valid    = 16'd272; 
+//    parameter       V_FrontPorch     = 16'd20;  
+//    parameter       V_BackPorch      = 16'd10;    
+
+//    parameter       PixelForVS       = V_Pixel_Valid + V_FrontPorch + V_BackPorch;
 
     // Horizen pixel count
 
-    reg         [15:0]  H_PixelCount;
-    reg         [15:0]  V_PixelCount;
+//    reg         [15:0]  H_PixelCount;
+//    reg         [15:0]  V_PixelCount;
 
-    reg [4:0] screen_fsm = WAIT_FRAME_START;
+//    reg [4:0] screen_fsm = WAIT_FRAME_START;
 	//localparam WAIT_FRAME_START = 0;
-	localparam START_DRAW_ROW = 1;
-	localparam DRAW_ROW = 2;
-    localparam END_DRAW_ROW = 3;
-    localparam WAIT_ROW_START = 4;
-    localparam WAIT_VSYNC = 5;
+//	localparam START_DRAW_ROW = 1;
+//	localparam DRAW_ROW = 2;
+//    localparam END_DRAW_ROW = 3;
+//    localparam WAIT_ROW_START = 4;
+//    localparam WAIT_VSYNC = 5;
 
-    initial begin
-            H_PixelCount <= `WRAP_SIM(#1) 'd0;
-            V_PixelCount <= `WRAP_SIM(#1) 'd0;
-            LCD_CLK <= `WRAP_SIM(#1) 1'b0;
-    end
+//    initial begin
+//            H_PixelCount <= `WRAP_SIM(#1) 'd0;
+//            V_PixelCount <= `WRAP_SIM(#1) 'd0;
+//            LCD_CLK <= `WRAP_SIM(#1) 1'b0;
+//    end
 
-    always @(posedge PixelClk or negedge nRST) begin
-        if( !nRST )
-            LCD_CLK <= `WRAP_SIM(#1) 1'b0;
-        else
-            LCD_CLK <= `WRAP_SIM(#1) ~LCD_CLK;
-    end
+//    always @(posedge PixelClk or negedge nRST) begin
+//        if( !nRST )
+//            LCD_CLK <= `WRAP_SIM(#1) 1'b0;
+//        else
+//            LCD_CLK <= `WRAP_SIM(#1) ~LCD_CLK;
+//    end
 
 
-    always @(  posedge LCD_CLK or negedge nRST  )begin
-        if( !nRST ) begin
-            screen_fsm <= `WRAP_SIM(#1) WAIT_FRAME_START;
-            H_PixelCount <= `WRAP_SIM(#1) 'd0;
-            V_PixelCount <= `WRAP_SIM(#1) 'd0;
-            screen_row_addr   <=  `WRAP_SIM(#1) 'd0;
-        end else begin
-/*
-            case (screen_fsm)
-                WAIT_FRAME_START: begin
-                    V_PixelCount      <=  `WRAP_SIM(#1) 16'b0;    
-                    H_PixelCount      <=  `WRAP_SIM(#1) 16'b0;
-                    screen_row_addr   <=  `WRAP_SIM(#1) 'd0;
-                    //LCD_DE <= `WRAP_SIM(#1) 1'b0;
-                    //LCD_HSYNC <= `WRAP_SIM(#1) 1'b0;
-                    //LCD_VSYNC <= `WRAP_SIM(#1) 1'b0;
-    
-                    if (href) begin
-                        screen_fsm <= `WRAP_SIM(#1) START_DRAW_ROW;
-                        debug_led <= `WRAP_SIM(#1) ~debug_led;
-                    end
-                end
-            
-                START_DRAW_ROW: begin
-                    //LCD_VSYNC <= `WRAP_SIM(#1) 1'b0;
+//    always @(  posedge LCD_CLK or negedge nRST  )begin
+//        if( !nRST ) begin
+//            screen_fsm <= `WRAP_SIM(#1) WAIT_FRAME_START;
+//            H_PixelCount <= `WRAP_SIM(#1) 'd0;
+//            V_PixelCount <= `WRAP_SIM(#1) 'd0;
+//            screen_row_addr   <=  `WRAP_SIM(#1) 'd0;
+//        end else begin
+///*
+//            case (screen_fsm)
+//                WAIT_FRAME_START: begin
+//                    V_PixelCount      <=  `WRAP_SIM(#1) 16'b0;    
+//                    H_PixelCount      <=  `WRAP_SIM(#1) 16'b0;
+//                    screen_row_addr   <=  `WRAP_SIM(#1) 'd0;
+//                    //LCD_DE <= `WRAP_SIM(#1) 1'b0;
+//                    //LCD_HSYNC <= `WRAP_SIM(#1) 1'b0;
+//                    //LCD_VSYNC <= `WRAP_SIM(#1) 1'b0;
+//    
+//                    if (href) begin
+//                        screen_fsm <= `WRAP_SIM(#1) START_DRAW_ROW;
+//                        debug_led <= `WRAP_SIM(#1) ~debug_led;
+//                    end
+//                end
+//            
+//                START_DRAW_ROW: begin
+//                    //LCD_VSYNC <= `WRAP_SIM(#1) 1'b0;
+//
+//                    if (H_PixelCount < H_BackPorch)
+//                        H_PixelCount <= `WRAP_SIM(#1) H_PixelCount + 1'b1;
+//                    else begin
+//                        screen_fsm <= `WRAP_SIM(#1) DRAW_ROW;
+//                    end
+//                end
+//                DRAW_ROW: begin
+//                    if (H_PixelCount < H_Pixel_Valid + H_BackPorch) begin
+//                        H_PixelCount <= `WRAP_SIM(#1) H_PixelCount + 1'b1;
+//                        LCD_B[4:0] <= (buffer_flip) ? out_a[4:0] : out_b[4:0];
+//                        LCD_G[5:0] <= (buffer_flip) ? out_a[10:5] : out_b[10:5];//(buffer_flip) ? out_a[10:5] : out_b[10:5];
+//                        LCD_R[4:0] <= (buffer_flip) ? out_a[15:11] : out_b[15:11];//(buffer_flip) ? out_a[15:11] : out_b[15:11];
+//                        
+//                        screen_row_addr <= `WRAP_SIM(#1) screen_row_addr + 1'b1;
+//                    end else
+//                        screen_fsm <= `WRAP_SIM(#1) END_DRAW_ROW;
+//                end
+//                END_DRAW_ROW: begin
+//                    //if (cam_vsync) begin
+//                    //    screen_fsm <= `WRAP_SIM(#1) WAIT_FRAME_START;
+//                    //end else begin
+//                        //LCD_HSYNC <= `WRAP_SIM(#1) 1'b1;
+//                        if (!href)
+//                            screen_fsm <= `WRAP_SIM(#1) WAIT_ROW_START;
+//                    //end
+//                end
+//                WAIT_ROW_START: begin
+//                    //if (cam_vsync) begin
+//                    //    screen_fsm <= `WRAP_SIM(#1) WAIT_FRAME_START;
+//                    end else if (href) begin
+//                        //LCD_HSYNC <= `WRAP_SIM(#1) 1'b0;
+//                        if (V_PixelCount < V_Pixel_Valid) begin
+//                            V_PixelCount <= `WRAP_SIM(#1) V_PixelCount + 1'b1;
+//
+//                            screen_fsm <= `WRAP_SIM(#1) START_DRAW_ROW;
+//                            H_PixelCount      <=  `WRAP_SIM(#1) 16'b0;
+//                            screen_row_addr   <=  `WRAP_SIM(#1) 'd0;
+//                        end else begin
+//                            //LCD_VSYNC <= `WRAP_SIM(#1) 1'b0;
+//                            screen_fsm <= `WRAP_SIM(#1) WAIT_VSYNC;
+//                        end
+//                    end
+//                end
+//                WAIT_VSYNC: begin
+//                    if (cam_vsync)
+//                       screen_fsm <= `WRAP_SIM(#1) WAIT_FRAME_START; 
+//                end
+//            endcase
+//        end
+//*/
 
-                    if (H_PixelCount < H_BackPorch)
-                        H_PixelCount <= `WRAP_SIM(#1) H_PixelCount + 1'b1;
-                    else begin
-                        screen_fsm <= `WRAP_SIM(#1) DRAW_ROW;
-                    end
-                end
-                DRAW_ROW: begin
-                    if (H_PixelCount < H_Pixel_Valid + H_BackPorch) begin
-                        H_PixelCount <= `WRAP_SIM(#1) H_PixelCount + 1'b1;
-                        LCD_B[4:0] <= (buffer_flip) ? out_a[4:0] : out_b[4:0];
-                        LCD_G[5:0] <= (buffer_flip) ? out_a[10:5] : out_b[10:5];//(buffer_flip) ? out_a[10:5] : out_b[10:5];
-                        LCD_R[4:0] <= (buffer_flip) ? out_a[15:11] : out_b[15:11];//(buffer_flip) ? out_a[15:11] : out_b[15:11];
-                        
-                        screen_row_addr <= `WRAP_SIM(#1) screen_row_addr + 1'b1;
-                    end else
-                        screen_fsm <= `WRAP_SIM(#1) END_DRAW_ROW;
-                end
-                END_DRAW_ROW: begin
-                    //if (cam_vsync) begin
-                    //    screen_fsm <= `WRAP_SIM(#1) WAIT_FRAME_START;
-                    //end else begin
-                        //LCD_HSYNC <= `WRAP_SIM(#1) 1'b1;
-                        if (!href)
-                            screen_fsm <= `WRAP_SIM(#1) WAIT_ROW_START;
-                    //end
-                end
-                WAIT_ROW_START: begin
-                    //if (cam_vsync) begin
-                    //    screen_fsm <= `WRAP_SIM(#1) WAIT_FRAME_START;
-                    end else if (href) begin
-                        //LCD_HSYNC <= `WRAP_SIM(#1) 1'b0;
-                        if (V_PixelCount < V_Pixel_Valid) begin
-                            V_PixelCount <= `WRAP_SIM(#1) V_PixelCount + 1'b1;
+//        if(  H_PixelCount == PixelForHS ) begin
+//            V_PixelCount      <=  `WRAP_SIM(#1) V_PixelCount + 1'b1;
+//            H_PixelCount      <=  `WRAP_SIM(#1) 16'b0;
+//            screen_row_addr <= 0;
+//            end
+//        else if(  V_PixelCount == PixelForVS ) begin
+//            V_PixelCount      <=  `WRAP_SIM(#1) 16'b0;
+//            H_PixelCount      <=  `WRAP_SIM(#1) 16'b0;
+//            screen_row_addr <= 0;
+//
+//            end
+//        else begin
+//            V_PixelCount      <=  `WRAP_SIM(#1) V_PixelCount ;
+//            H_PixelCount      <=  `WRAP_SIM(#1) H_PixelCount + 1'b1;
 
-                            screen_fsm <= `WRAP_SIM(#1) START_DRAW_ROW;
-                            H_PixelCount      <=  `WRAP_SIM(#1) 16'b0;
-                            screen_row_addr   <=  `WRAP_SIM(#1) 'd0;
-                        end else begin
-                            //LCD_VSYNC <= `WRAP_SIM(#1) 1'b0;
-                            screen_fsm <= `WRAP_SIM(#1) WAIT_VSYNC;
-                        end
-                    end
-                end
-                WAIT_VSYNC: begin
-                    if (cam_vsync)
-                       screen_fsm <= `WRAP_SIM(#1) WAIT_FRAME_START; 
-                end
-            endcase
-        end
-*/
+//            LCD_B[4:0] <= (buffer_flip) ? out_a[4:0] : out_b[4:0];
+//            LCD_G[5:0] <= (buffer_flip) ? out_a[10:5] : out_b[10:5];
+//            LCD_R[4:0] <= (buffer_flip) ? out_a[15:11] : out_b[15:11];
 
-        if(  H_PixelCount == PixelForHS ) begin
-            V_PixelCount      <=  `WRAP_SIM(#1) V_PixelCount + 1'b1;
-            H_PixelCount      <=  `WRAP_SIM(#1) 16'b0;
-            screen_row_addr <= 0;
-            end
-        else if(  V_PixelCount == PixelForVS ) begin
-            V_PixelCount      <=  `WRAP_SIM(#1) 16'b0;
-            H_PixelCount      <=  `WRAP_SIM(#1) 16'b0;
-            screen_row_addr <= 0;
+//            screen_row_addr <= `WRAP_SIM(#1) screen_row_addr + 1'b1;
+//        end
+//        end
 
-            end
-        else begin
-            V_PixelCount      <=  `WRAP_SIM(#1) V_PixelCount ;
-            H_PixelCount      <=  `WRAP_SIM(#1) H_PixelCount + 1'b1;
-
-            LCD_B[4:0] <= (buffer_flip) ? out_a[4:0] : out_b[4:0];
-            LCD_G[5:0] <= (buffer_flip) ? out_a[10:5] : out_b[10:5];
-            LCD_R[4:0] <= (buffer_flip) ? out_a[15:11] : out_b[15:11];
-
-            screen_row_addr <= `WRAP_SIM(#1) screen_row_addr + 1'b1;
-        end
-        end
-
-    end
+//    end
 
     //assign  LCD_DE = (screen_fsm == DRAW_ROW) /*&& LCD_CLK*/;
     //assign  LCD_HSYNC = (screen_fsm == START_DRAW_ROW) /*&& LCD_CLK*/;
     //assign  LCD_VSYNC = cam_vsync /*&& LCD_CLK*/;
     // SYNC-DE MODE
     
-    assign  LCD_HSYNC = (H_PixelCount <= (PixelForHS-H_FrontPorch)) ? 1'b0 : 1'b1;
+//    assign  LCD_HSYNC = (H_PixelCount <= (PixelForHS-H_FrontPorch)) ? 1'b0 : 1'b1;
     //assign LCD_HSYNC = ~href;
     
-	assign  LCD_VSYNC = (V_PixelCount  <= (PixelForVS-V_FrontPorch)) ? 1'b0 : 1'b1;
+//	assign  LCD_VSYNC = (V_PixelCount  <= (PixelForVS-V_FrontPorch)) ? 1'b0 : 1'b1;
 
-    assign  LCD_DE =    ( H_PixelCount >= H_BackPorch ) && ( H_PixelCount <= H_Pixel_Valid + H_BackPorch ) &&
-                        ( V_PixelCount >= V_BackPorch ) && ( V_PixelCount <= V_Pixel_Valid + V_BackPorch ) /*&& LCD_CLK*/;
+//    assign  LCD_DE =    ( H_PixelCount >= H_BackPorch ) && ( H_PixelCount <= H_Pixel_Valid + H_BackPorch ) &&
+//                        ( V_PixelCount >= V_BackPorch ) && ( V_PixelCount <= V_Pixel_Valid + V_BackPorch ) /*&& LCD_CLK*/;
 
     // color bar
-    localparam          Colorbar_width   =   H_Pixel_Valid / 16;
+//    localparam          Colorbar_width   =   H_Pixel_Valid / 16;
 /*
     assign LCD_R[4:0] = (buffer_flip) ? out_a[4:0] : out_b[4:0];
     assign LCD_G[5:0] = (buffer_flip) ? out_a[10:5] : out_b[10:5];//(buffer_flip) ? out_a[10:5] : out_b[10:5];

@@ -35,6 +35,7 @@
         <File path="src/arbiter.v" type="file.verilog" enable="1"/>
         <File path="src/camera_control.v" type="file.verilog" enable="1"/>
         <File path="src/camera_control_defs.vh" type="file.verilog" enable="1"/>
+        <File path="src/debug_pattern_generator.sv" type="file.verilog" enable="1"/>
         <File path="src/device_delay.sv" type="file.verilog" enable="1"/>
         <File path="src/fifo_top/fifo_cam_data.v" type="file.verilog" enable="1"/>
         <File path="src/fsms/FrameDownloader.sv" type="file.verilog" enable="1"/>
