@@ -24,7 +24,73 @@ module DebugPatternGenerator
     output reg [16:0] queue_data,
     output reg queue_wr_en
 );
-    localparam Colorbar_width = FRAME_WIDTH / 16;
+
+    localparam NUM_COLOR_BARS = 10;
+    localparam Colorbar_width = FRAME_WIDTH / NUM_COLOR_BARS;
+
+    function logic [15:0] convert_RGB24_BGR565
+    (
+        input logic [7:0] R,
+        input logic [7:0] G,
+        input logic [7:0] B
+    );
+        logic [4:0] r_value, b_value;
+        logic [5:0] g_value;
+
+        r_value = R >> 3;
+        g_value = G >> 2;
+        b_value = B >> 3;
+
+        convert_RGB24_BGR565 = {r_value, g_value, b_value};
+    endfunction
+
+    // This function returns 16-bit color values for first ten
+    // SMPTE ECR 1-1978 color bars
+    function logic [15:0] get_rgb_color(input logic [3:0] bar_index);
+        case (bar_index)
+            0: 
+                get_rgb_color = convert_RGB24_BGR565(8'd104, 8'd104, 8'd104); // 40% Gray
+            1: 
+                get_rgb_color = convert_RGB24_BGR565(8'd180, 8'd180, 8'd180); // 75% White 
+            2: 
+                get_rgb_color = convert_RGB24_BGR565(8'd180, 8'd180, 8'd16); // 75% Yellow
+            3: 
+                get_rgb_color = convert_RGB24_BGR565(8'd16, 8'd180, 8'd180); // 75% Cyan
+            4:
+                get_rgb_color = convert_RGB24_BGR565(8'd16, 8'd180, 8'd16); // 75% Green
+            5:
+                get_rgb_color = convert_RGB24_BGR565(8'd180, 8'd16, 8'd180); // 75% Magenta
+            6:
+                get_rgb_color = convert_RGB24_BGR565(8'd180, 8'd16, 8'd16); // 75% Red
+            7:
+                get_rgb_color = convert_RGB24_BGR565(8'd16, 8'd16, 8'd180); // 75% Blue
+            8:
+                get_rgb_color = convert_RGB24_BGR565(8'd16, 8'd16, 8'd16); // 75% Black
+            9:
+                get_rgb_color = convert_RGB24_BGR565(8'd235, 8'd235, 8'd235); // 100% White
+            default:
+                get_rgb_color = 16'h0000;
+        endcase
+    endfunction
+
+    function logic [15:0] get_pixel_color(input logic [10:0] column_index);
+        integer i;
+
+        get_pixel_color = 16'h0000;
+        for (i = 0; i < NUM_COLOR_BARS; i = i + 1)
+            if (column_index < (i + 1) * Colorbar_width) begin
+                get_pixel_color = bar_colors[i];
+                break;
+            end
+    endfunction
+
+    reg [15:0] bar_colors[NUM_COLOR_BARS];
+
+    initial begin
+        integer i;
+        for (i = 0; i < NUM_COLOR_BARS; i = i + 1)
+            bar_colors[i] = get_rgb_color(i);
+    end
 
     reg [10:0] row_counter, col_counter;
 
@@ -69,21 +135,10 @@ module DebugPatternGenerator
 
                         loader_state <= `WRAP_SIM(#1) STATE_WRITE_ROW_END;
                     end else if (!queue_full) begin
-                        logic [4:0] pixel_value_r;
-                        logic [5:0] pixel_value_g;
-                        logic [4:0] pixel_value_b;
+                        logic [15:0] pixel_color;
 
-                        if ((col_counter >> 4) %2) begin
-                        pixel_value_r = 'd0;
-                        pixel_value_g = 'd0;
-                        pixel_value_b = 'h1F;
-                        end else begin
-                        pixel_value_r = 'h1F;
-                        pixel_value_g = 'd0;
-                        pixel_value_b = 'h1F;
-                        end
-
-                        queue_data <= `WRAP_SIM(#1) { 1'b0, pixel_value_r, pixel_value_g, pixel_value_b };
+                        pixel_color = get_pixel_color(col_counter);
+                        queue_data <= `WRAP_SIM(#1) { 1'b0, pixel_color };
                         col_counter <= `WRAP_SIM(#1) col_counter + 1'b1;
                     end
                 end
