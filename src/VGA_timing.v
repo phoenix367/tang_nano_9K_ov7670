@@ -61,9 +61,6 @@ module VGA_timing
     reg frame_done = 1'b0;
     reg pixel_valid = 1'b0;
     reg [15:0] pixel_data = 15'd0;
-    reg [10:0] cam_row_addr = 11'd0;
-    reg [10:0] cam_row_addr_next = 11'd0;
-    reg [10:0] screen_row_addr = 11'd0;
 
     reg write_a;
     reg write_b;
@@ -172,43 +169,6 @@ VideoController #(
                       .store_queue_full(queue_store_full),
                       .store_queue_data(video_data_queue_in)
                   );
-/*
-psram_test u_test0(
-                      .clk(clk_2),
-                      .rst_n(nRST), 
-                      .init_done(init_done_0),
-                      .cmd(cmd_0),
-                      .cmd_en(cmd_en_0),
-                      .addr(addr0),
-                      .wr_data(wr_data0),
-                      .rd_data(rd_data0),
-                      .rd_data_valid(rd_data_valid_0),
-                      .error(error0),
-                      .data_mask(data_mask_0)
-                  );
-*/
-/*
-psram_test u_test1(
-                      .clk(clk_2),
-                      .rst_n(nRST), 
-                      .init_done(init_done_1),
-                      .cmd(cmd_1),
-                      .cmd_en(cmd_en_1),
-                      .addr(addr1),
-                      .wr_data(wr_data1),
-                      .rd_data(rd_data1),
-                      .rd_data_valid(rd_data_valid_1),
-                      .error(error1),
-                      .data_mask(data_mask_1)
-                  );
-*/
-
-    Image_row_buffer row_buffer(.clka(PixelClk), .clkb(PixelClk), .cea(1'b1), .ocea(1'b1),
-                                .ceb(1'b1), .oceb(1'b1), .reseta(reset_p), .resetb(reset_p),
-                                .ada((!buffer_flip) ? cam_row_addr : screen_row_addr),
-                                .adb(( buffer_flip) ? cam_row_addr : screen_row_addr),
-                                .dina(pixel_data), .dinb(pixel_data), .douta(out_a), .doutb(out_b),
-                                .wrea(write_a), .wreb(write_b));
 
     reg [16:0] cam_data_in;
     reg cam_data_in_wr_en;
@@ -276,8 +236,6 @@ psram_test u_test1(
             WAIT_FRAME_START: begin //wait for VSYNC
                 frame_done <= `WRAP_SIM(#1) 1'b0;
                 pixel_half <= `WRAP_SIM(#1) 1'b0;
-                cam_row_addr <= `WRAP_SIM(#1) 11'd0;
-                cam_row_addr_next <= `WRAP_SIM(#1) 11'd0;
 
                 if (!cam_vsync) begin
                     FSM_state <= `WRAP_SIM(#1) ROW_CAPTURE;
@@ -298,30 +256,18 @@ psram_test u_test1(
 
                     buffer_flip <= `WRAP_SIM(#1) 1'b0;
                     pixel_valid <= `WRAP_SIM(#1) 1'b0;
-                    write_a <= `WRAP_SIM(#1) 1'b0;
-                    write_b <= `WRAP_SIM(#1) 1'b0;
 
                     //cam_data_in_wr_en <= `WRAP_SIM(#1) 1'b1;
                     //cam_data_in <= `WRAP_SIM(#1) 17'h1FFFF;
                 end else begin
                     if (href && pixel_half) begin
                         pixel_valid <= `WRAP_SIM(#1) 1'b1;
-                        cam_row_addr_next <= `WRAP_SIM(#1) cam_row_addr_next + 1'b1;
 
                         cam_data_in_wr_en <= `WRAP_SIM(#1) 1'b1;
                         cam_data_in <= `WRAP_SIM(#1) { 1'b0, pixel_data };
 
-                        if (!buffer_flip) begin
-                            write_a <= `WRAP_SIM(#1) 1'b1;
-                            write_b <= `WRAP_SIM(#1) 1'b0;
-                        end else begin
-                            write_a <= `WRAP_SIM(#1) 1'b0;
-                            write_b <= `WRAP_SIM(#1) 1'b1;
-                        end
                     end else begin
                         pixel_valid <= `WRAP_SIM(#1) 1'b0;
-                        write_a <= `WRAP_SIM(#1) 1'b0;
-                        write_b <= `WRAP_SIM(#1) 1'b0;
 
                         cam_data_in_wr_en <= `WRAP_SIM(#1) 1'b0;
                     end
@@ -331,13 +277,8 @@ psram_test u_test1(
 
                         if (pixel_half) begin
                             pixel_data[7:0] <= `WRAP_SIM(#1) p_data;
-                            cam_row_addr <= `WRAP_SIM(#1) cam_row_addr_next;
                         end else 
                             pixel_data[15:8] <= `WRAP_SIM(#1) p_data;
-                    end else if (cam_row_addr > 11'd0) begin
-                        cam_row_addr <= `WRAP_SIM(#1) 11'd0;
-                        cam_row_addr_next <= `WRAP_SIM(#1) 11'd0;
-                        buffer_flip <= `WRAP_SIM(#1) ~buffer_flip;
                     end
                 end
             end        
