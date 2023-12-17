@@ -75,12 +75,14 @@ module DebugPatternGenerator
 
     function logic [15:0] get_pixel_color(input logic [10:0] column_index);
         integer i;
+        logic exit;
 
         get_pixel_color = 16'h0000;
-        for (i = 0; i < NUM_COLOR_BARS; i = i + 1)
+        exit = 1'b0;
+        for (i = 0; i < NUM_COLOR_BARS && !exit; i = i + 1)
             if (column_index < (i + 1) * Colorbar_width) begin
                 get_pixel_color = bar_colors[i];
-                break;
+                exit = 1'b1;
             end
     endfunction
 

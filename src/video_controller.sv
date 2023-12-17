@@ -291,20 +291,26 @@ task find_upload_buffer_idx(output reg [1:0] o_idx);
     idx = 3'b111;
 
     for (i = 'd0; i < NUM_FRAMES; i = i + 1) begin
-        if (buffer_states[i] == BUFFER_DISPLAYED)
+        if (buffer_states[i] == BUFFER_DISPLAYED) begin
             idx = i[1:0];
+            //break;
+        end
     end
 
     if (idx === 3'b111)
         for (i = 'd0; i < NUM_FRAMES; i = i + 1) begin
-            if (buffer_states[i] == BUFFER_AVAILABLE)
+            if (buffer_states[i] == BUFFER_AVAILABLE) begin
                 idx = i[1:0];
+                //break;
+            end
         end
 
     if (idx === 3'b111)
         for (i = 'd0; i < NUM_FRAMES; i = i + 1) begin
-            if (buffer_states[i] == BUFFER_UPDATED)
+            if (buffer_states[i] == BUFFER_UPDATED) begin
                 idx = i[1:0];
+                //break;
+            end
         end
 
 `ifdef __ICARUS__
@@ -329,20 +335,26 @@ task find_download_buffer_idx(output reg [1:0] o_idx);
     idx = 3'b111;
 
     for (i = 'd0; i < NUM_FRAMES; i = i + 1) begin
-        if (buffer_states[i] == BUFFER_UPDATED)
+        if (buffer_states[i] == BUFFER_UPDATED) begin
             idx = i[1:0];
+            //break;
+        end
     end
 
     if (idx === 3'b111)
         for (i = 'd0; i < NUM_FRAMES; i = i + 1) begin
-            if (buffer_states[i] == BUFFER_AVAILABLE)
+            if (buffer_states[i] == BUFFER_AVAILABLE) begin
                 idx = i[1:0];
+                //break;
+            end
         end
 
     if (idx === 3'b111)
         for (i = 'd0; i < NUM_FRAMES; i = i + 1) begin
-            if (buffer_states[i] == BUFFER_DISPLAYED)
+            if (buffer_states[i] == BUFFER_DISPLAYED) begin
                 idx = i[1:0];
+                //break;
+            end
         end
 
 `ifdef __ICARUS__
