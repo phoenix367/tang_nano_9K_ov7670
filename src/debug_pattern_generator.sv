@@ -10,32 +10,15 @@
 `include "svlogger.sv"
 `endif
 
-module DebugPatternGenerator
-#(
-    parameter FRAME_WIDTH = 480,
-    parameter FRAME_HEIGHT = 272
-)
-(
-    input clk,
-    input reset_n,
-
-    input queue_full,
-    
-    output reg [16:0] queue_data,
-    output reg queue_wr_en
-);
-
-    localparam NUM_COLOR_BARS = 10;
-    localparam Colorbar_width = FRAME_WIDTH / NUM_COLOR_BARS;
-
-    function logic [15:0] convert_RGB24_BGR565
+package ColorUtilities;
+    function bit [15:0] convert_RGB24_BGR565
     (
-        input logic [7:0] R,
-        input logic [7:0] G,
-        input logic [7:0] B
+        input bit [7:0] R,
+        input bit [7:0] G,
+        input bit [7:0] B
     );
-        logic [4:0] r_value, b_value;
-        logic [5:0] g_value;
+        bit [4:0] r_value, b_value;
+        bit [5:0] g_value;
 
         r_value = R >> 3;
         g_value = G >> 2;
@@ -72,6 +55,37 @@ module DebugPatternGenerator
                 get_rgb_color = 16'h0000;
         endcase
     endfunction
+
+endpackage
+
+module DebugPatternGenerator
+#(
+`ifdef __ICARUS__
+        parameter MODULE_NAME = "",
+        parameter LOG_LEVEL = `SVL_VERBOSE_INFO,
+`endif
+
+    parameter FRAME_WIDTH = 480,
+    parameter FRAME_HEIGHT = 272
+)
+(
+    input clk,
+    input reset_n,
+
+    input queue_full,
+    
+    output reg [16:0] queue_data,
+    output reg queue_wr_en
+);
+    import ColorUtilities::*;
+
+    localparam NUM_COLOR_BARS = 10;
+    localparam Colorbar_width = FRAME_WIDTH / NUM_COLOR_BARS;
+
+// Logger initialization
+`ifdef __ICARUS__
+    `INITIALIZE_LOGGER
+`endif
 
     function logic [15:0] get_pixel_color(input logic [10:0] column_index);
         integer i;

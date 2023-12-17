@@ -14,6 +14,7 @@ set(VIDEO_BUFFER_TEST_SOURCES
     "${SRC_FOLDER}/fsms/FrameUploader.sv"
     "${SRC_FOLDER}/fsms/FrameDownloader.sv"
     "${SRC_FOLDER}/lcd_controller.sv"
+    "${SRC_FOLDER}/debug_pattern_generator.sv"
 )
 
 set(TESTS_LIST 
@@ -32,6 +33,7 @@ set(TESTS_LIST
     frame_buffer_test_read_frame_multi_23x17_2
     frame_buffer_test_read_write_frame_23x17
     lcd_controller_test
+    debug_pattern_test
 )
 
 set(BASE_TEST_DIR "${CMAKE_CURRENT_BINARY_DIR}/tests")

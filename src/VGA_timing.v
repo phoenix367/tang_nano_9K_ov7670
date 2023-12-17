@@ -3,7 +3,7 @@
 `include "svlogger.sv"
 `endif
 
-`define DEBUG_LCD
+`undef DEBUG_LCD
 
 module VGA_timing
 `ifdef __ICARUS__
@@ -307,6 +307,10 @@ VideoController #(
 
     DebugPatternGenerator
     #(
+    `ifdef __ICARUS__
+        .LOG_LEVEL(LOG_LEVEL),
+    `endif
+
         .FRAME_WIDTH(480),
         .FRAME_HEIGHT(272)
     )

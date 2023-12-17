@@ -75,6 +75,7 @@ wire [7:0] rom_reg_val;
 
 wire memory_clk;
 wire pll_lock;
+wire screen_clk;
 
 assign master_scl = scl_o_oen ? 1'bZ : scl_o;
 assign master_sda = sda_o_oen ? 1'bZ : sda_o;

@@ -239,7 +239,15 @@ module FrameUploader
                     if (write_counter === BURST_CYCLES + 'd1)
                         state <= `WRAP_SIM(#1) WAIT_TRANSACTION_COMPLETE;
                     else begin
-                        write_data <= `WRAP_SIM(#1) mem_word;
+                        if (pixel_counter < 50 * FRAME_WIDTH) begin
+                            if (!pixel_counter[4])
+                            write_data <= `WRAP_SIM(#1) /*mem_word*/ 32'hFC00FC00;
+                        else
+                            write_data <= `WRAP_SIM(#1) /*mem_word*/ 32'h000F000F;
+                        end else if (pixel_counter[4])
+                            write_data <= `WRAP_SIM(#1) /*mem_word*/ 32'hFC00FC00;
+                        else
+                            write_data <= `WRAP_SIM(#1) /*mem_word*/ 32'h000F000F;
                         write_counter <= `WRAP_SIM(#1) write_counter_next;
                     end
                 end
