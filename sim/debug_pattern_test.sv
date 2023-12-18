@@ -65,6 +65,8 @@ pattern_generator
     .queue_wr_en(lcd_queue_wr_en)
 );
 
+logic frame_checking_complete;
+
 initial begin
     integer i;
     logic error;
@@ -80,7 +82,7 @@ initial begin
     // initially values
     clk = 0;
     cam_data_in_wr_en = 1'b0;
-    init_done_0 = 1'b0;
+    frame_checking_complete = 1'b0;
 
     // reset system
     reset_n = 1'b1; // negate reset
@@ -91,18 +93,9 @@ initial begin
 
     logger.info(module_name, "status: done reset");
 
-    @(posedge clk);
+    repeat(1) @(posedge frame_checking_complete);
 
-    @(posedge clk);
-
-    init_done_0 = 1'b1;
-
-
-    repeat(1) @(posedge fb_clk);
-    repeat(1) @(negedge fb_clk);
-
-    if (error)
-        `TEST_FAIL
+    `TEST_PASS
 end
 
 always #18.519 clk=~clk;
@@ -120,7 +113,12 @@ integer row_counter, col_counter;
 
 typedef enum {
     IDLE,
-    WAIT_START_FRAME
+    WAIT_START_FRAME,
+    WAIT_ROW_START,
+    READ_ROW,
+    READ_ROW_FINISHED,
+    WAIT_END_FRAME,
+    TEST_COMPLETE
 } state_t;
 
 state_t checker_state;
@@ -136,20 +134,98 @@ always @(posedge clk or negedge reset_n) begin
         case (checker_state)
             IDLE: begin
                 checker_state <= #1 WAIT_START_FRAME;
+                row_counter <= #1 0;
+                col_counter <= #1 0;
+
+                lcd_queue_rd_en <= #1 1'b1;
             end
             WAIT_START_FRAME: begin
-                lcd_queue_rd_en <= #1 1'b1;
+                if (lcd_queue_empty)
+                    ; // Do nothing
+                else if (lcd_queue_data_out === 17'h10000) begin
+                    checker_state <= #1 WAIT_ROW_START;
+                end else begin
+                    string str;
 
-                if () begin
-                    
+                    $sformat(str, "Unexpected value received instead of frame start: %0h", 
+                             lcd_queue_data_out);
+                    logger.error(module_name, str);
+
+                    `TEST_FAIL
                 end
             end
+            WAIT_ROW_START: begin
+                if (lcd_queue_empty)
+                    ; // Do nothing
+                else if (lcd_queue_data_out === 17'h10001) begin
+                    checker_state <= #1 READ_ROW;
+                end else begin
+                    string str;
+
+                    $sformat(str, "Unexpected value received instead of row start: %0h", 
+                             lcd_queue_data_out);
+                    logger.error(module_name, str);
+
+                    `TEST_FAIL
+                end
+            end
+            READ_ROW: begin
+                if (lcd_queue_empty)
+                    ; // Do nothing
+                else begin
+                    if (lcd_queue_data_out[16] == 1'b1) begin
+                        logger.error(module_name, "Unexpected command instead pixel data");
+                        `TEST_FAIL
+                    end
+
+                    if (col_counter + 1 == FRAME_WIDTH) begin
+                        col_counter <= #1 0;
+                        row_counter <= #1 row_counter + 1;
+                        lcd_queue_rd_en <= #1 1'b0;
+
+                        checker_state <= #1 READ_ROW_FINISHED;
+                    end else begin
+                        col_counter <= #1 col_counter + 1;
+                    end
+                end
+            end
+            READ_ROW_FINISHED: begin
+                lcd_queue_rd_en <= #1 1'b1;
+
+                if (row_counter === FRAME_HEIGHT) begin
+                    checker_state <= #1 WAIT_END_FRAME;
+                end else begin
+                    col_counter <= #1 0;
+
+                    checker_state <= #1 WAIT_ROW_START;
+                end
+            end
+            WAIT_END_FRAME: begin
+                if (lcd_queue_empty)
+                    ; // Do nothing
+                else if (lcd_queue_data_out === 17'h1FFFF) begin
+                    logger.info(module_name, "Complete frame received");
+                    frame_checking_complete <= 1'b1;
+
+                    checker_state <= #1 TEST_COMPLETE;
+                end else begin
+                    string str;
+
+                    $sformat(str, "Unexpected value received instead of frame end: %0h", 
+                             lcd_queue_data_out);
+                    logger.error(module_name, str);
+
+                    `TEST_FAIL
+                end                
+            end
+            TEST_COMPLETE: ;
         endcase
     end
 end
 
-always #60000 begin
-    `TEST_PASS
+always #5000000 begin
+    logger.error(module_name, "System hangs");
+    `TEST_FAIL
 end
 
 endmodule
