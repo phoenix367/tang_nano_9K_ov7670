@@ -3,7 +3,7 @@
 `include "svlogger.sv"
 `endif
 
-`undef DEBUG_LCD
+`define DEBUG_LCD
 
 module VGA_timing
 `ifdef __ICARUS__

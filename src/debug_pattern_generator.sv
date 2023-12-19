@@ -87,13 +87,13 @@ module DebugPatternGenerator
     `INITIALIZE_LOGGER
 `endif
 
-    function logic [15:0] get_pixel_color(input logic [10:0] column_index);
+    function logic [15:0] get_pixel_color(input logic [10:0] column_index, input int color_bars);
         integer i;
         logic exit;
 
         get_pixel_color = 16'h0000;
         exit = 1'b0;
-        for (i = 0; i < NUM_COLOR_BARS && !exit; i = i + 1)
+        for (i = 0; i < color_bars && !exit; i = i + 1)
             if (column_index < (i + 1) * Colorbar_width) begin
                 get_pixel_color = bar_colors[i];
                 exit = 1'b1;
@@ -153,7 +153,7 @@ module DebugPatternGenerator
                     end else if (!queue_full) begin
                         logic [15:0] pixel_color;
 
-                        pixel_color = get_pixel_color(col_counter);
+                        pixel_color = get_pixel_color(col_counter, NUM_COLOR_BARS);
                         queue_data <= `WRAP_SIM(#1) { 1'b0, pixel_color };
                         col_counter <= `WRAP_SIM(#1) col_counter + 1'b1;
                     end

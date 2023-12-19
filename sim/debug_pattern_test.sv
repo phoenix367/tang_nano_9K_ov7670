@@ -35,6 +35,31 @@ wire lcd_queue_wr_en;
 wire lcd_queue_empty;
 wire lcd_queue_full;
 
+logic [15:0] bar_colors[NUM_COLOR_BARS];
+
+initial begin
+    logic [3:0] i;
+    logic [15:0] c;
+
+    for (i = 0; i < NUM_COLOR_BARS; i = i + 1) begin
+        c = get_rgb_color(i);
+        bar_colors[i] = c;
+    end
+end
+
+function logic [15:0] get_pixel_color(input logic [10:0] column_index);
+    integer i;
+    logic exit;
+
+    get_pixel_color = 16'h0000;
+    exit = 1'b0;
+    for (i = 0; i < NUM_COLOR_BARS && !exit; i = i + 1)
+        if (column_index < (i + 1) * Colorbar_width) begin
+            get_pixel_color = bar_colors[i];
+            exit = 1'b1;
+        end
+endfunction
+
 FIFO_cam lcd_Debug_queue(
     .Data(lcd_queue_data_in), //input [16:0] Data
     .WrReset(~reset_n), //input WrReset
@@ -173,8 +198,18 @@ always @(posedge clk or negedge reset_n) begin
                 if (lcd_queue_empty)
                     ; // Do nothing
                 else begin
+                    logic [15:0] expected_pixel;
+                    
+                    expected_pixel = get_pixel_color(col_counter);
                     if (lcd_queue_data_out[16] == 1'b1) begin
                         logger.error(module_name, "Unexpected command instead pixel data");
+                        `TEST_FAIL
+                    end else if (lcd_queue_data_out[15:0] !== expected_pixel) begin
+                        string str;
+
+                        $sformat(str, "Unexpected pixel value %0h, expected %0h", 
+                                 lcd_queue_data_out[15:0], expected_pixel);
+                        logger.error(module_name, str);
                         `TEST_FAIL
                     end
 
