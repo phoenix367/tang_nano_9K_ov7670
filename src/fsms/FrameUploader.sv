@@ -143,6 +143,9 @@ module FrameUploader
             write_data <= `WRAP_SIM(#1) 'd0;
             frame_upload_cycle <= `WRAP_SIM(#1) 1'b0;
             frame_addr_inc <= `WRAP_SIM(#1) 'd0;
+            cache_addr <= `WRAP_SIM(#1) 'd0;
+            pixel_counter <= `WRAP_SIM(#1) 'd0;
+            write_counter <= `WRAP_SIM(#1) 'd0;
         end else begin
             // State Machine:
             case (state)
@@ -239,15 +242,16 @@ module FrameUploader
                     if (write_counter === BURST_CYCLES + 'd1)
                         state <= `WRAP_SIM(#1) WAIT_TRANSACTION_COMPLETE;
                     else begin
-                        if (pixel_counter < 50 * FRAME_WIDTH) begin
-                            if (!pixel_counter[4])
-                            write_data <= `WRAP_SIM(#1) /*mem_word*/ 32'hFC00FC00;
-                        else
-                            write_data <= `WRAP_SIM(#1) /*mem_word*/ 32'h000F000F;
-                        end else if (pixel_counter[4])
-                            write_data <= `WRAP_SIM(#1) /*mem_word*/ 32'hFC00FC00;
-                        else
-                            write_data <= `WRAP_SIM(#1) /*mem_word*/ 32'h000F000F;
+                        //if (pixel_counter < 50 * FRAME_WIDTH) begin
+                        //    if (!pixel_counter[4])
+                        //    write_data <= `WRAP_SIM(#1) /*mem_word*/ 32'hFC00FC00;
+                        //else
+                        //    write_data <= `WRAP_SIM(#1) /*mem_word*/ 32'h000F000F;
+                        //end else if (pixel_counter[4])
+                        //    write_data <= `WRAP_SIM(#1) /*mem_word*/ 32'hFC00FC00;
+                        //else
+                        //    write_data <= `WRAP_SIM(#1) /*mem_word*/ 32'h000F000F;
+                        write_data <= `WRAP_SIM(#1) mem_word;
                         write_counter <= `WRAP_SIM(#1) write_counter_next;
                     end
                 end

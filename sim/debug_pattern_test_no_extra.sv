@@ -77,7 +77,8 @@ FIFO_cam lcd_Debug_queue(
 DebugPatternGenerator
 #(
     .FRAME_WIDTH(FRAME_WIDTH),
-    .FRAME_HEIGHT(FRAME_HEIGHT)
+    .FRAME_HEIGHT(FRAME_HEIGHT),
+    .SEND_EXTRA_DATA(1'b0)
 )
 
 pattern_generator
@@ -130,7 +131,6 @@ initial begin
         logger.error(module_name, "Incorrect total number of received frame rows");
         `TEST_FAIL
     end
-
     `TEST_PASS
 end
 
@@ -148,7 +148,6 @@ end
 typedef enum {
     IDLE,
     WAIT_START_FRAME,
-    WAIT_ROW_START,
     READ_ROW,
     READ_ROW_FINISHED,
     WAIT_END_FRAME,
@@ -178,26 +177,11 @@ always @(posedge clk or negedge reset_n) begin
                 if (lcd_queue_empty)
                     ; // Do nothing
                 else if (lcd_queue_data_out === 17'h10000) begin
-                    checker_state <= #1 WAIT_ROW_START;
-                end else begin
-                    string str;
-
-                    $sformat(str, "Unexpected value received instead of frame start: %0h", 
-                             lcd_queue_data_out);
-                    logger.error(module_name, str);
-
-                    `TEST_FAIL
-                end
-            end
-            WAIT_ROW_START: begin
-                if (lcd_queue_empty)
-                    ; // Do nothing
-                else if (lcd_queue_data_out === 17'h10001) begin
                     checker_state <= #1 READ_ROW;
                 end else begin
                     string str;
 
-                    $sformat(str, "Unexpected value received instead of row start: %0h", 
+                    $sformat(str, "Unexpected value received instead of frame start: %0h", 
                              lcd_queue_data_out);
                     logger.error(module_name, str);
 
@@ -212,7 +196,7 @@ always @(posedge clk or negedge reset_n) begin
                     
                     expected_pixel = get_pixel_color(col_counter);
                     if (lcd_queue_data_out[16] == 1'b1) begin
-                        logger.error(module_name, "Unexpected command instead pixel data");
+                        logger.error(module_name, "Unexpected command instead of pixel data");
                         `TEST_FAIL
                     end else if (lcd_queue_data_out[15:0] !== expected_pixel) begin
                         string str;
@@ -243,21 +227,21 @@ always @(posedge clk or negedge reset_n) begin
                 end else begin
                     col_counter <= #1 0;
 
-                    checker_state <= #1 WAIT_ROW_START;
+                    checker_state <= #1 READ_ROW;
                 end
             end
             WAIT_END_FRAME: begin
                 if (lcd_queue_empty)
                     ; // Do nothing
-                else if (lcd_queue_data_out === 17'h1FFFF) begin
-                    logger.info(module_name, "Complete frame command received");
+                else if (lcd_queue_data_out === 17'h10000) begin
+                    logger.info(module_name, "Start frame command received as expected");
                     frame_checking_complete <= 1'b1;
 
                     checker_state <= #1 TEST_COMPLETE;
                 end else begin
                     string str;
 
-                    $sformat(str, "Unexpected value received instead of frame end: %0h", 
+                    $sformat(str, "Unexpected value received instead of frame start: %0h", 
                              lcd_queue_data_out);
                     logger.error(module_name, str);
 

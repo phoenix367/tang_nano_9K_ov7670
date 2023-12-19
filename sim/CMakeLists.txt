@@ -34,6 +34,7 @@ set(TESTS_LIST
     frame_buffer_test_read_write_frame_23x17
     lcd_controller_test
     debug_pattern_test
+    debug_pattern_test_no_extra
 )
 
 set(BASE_TEST_DIR "${CMAKE_CURRENT_BINARY_DIR}/tests")

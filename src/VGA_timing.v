@@ -3,7 +3,9 @@
 `include "svlogger.sv"
 `endif
 
-`define DEBUG_LCD
+`define DEBUG_CAM_INPUT
+
+`undef DEBUG_LCD
 
 module VGA_timing
 `ifdef __ICARUS__
@@ -170,8 +172,14 @@ VideoController #(
                       .store_queue_data(video_data_queue_in)
                   );
 
+`ifdef DEBUG_CAM_INPUT
+    wire [16:0] cam_data_in;
+    wire cam_data_in_wr_en;
+`else
     reg [16:0] cam_data_in;
     reg cam_data_in_wr_en;
+`endif
+    wire cam_data_full;
 
     wire lcd_read_clk;
     wire lcd_queue_rd_en;
@@ -189,7 +197,7 @@ VideoController #(
 		.RdEn(queue_load_rd_en), //input RdEn
 		.Q(cam_data_queue_out), //output [16:0] Q
 		.Empty(queue_load_empty), //output Empty
-		.Full() //output Full
+		.Full(cam_data_full) //output Full
 	);
 
 	FIFO_cam q_cam_data_out(
@@ -214,6 +222,30 @@ VideoController #(
 `endif
 		.Full(queue_store_full) //output Full
 	);
+
+`ifdef DEBUG_CAM_INPUT
+    DebugPatternGenerator
+    #(
+    `ifdef __ICARUS__
+        .LOG_LEVEL(LOG_LEVEL),
+    `endif
+
+        .FRAME_WIDTH(639),
+        .FRAME_HEIGHT(480)
+    )
+
+    pattern_generator_cam
+    (
+        .clk(PixelClk),
+        .reset_n(nRST),
+
+        .queue_full(cam_data_full),
+        
+        .queue_data(cam_data_in),
+        .queue_wr_en(cam_data_in_wr_en)
+    );
+    
+`else
 
 	always @(posedge PixelClk or negedge nRST)
 	begin
@@ -285,6 +317,7 @@ VideoController #(
             endcase
         end
 	end
+`endif
 
     assign LCD_CLK = screen_clk;
 

@@ -65,8 +65,9 @@ module DebugPatternGenerator
         parameter LOG_LEVEL = `SVL_VERBOSE_INFO,
 `endif
 
-    parameter FRAME_WIDTH = 480,
-    parameter FRAME_HEIGHT = 272
+    parameter integer FRAME_WIDTH = 480,
+    parameter integer FRAME_HEIGHT = 272,
+    parameter bit SEND_EXTRA_DATA = 1'b1
 )
 (
     input clk,
@@ -137,7 +138,10 @@ module DebugPatternGenerator
                     row_counter <= `WRAP_SIM(#1) 0;
                     col_counter <= `WRAP_SIM(#1) 0;
 
-                    loader_state <= `WRAP_SIM(#1) STATE_WRITE_ROW_START;
+                    if (SEND_EXTRA_DATA)
+                        loader_state <= `WRAP_SIM(#1) STATE_WRITE_ROW_START;
+                    else
+                        loader_state <= `WRAP_SIM(#1) STATE_WRITE_ROW;
                 end
                 STATE_WRITE_ROW_START: if (!queue_full) begin
                     queue_wr_en <= `WRAP_SIM(#1) 1'b1;
@@ -156,21 +160,28 @@ module DebugPatternGenerator
                         pixel_color = get_pixel_color(col_counter, NUM_COLOR_BARS);
                         queue_data <= `WRAP_SIM(#1) { 1'b0, pixel_color };
                         col_counter <= `WRAP_SIM(#1) col_counter + 1'b1;
+
+                        if (!SEND_EXTRA_DATA)
+                            queue_wr_en <= `WRAP_SIM(#1) 1'b1;
                     end
                 end
                 STATE_WRITE_ROW_END: begin
                     if (row_counter + 1 == FRAME_HEIGHT) begin
-                        if (!queue_full) begin
+                        if (SEND_EXTRA_DATA && !queue_full) begin
                             queue_wr_en <= `WRAP_SIM(#1) 1'b1;
                             queue_data <= `WRAP_SIM(#1) 17'h1FFFF;
 
                             loader_state <= `WRAP_SIM(#1) STATE_WRITE_FRAME_DONE;
-                        end
+                        end else if (!SEND_EXTRA_DATA)
+                            loader_state <= `WRAP_SIM(#1) STATE_WRITE_FRAME_DONE;
                     end else begin
                         row_counter <= `WRAP_SIM(#1) row_counter + 1'b1;
                         col_counter <= `WRAP_SIM(#1) 'd0;
 
-                        loader_state <= `WRAP_SIM(#1) STATE_WRITE_ROW_START;
+                        if (SEND_EXTRA_DATA)
+                            loader_state <= `WRAP_SIM(#1) STATE_WRITE_ROW_START;
+                        else
+                            loader_state <= `WRAP_SIM(#1) STATE_WRITE_ROW;
                     end
                 end
                 STATE_WRITE_FRAME_DONE: begin
