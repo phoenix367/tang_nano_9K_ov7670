@@ -29,8 +29,11 @@ module CameraControl_TOP (
     inout [1:0]           IO_psram_rwds,
     output[1:0]           O_psram_reset_n,
     inout [15:0]           IO_psram_dq,
-    output[1:0]           O_psram_cs_n
+    output[1:0]           O_psram_cs_n,
+    output [2:0] status_leds
 );
+
+assign status_leds = 3'h7;
 
 typedef enum {
     WAIT_RDY, 
