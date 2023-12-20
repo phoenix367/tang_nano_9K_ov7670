@@ -32,8 +32,18 @@ module CameraControl_TOP (
     output[1:0]           O_psram_cs_n
 );
 
-typedef enum {WAIT_RDY, SEND_INIT, SEND_INIT2, SEND_INIT_DONE, WAIT_CAMERA_INIT_DONE, CAMERA_INIT_DONE,
-              WAIT_TRANSMIT_COMPLETE, TRANSMIT_COMPLETE, CHECK_ROM_DATA, START_DELAY} CONTROL_STATES;
+typedef enum {
+    WAIT_RDY, 
+    SEND_INIT, 
+    SEND_INIT2, 
+    SEND_INIT_DONE, 
+    WAIT_CAMERA_INIT_DONE, 
+    CAMERA_INIT_DONE,
+    WAIT_TRANSMIT_COMPLETE, 
+    TRANSMIT_COMPLETE, 
+    CHECK_ROM_DATA, 
+    START_DELAY
+} CONTROL_STATES;
 
 localparam [6:0] OV7670_ADDR = 7'h21;
 
@@ -84,8 +94,6 @@ assign reg_addr = (tx_en) ? wr_addr : rd_addr;
 assign led_out1 = ~transmit_error;
 assign cam_pwdn = 1'b0;
 
-//assign LCD_CLK = /*sys_clk*/ video_clk_i;
-
 SDRAM_rPLL sdram_clock(
     .reset(~sys_rst_n), 
     .clkin(sys_clk), 
@@ -95,6 +103,7 @@ SDRAM_rPLL sdram_clock(
 );
 
 VGA_timing	VGA_timing_inst(
+    .sys_clk(sys_clk),
     .PixelClk	(	video_clk_i		),
     .nRST		(	sys_rst_n),
 
@@ -141,17 +150,38 @@ i2c_master_top i2c_master(
     .wb_inta_o()
 );
 
-i2c_control_fsm i2c_controller(.clk(sys_clk), .rst_n(sys_rst_n), .device_addr(OV7670_ADDR), 
-                              .init_done(ctrl_done_wire), .data_in(data_buffer_out),
-                              .store_data(store_data), .send_data(send_data),
-                              .tx_en(tx_en), .rx_en(rx_en), .wr_data(wr_data),
-                              .wr_addr(wr_addr), .rd_data(rd_data), .rd_addr(rd_addr),
-                              .cmd_ack_i(cmd_ack), .device_rdy(device_ready), .error_o(transmit_error),
-                              .load_data(1'b0), .recv_data(1'b0));
+i2c_control_fsm i2c_controller(
+    .clk(sys_clk), 
+    .rst_n(sys_rst_n), 
+    .device_addr(OV7670_ADDR), 
+    .init_done(ctrl_done_wire), 
+    .data_in(data_buffer_out),
+    .store_data(store_data), 
+    .send_data(send_data),
+    .tx_en(tx_en), 
+    .rx_en(rx_en), 
+    .wr_data(wr_data),
+    .wr_addr(wr_addr), 
+    .rd_data(rd_data), 
+    .rd_addr(rd_addr),
+    .cmd_ack_i(cmd_ack), 
+    .device_rdy(device_ready), 
+    .error_o(transmit_error),
+    .load_data(1'b0), 
+    .recv_data(1'b0)
+);
 
-ov7670_default settings_rom(.addr_i(rom_addr), .dout({rom_reg_addr, rom_reg_val}));
+ov7670_default settings_rom(
+    .addr_i(rom_addr), 
+    .dout({rom_reg_addr, rom_reg_val})
+);
 
-device_delay i2c_init_delay(.clk_i(sys_clk), .rst_n(sys_rst_n), .syn_rst(delay_reset), .delay_done(delay_done));
+device_delay i2c_init_delay(
+    .clk_i(sys_clk), 
+    .rst_n(sys_rst_n), 
+    .syn_rst(delay_reset), 
+    .delay_done(delay_done)
+);
 
 initial begin
     controller_state <= `WRAP_SIM(#1) WAIT_RDY;
@@ -161,13 +191,6 @@ initial begin
     delay_reset <= `WRAP_SIM(#1) 1'b0;
     rom_addr <= `WRAP_SIM(#1) 8'h00;
 end
-
-`ifdef __ICARUS__
-initial begin
-    //$monitor("t=%d, DEBUG CameraControl_TOP; Camera Controller state = %d", $time, controller_state);
-    $dumpvars(0, CameraControl_TOP);
-end
-`endif
 
 always @(posedge sys_clk or negedge sys_rst_n)
 begin

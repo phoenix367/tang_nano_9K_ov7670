@@ -28,6 +28,7 @@
         <File path="sim/svlogger.sv" type="file.verilog" enable="0"/>
         <File path="sim/test_bench.sv" type="file.verilog" enable="0"/>
         <File path="sim/test_config.sv" type="file.verilog" enable="0"/>
+        <File path="sim/test_patter_write_frame_640x20.sv" type="file.verilog" enable="0"/>
         <File path="sim/test_utils.sv" type="file.verilog" enable="0"/>
         <File path="sim/tst_bench_top.v" type="file.verilog" enable="0"/>
         <File path="sim/uploader_test_bench.sv" type="file.verilog" enable="0"/>

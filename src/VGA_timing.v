@@ -15,6 +15,7 @@ module VGA_timing
 )
 `endif
 (
+    input                   sys_clk,
     input                   PixelClk,
     input                   nRST,
 
@@ -230,13 +231,13 @@ VideoController #(
         .LOG_LEVEL(LOG_LEVEL),
     `endif
 
-        .FRAME_WIDTH(639),
+        .FRAME_WIDTH(640),
         .FRAME_HEIGHT(480)
     )
 
     pattern_generator_cam
     (
-        .clk(PixelClk),
+        .clk(sys_clk),
         .reset_n(nRST),
 
         .queue_full(cam_data_full),

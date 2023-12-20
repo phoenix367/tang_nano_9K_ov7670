@@ -35,6 +35,7 @@ set(TESTS_LIST
     lcd_controller_test
     debug_pattern_test
     debug_pattern_test_no_extra
+    test_patter_write_frame_640x20
 )
 
 set(BASE_TEST_DIR "${CMAKE_CURRENT_BINARY_DIR}/tests")
@@ -89,14 +90,6 @@ foreach (TEST_NAME IN LISTS TESTS_LIST)
     source_group("Test Sources" FILES ${TEST_SOURCES})
     source_group("Device library" FILES "${SIMLIB_SRC}")
 
-   # add_custom_command(
-   #     OUTPUT "${WORKING_TEST_DIR}/my_file.stamp"
-   #     COMMAND "${VERILOG_SIM}" 
-   #             -n 
-   #             "${TEST_OUTPUT_FILE}"
-   #     COMMAND ${CMAKE_COMMAND} -E touch "${WORKING_TEST_DIR}/my_file.stamp"
-   #     DEPENDS ${TEST_TARGET_NAME}
-   # )
     set(TEST_TARGET_NAME_SIM "${TEST_NAME}_SIM")
     add_custom_target(${TEST_TARGET_NAME_SIM} 
         COMMAND "${VERILOG_SIM}" 
@@ -116,6 +109,4 @@ foreach (TEST_NAME IN LISTS TESTS_LIST)
 
     set_target_properties(${TEST_TARGET_NAME} PROPERTIES FOLDER "Tests/FrameBuffer/Build")
     set_target_properties(${TEST_TARGET_NAME_SIM} PROPERTIES FOLDER "Tests/FrameBuffer/Sim")
-    #file(MAKE_DIRECTORY ${WORKING_TEST_DIR})
-    #set_property(DIRECTORY ${WORKING_TEST_DIR} PROPERTY ADDITIONAL_CLEAN_FILES "*")
 endforeach()
