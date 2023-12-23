@@ -176,6 +176,7 @@ VideoController #(
 `ifdef DEBUG_CAM_INPUT
     wire [16:0] cam_data_in;
     wire cam_data_in_wr_en;
+    wire queue_wr_clk;
 `else
     reg [16:0] cam_data_in;
     reg cam_data_in_wr_en;
@@ -192,7 +193,11 @@ VideoController #(
 		.Data(cam_data_in), //input [16:0] Data
 		.WrReset(~nRST), //input WrReset
 		.RdReset(~nRST), //input RdReset
+`ifdef DEBUG_CAM_INPUT
+		.WrClk(queue_wr_clk), //input WrClk
+`else
 		.WrClk(PixelClk), //input WrClk
+`endif
 		.RdClk(queue_load_clk), //input RdClk
 		.WrEn(cam_data_in_wr_en), //input WrEn
 		.RdEn(queue_load_rd_en), //input RdEn
@@ -243,7 +248,8 @@ VideoController #(
         .queue_full(cam_data_full),
         
         .queue_data(cam_data_in),
-        .queue_wr_en(cam_data_in_wr_en)
+        .queue_wr_en(cam_data_in_wr_en),
+        .queue_wr_clk(queue_wr_clk)
     );
     
 `else

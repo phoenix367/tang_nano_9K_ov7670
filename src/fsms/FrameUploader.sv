@@ -12,14 +12,15 @@
 
 package FrameUploaderTypes;
     typedef enum bit[7:0] {
-        FRAME_PROCESSING_START_WAIT = 8'b00000001, 
-        CHECK_QUEUE                 = 8'b00000010, 
-        FRAME_PROCESSING_DONE       = 8'b00000100, 
-        FRAME_PROCESSING_WRITE_CYC  = 8'b00001000, 
-        READ_QUEUE_DATA             = 8'b00010000, 
-        WAIT_TRANSACTION_COMPLETE   = 8'b00100000, 
-        WRITE_MEMORY                = 8'b01000000, 
-        WRITE_MEMORY_WAIT           = 8'b10000000
+        IDLE                        = 8'd0,
+        FRAME_PROCESSING_START_WAIT = 8'd1, 
+        WAIT_START_ROW              = 8'd2, 
+        FRAME_PROCESSING_DONE       = 8'd3, 
+        FRAME_PROCESSING_WRITE_CYC  = 8'd4, 
+        READ_QUEUE_DATA             = 8'd5, 
+        WAIT_TRANSACTION_COMPLETE   = 8'd6, 
+        WRITE_MEMORY                = 8'd7, 
+        WRITE_MEMORY_WAIT           = 8'd8
     } t_state;
 endpackage
 
@@ -79,6 +80,9 @@ module FrameUploader
     reg cache_out_en;
     reg frame_upload_cycle;
     reg adder_ce;
+
+    reg [10:0] row_counter;
+    reg [10:0] col_counter;
     
     wire [31:0] mem_word;
     wire [21:0] adder_out;
@@ -111,237 +115,62 @@ module FrameUploader
         .adb(write_counter[2:0])
     );
 
-    initial begin
-        frame_addr_counter <= `WRAP_SIM(#1) 'd0;
-        cmd_cyc_counter <= `WRAP_SIM(#1) 'd0;
-        write_counter <= `WRAP_SIM(#1) 'd0;
-    end
-
     always @(posedge clk or negedge reset_n) begin
-        if (!reset_n)
-            cmd_cyc_counter <= `WRAP_SIM(#1) 'd0;
-        else begin
-            case (state)
-                WRITE_MEMORY_WAIT:
-                    cmd_cyc_counter <= `WRAP_SIM(#1) 'd0;
-                WRITE_MEMORY:
-                    if (write_counter >= 'd2)
-                        cmd_cyc_counter <= `WRAP_SIM(#1) cmd_cyc_counter + 1'b1;
-                WAIT_TRANSACTION_COMPLETE:
-                    if (cmd_cyc_counter === TCMD)
-                        cmd_cyc_counter <= `WRAP_SIM(#1) 'd0;
-                    else
-                        cmd_cyc_counter <= `WRAP_SIM(#1) cmd_cyc_counter + 1'b1;
-            endcase
-        end
-    end
+        if (!reset_n) begin
+            state <= `WRAP_SIM(#1) IDLE;
+            rd_en <= `WRAP_SIM(#1) 1'b0;
 
-    always @(posedge clk or negedge reset_n) begin: p_states
-        if (reset_n == 1'b0) begin
-            state <= `WRAP_SIM(#1) FRAME_PROCESSING_START_WAIT;
+            row_counter <= `WRAP_SIM(#1) 'd0;
+            col_counter <= `WRAP_SIM(#1) 'd0;
+
             frame_addr_counter <= `WRAP_SIM(#1) 'd0;
-            write_data <= `WRAP_SIM(#1) 'd0;
-            frame_upload_cycle <= `WRAP_SIM(#1) 1'b0;
-            frame_addr_inc <= `WRAP_SIM(#1) 'd0;
+            adder_ce <= `WRAP_SIM(#1) 1'b0;
+            cache_in_en <= `WRAP_SIM(#1) 1'b0;
+            cache_out_en <= `WRAP_SIM(#1) 1'b0;
+
             cache_addr <= `WRAP_SIM(#1) 'd0;
-            pixel_counter <= `WRAP_SIM(#1) 'd0;
+            write_rq <= `WRAP_SIM(#1) 1'b0;
+            mem_wr_en <= `WRAP_SIM(#1) 1'b0;
+            write_data <= `WRAP_SIM(#1) 'd0;
             write_counter <= `WRAP_SIM(#1) 'd0;
+            frame_addr_inc <= `WRAP_SIM(#1) 'd0;
         end else begin
-            // State Machine:
             case (state)
+                IDLE: begin
+                    if (start) begin
+                        rd_en <= `WRAP_SIM(#1) 1'b1;
+                        frame_addr_counter <= `WRAP_SIM(#1) base_addr;
+                        adder_ce <= `WRAP_SIM(#1) 1'b1;
+
+                        state <= `WRAP_SIM(#1) FRAME_PROCESSING_START_WAIT;
+                    end else
+                        rd_en <= `WRAP_SIM(#1) 1'b0;
+                end
                 FRAME_PROCESSING_START_WAIT: begin
-                    frame_addr_counter <= `WRAP_SIM(#1) base_addr;
-                    if (start == 1'b1) begin
-`ifdef __ICARUS__
-                        string str_msg;
-`endif
+                    adder_ce <= `WRAP_SIM(#1) 1'b0;
 
-                        pixel_counter <= `WRAP_SIM(#1) 'd0;
-                        state <= `WRAP_SIM(#1) FRAME_PROCESSING_WRITE_CYC;
-                        frame_upload_cycle <= `WRAP_SIM(#1) 1'b0;
-                        frame_addr_inc <= `WRAP_SIM(#1) 'd0;
- 
-`ifdef __ICARUS__
-                        $sformat(str_msg, "Start frame uploading at memory addr %0h", base_addr);
-                        logger.info(module_name, str_msg);
-`endif
-                   end
-                end
-                FRAME_PROCESSING_DONE: begin
-                    state <= `WRAP_SIM(#1) FRAME_PROCESSING_START_WAIT;
-                    frame_upload_cycle <= `WRAP_SIM(#1) 1'b0;
-
-`ifdef __ICARUS__
-                    logger.info(module_name, "Frame uploading finished");
-`endif
-                end
-                FRAME_PROCESSING_WRITE_CYC: begin
-                    if (pixel_counter === FRAME_PIXELS_NUM) begin
-`ifdef __ICARUS__
-                        string str_msg;
-`endif
-
-                        state <= `WRAP_SIM(#1) FRAME_PROCESSING_DONE;
-
-`ifdef __ICARUS__
-                        $sformat(str_msg, "Received %0d pixels for frame at address %0h", FRAME_PIXELS_NUM, base_addr);
-                        logger.debug(module_name, str_msg);
-`endif
-                    end else begin
-                        cache_addr <= `WRAP_SIM(#1) 'd0;
-                        state <= `WRAP_SIM(#1) CHECK_QUEUE;
-
-                        if (frame_upload_cycle)
-                            frame_addr_counter <= `WRAP_SIM(#1) adder_out[20:0];
+                    if (queue_empty)
+                        ; // Do nothing
+                    else if (queue_data === 17'h10000) begin
+                        row_counter <= `WRAP_SIM(#1) 'd0;
+                        state <= `WRAP_SIM(#1) WAIT_START_ROW;
                     end
                 end
-                CHECK_QUEUE: begin
-                    if (queue_empty == 1'b0) begin
+                WAIT_START_ROW: begin
+                    if (queue_empty)
+                        ; // Do nothing
+                    else if (queue_data === 17'h10001) begin
+                        cache_addr <= `WRAP_SIM(#1) 'd0;
+                        col_counter <= `WRAP_SIM(#1) 'd0;
+
                         state <= `WRAP_SIM(#1) READ_QUEUE_DATA;
                     end
                 end
                 READ_QUEUE_DATA: begin
-                    if (!rd_en) begin
-                        // Do nothing and wait until rd_en signal will be holded on
-                    end else if (!queue_empty && queue_data === 17'h10000) begin
-                        if (!frame_upload_cycle) begin
-                            frame_upload_cycle <= `WRAP_SIM(#1) 1'b1;
-`ifdef __ICARUS__
-                            logger.info(module_name, "Start frame upload cycle");
-`endif
-                        end else begin
-                            state <= `WRAP_SIM(#1) FRAME_PROCESSING_DONE;
-
-`ifdef __ICARUS__
-                            logger.warning(module_name, "Unexpected frame start command received");
-`endif
-                        end
-                        frame_addr_inc <= `WRAP_SIM(#1) 'd0;
-                    end else if (queue_empty == 1'b1 || cache_addr_next === CACHE_SIZE) begin
-                        if (cache_addr !== 'd0) begin
-                            state <= `WRAP_SIM(#1) WRITE_MEMORY_WAIT;
-                            if (queue_empty == 1'b1) begin
-                                frame_addr_inc <= `WRAP_SIM(#1) cache_addr;
-                            end else begin
-                                frame_addr_inc <= `WRAP_SIM(#1) cache_addr_next;
-                            end
-                        end
-                    end else if (!queue_empty) begin
-                        cache_addr <= `WRAP_SIM(#1) cache_addr_next;
+                    if (queue_empty && cache_addr !== 'd0) begin
                     end
                 end
-                WRITE_MEMORY_WAIT: begin
-                    if (write_ack == 1'b1) begin
-                        pixel_counter <= `WRAP_SIM(#1) pixel_counter + frame_addr_inc;
-
-                        write_counter <= `WRAP_SIM(#1) 'd0;
-                        state <= `WRAP_SIM(#1) WRITE_MEMORY;
-                    end
-                end
-                WRITE_MEMORY: begin
-                    if (write_counter === BURST_CYCLES + 'd1)
-                        state <= `WRAP_SIM(#1) WAIT_TRANSACTION_COMPLETE;
-                    else begin
-                        //if (pixel_counter < 50 * FRAME_WIDTH) begin
-                        //    if (!pixel_counter[4])
-                        //    write_data <= `WRAP_SIM(#1) /*mem_word*/ 32'hFC00FC00;
-                        //else
-                        //    write_data <= `WRAP_SIM(#1) /*mem_word*/ 32'h000F000F;
-                        //end else if (pixel_counter[4])
-                        //    write_data <= `WRAP_SIM(#1) /*mem_word*/ 32'hFC00FC00;
-                        //else
-                        //    write_data <= `WRAP_SIM(#1) /*mem_word*/ 32'h000F000F;
-                        write_data <= `WRAP_SIM(#1) mem_word;
-                        write_counter <= `WRAP_SIM(#1) write_counter_next;
-                    end
-                end
-                WAIT_TRANSACTION_COMPLETE:
-                    if (cmd_cyc_counter === TCMD)
-                        state <= `WRAP_SIM(#1) FRAME_PROCESSING_WRITE_CYC;
             endcase
         end
-    end
-
-    initial begin
-        cache_in_en <= `WRAP_SIM(#1) 1'b0;
-        cache_out_en <= `WRAP_SIM(#1) 1'b0;
-    end
-
-    initial
-        upload_done <= `WRAP_SIM(#1) 1'b0;
-
-    always @(posedge clk or negedge reset_n) begin
-        if (!reset_n)
-            upload_done <= `WRAP_SIM(#1) 1'b0;
-        else if (state == FRAME_PROCESSING_DONE)
-            upload_done <= `WRAP_SIM(#1) 1'b1;
-        else
-            upload_done <= `WRAP_SIM(#1) 1'b0;
-    end
-
-    initial
-        write_rq <= `WRAP_SIM(#1) 1'b0;
-
-    always @(posedge clk or negedge reset_n) begin
-        if (!reset_n)
-            write_rq <= `WRAP_SIM(#1) 1'b0;
-        else if (state == WRITE_MEMORY || state == WRITE_MEMORY_WAIT || state == WAIT_TRANSACTION_COMPLETE)
-            write_rq <= `WRAP_SIM(#1) 1'b1;
-        else
-            write_rq <= `WRAP_SIM(#1) 1'b0;
-    end
-
-    initial
-        adder_ce <= `WRAP_SIM(#1) 1'b0;
-
-    always @(posedge clk or negedge reset_n) begin
-        if (!reset_n)
-            adder_ce <= `WRAP_SIM(#1) 1'b0;
-        else if (state == FRAME_PROCESSING_START_WAIT || state == WAIT_TRANSACTION_COMPLETE)
-            adder_ce <= `WRAP_SIM(#1) 1'b1;
-        else
-            adder_ce <= `WRAP_SIM(#1) 1'b0;
-    end
-
-    initial
-        mem_wr_en <= `WRAP_SIM(#1) 1'b0;
-
-    always @(posedge clk or negedge reset_n) begin
-        if (!reset_n)
-            mem_wr_en <= `WRAP_SIM(#1) 1'b0;
-        else if (state == WRITE_MEMORY && write_counter === 'd1)
-            mem_wr_en <= `WRAP_SIM(#1) 1'b1;
-        else
-            mem_wr_en <= `WRAP_SIM(#1) 1'b0;
-    end
-
-    initial
-        rd_en <= `WRAP_SIM(#1) 1'b0;
-
-    always @(posedge clk or negedge reset_n) begin
-        if (!reset_n)
-            rd_en <= `WRAP_SIM(#1) 1'b0;
-        else if (state == READ_QUEUE_DATA && 
-                 cache_addr_next !== CACHE_SIZE &&
-                 !queue_empty) begin
-            rd_en <= `WRAP_SIM(#1) 1'b1;
-        end else
-            rd_en <= `WRAP_SIM(#1) 1'b0;
-    end
-
-    always @(*) begin
-        // Default State Actions:
-        cache_in_en = 1'b0;
-        cache_out_en = 1'b0;
-
-        // State Actions:
-        case (state)
-            READ_QUEUE_DATA:
-                if (!queue_empty && cache_addr !== CACHE_SIZE) begin
-                    cache_in_en = 1'b1;
-                end
-            WRITE_MEMORY:
-                cache_out_en = 1'b1;
-        endcase
     end
 endmodule

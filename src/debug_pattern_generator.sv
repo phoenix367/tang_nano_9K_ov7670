@@ -76,12 +76,15 @@ module DebugPatternGenerator
     input queue_full,
     
     output reg [16:0] queue_data,
-    output reg queue_wr_en
+    output reg queue_wr_en,
+    output queue_wr_clk
 );
     import ColorUtilities::*;
 
     localparam NUM_COLOR_BARS = 10;
     localparam Colorbar_width = FRAME_WIDTH / NUM_COLOR_BARS;
+
+    assign queue_wr_clk = clk;
 
 // Logger initialization
 `ifdef __ICARUS__

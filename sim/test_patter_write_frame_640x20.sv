@@ -26,7 +26,7 @@ wire [20:0] mem_addr;
 wire [31:0] mem_w_data;
 
 reg init_done_0;
-reg lcd_queue_rd_en;
+wire lcd_queue_rd_en;
 
 string module_name;
 DataLogger #(.verbosity(LOG_LEVEL)) logger();
@@ -68,11 +68,13 @@ function logic [15:0] get_pixel_color(input logic [10:0] column_index);
         end
 endfunction
 
+wire queue_wr_clk;
+
 FIFO_cam lcd_Debug_queue(
     .Data(lcd_queue_data_in), //input [16:0] Data
     .WrReset(~reset_n), //input WrReset
     .RdReset(~reset_n), //input RdReset
-    .WrClk(fb_clk), //input WrClk
+    .WrClk(queue_wr_clk), //input WrClk
     .RdClk(queue_load_clk), //input RdClk
     .WrEn(lcd_queue_wr_en), //input WrEn
     .RdEn(lcd_queue_rd_en), //input RdEn
@@ -85,18 +87,19 @@ DebugPatternGenerator
 #(
     .FRAME_WIDTH(FRAME_WIDTH),
     .FRAME_HEIGHT(FRAME_HEIGHT),
-    .SEND_EXTRA_DATA(1'b0)
+    .SEND_EXTRA_DATA(1'b1)
 )
 
 pattern_generator
 (
-    .clk(fb_clk),
+    .clk(screen_clk),
     .reset_n(reset_n),
 
     .queue_full(lcd_queue_full),
     
     .queue_data(lcd_queue_data_in),
-    .queue_wr_en(lcd_queue_wr_en)
+    .queue_wr_en(lcd_queue_wr_en),
+    .queue_wr_clk(queue_wr_clk)
 );
 
 logic frame_checking_complete;
@@ -147,7 +150,8 @@ end
 
 always #18.519 clk=~clk;
 
-SDRAM_rPLL sdram_clock(.reset(~reset_n), .clkin(clk), .clkout(memory_clk), .lock(pll_lock));
+SDRAM_rPLL sdram_clock(.reset(~reset_n), .clkin(clk), .clkout(memory_clk), .lock(pll_lock),
+                       .clkoutd(screen_clk));
 
 always @(posedge memory_clk or negedge reset_n) begin
     if (!reset_n)
@@ -187,7 +191,7 @@ VideoController #(
                       .store_queue_data()
                   );
 
-always #500000 begin
+always #1200000 begin
     logger.error(module_name, "System hangs");
     `TEST_FAIL
 end
