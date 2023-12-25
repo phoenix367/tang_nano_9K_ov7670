@@ -134,6 +134,7 @@ module FrameUploader
             write_data <= `WRAP_SIM(#1) 'd0;
             write_counter <= `WRAP_SIM(#1) 'd0;
             frame_addr_inc <= `WRAP_SIM(#1) 'd0;
+            cmd_cyc_counter <= `WRAP_SIM(#1) 'd0;
         end else begin
             case (state)
                 IDLE: begin
@@ -162,13 +163,41 @@ module FrameUploader
                     else if (queue_data === 17'h10001) begin
                         cache_addr <= `WRAP_SIM(#1) 'd0;
                         col_counter <= `WRAP_SIM(#1) 'd0;
+                        cache_in_en <= `WRAP_SIM(#1) 1'b1;
 
                         state <= `WRAP_SIM(#1) READ_QUEUE_DATA;
                     end
                 end
                 READ_QUEUE_DATA: begin
                     if (queue_empty && cache_addr !== 'd0) begin
+                        cache_in_en <= `WRAP_SIM(#1) 1'b0;
+                        rd_en <= `WRAP_SIM(#1) 1'b0;
+
+                        state <= `WRAP_SIM(#1) WRITE_MEMORY_WAIT;
+                    end else if (queue_empty) begin
+                        // Do nothing
+                    end else begin
+                        if (cache_addr_next === 'd16) begin
+                            cache_in_en <= `WRAP_SIM(#1) 1'b0;
+                            rd_en <= `WRAP_SIM(#1) 1'b0;
+
+                            state <= `WRAP_SIM(#1) WRITE_MEMORY_WAIT;
+                        end else begin
+                            cache_addr <= `WRAP_SIM(#1) cache_addr_next;
+                        end
                     end
+                end
+                WRITE_MEMORY_WAIT: begin
+                    write_rq <= `WRAP_SIM(#1) 1'b1;
+                    if (write_ack) begin
+                        write_counter <= `WRAP_SIM(#1) 'd0;
+                        cmd_cyc_counter <= `WRAP_SIM(#1) 'd0;
+                        cache_out_en <= `WRAP_SIM(#1) 1'b1;
+
+                        state <= `WRAP_SIM(#1) WRITE_MEMORY;
+                    end
+                end
+                WRITE_MEMORY: begin
                 end
             endcase
         end
