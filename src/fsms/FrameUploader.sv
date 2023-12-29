@@ -177,13 +177,40 @@ module FrameUploader
                     end else if (queue_empty) begin
                         // Do nothing
                     end else begin
-                        if (cache_addr_next === 'd16) begin
-                            cache_in_en <= `WRAP_SIM(#1) 1'b0;
-                            rd_en <= `WRAP_SIM(#1) 1'b0;
-
-                            state <= `WRAP_SIM(#1) WRITE_MEMORY_WAIT;
+                        if (queue_data[16] == 1'b1) begin
+                            case (queue_data)
+                                17'h10000: begin
+`ifdef __ICARUS__
+                                    logger.warning(module_name, "Received unxepected start frame");
+`endif
+                                end
+                                17'h10001: begin
+`ifdef __ICARUS__
+                                    logger.warning(module_name, "Received unxepected start row");
+`endif
+                                end
+                                17'h1FFFF: begin
+`ifdef __ICARUS__
+                                    logger.warning(module_name, "Received unxepected end frame");
+`endif
+                                end
+                                default: begin
+`ifdef __ICARUS__
+                                    string str;
+                                    $sformat(str, "Unknown command value: %0h", queue_data);
+                                    logger.critical(module_name, str);
+`endif
+                                end
+                            endcase
                         end else begin
-                            cache_addr <= `WRAP_SIM(#1) cache_addr_next;
+                            if (cache_addr_next === 'd16) begin
+                                cache_in_en <= `WRAP_SIM(#1) 1'b0;
+                                rd_en <= `WRAP_SIM(#1) 1'b0;
+
+                                state <= `WRAP_SIM(#1) WRITE_MEMORY_WAIT;
+                            end else begin
+                                cache_addr <= `WRAP_SIM(#1) cache_addr_next;
+                            end
                         end
                     end
                 end
@@ -198,6 +225,28 @@ module FrameUploader
                     end
                 end
                 WRITE_MEMORY: begin
+                    write_counter <= `WRAP_SIM(#1) write_counter + 1'b1;
+
+                    if (cmd_cyc_counter === 'd0) begin
+                        mem_wr_en <= `WRAP_SIM(#1) 1'b1;
+                        cmd_cyc_counter <= `WRAP_SIM(#1) cmd_cyc_counter + 1'b1;
+                    end else if (cmd_cyc_counter === 'd8) begin
+                        mem_wr_en <= `WRAP_SIM(#1) 1'b0;
+                        cache_out_en <= `WRAP_SIM(#1) 1'b0;
+                        cmd_cyc_counter <= `WRAP_SIM(#1) cmd_cyc_counter + 1'b1;
+
+                        state <= `WRAP_SIM(#1) WAIT_TRANSACTION_COMPLETE;
+                    end else begin
+                        mem_wr_en <= `WRAP_SIM(#1) 1'b0;
+                        cmd_cyc_counter <= `WRAP_SIM(#1) cmd_cyc_counter + 1'b1;
+                    end
+                end
+                WAIT_TRANSACTION_COMPLETE: begin
+                    if (cmd_cyc_counter === 'd19) begin
+                        frame_addr_inc <= `WRAP_SIM(#1) cache_addr;
+                    end else begin
+                        cmd_cyc_counter <= `WRAP_SIM(#1) cmd_cyc_counter + 1'b1;
+                    end
                 end
             endcase
         end
