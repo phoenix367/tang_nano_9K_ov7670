@@ -20,8 +20,16 @@ package FrameUploaderTypes;
         READ_QUEUE_DATA             = 8'd5, 
         WAIT_TRANSACTION_COMPLETE   = 8'd6, 
         WRITE_MEMORY                = 8'd7, 
-        WRITE_MEMORY_WAIT           = 8'd8
+        WRITE_MEMORY_WAIT           = 8'd8,
+        UPDATE_COL_COUNTERS         = 8'd9,
+        CHECK_COL_COUNTERS          = 8'd10,
+        CHECK_ROW_COUNTERS          = 8'd11
     } t_state;
+
+    typedef enum bit[1:0] {
+        FILL_COMPLETE               = 'd0,
+        FILL_INCOMPLETE             = 'd1
+    } t_cache_complete;
 endpackage
 
 module FrameUploader
@@ -67,9 +75,12 @@ module FrameUploader
 
 
     t_state state;
+    t_cache_complete cache_fill_type;
+
     //reg [15:0] upload_cache[MEMORY_BURST / 2];
     reg [20:0] frame_addr_counter;
     reg [4:0] cache_addr;
+    reg [4:0] cache_addr_max;
     reg [4:0] frame_addr_inc;
     reg [4:0] cache_addr_next;
     reg [4:0] write_counter;
@@ -115,10 +126,21 @@ module FrameUploader
         .adb(write_counter[2:0])
     );
 
+    function logic[4:0] get_max_cache_load(input logic[10:0] c);
+        logic[10:0] diff;
+
+        diff = FRAME_WIDTH - c;
+        if (diff > 'd16)
+            get_max_cache_load = 'd16;
+        else
+            get_max_cache_load = diff[4:0];
+    endfunction
+
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             state <= `WRAP_SIM(#1) IDLE;
             rd_en <= `WRAP_SIM(#1) 1'b0;
+            upload_done <= `WRAP_SIM(#1) 1'b0;
 
             row_counter <= `WRAP_SIM(#1) 'd0;
             col_counter <= `WRAP_SIM(#1) 'd0;
@@ -129,17 +151,20 @@ module FrameUploader
             cache_out_en <= `WRAP_SIM(#1) 1'b0;
 
             cache_addr <= `WRAP_SIM(#1) 'd0;
+            cache_addr_max <= `WRAP_SIM(#1) 'd0;
             write_rq <= `WRAP_SIM(#1) 1'b0;
             mem_wr_en <= `WRAP_SIM(#1) 1'b0;
             write_data <= `WRAP_SIM(#1) 'd0;
             write_counter <= `WRAP_SIM(#1) 'd0;
             frame_addr_inc <= `WRAP_SIM(#1) 'd0;
             cmd_cyc_counter <= `WRAP_SIM(#1) 'd0;
+
+            cache_fill_type <= `WRAP_SIM(#1) FILL_INCOMPLETE;
         end else begin
             case (state)
                 IDLE: begin
                     if (start) begin
-                        rd_en <= `WRAP_SIM(#1) 1'b1;
+                        //rd_en <= `WRAP_SIM(#1) 1'b1;
                         frame_addr_counter <= `WRAP_SIM(#1) base_addr;
                         adder_ce <= `WRAP_SIM(#1) 1'b1;
 
@@ -154,6 +179,13 @@ module FrameUploader
                         ; // Do nothing
                     else if (queue_data === 17'h10000) begin
                         row_counter <= `WRAP_SIM(#1) 'd0;
+                        state <= `WRAP_SIM(#1) CHECK_ROW_COUNTERS;
+                    end
+                end
+                CHECK_ROW_COUNTERS: begin
+                    if (row_counter === FRAME_HEIGHT) begin
+                    end else begin
+                        rd_en <= `WRAP_SIM(#1) 1'b1;
                         state <= `WRAP_SIM(#1) WAIT_START_ROW;
                     end
                 end
@@ -164,6 +196,7 @@ module FrameUploader
                         cache_addr <= `WRAP_SIM(#1) 'd0;
                         col_counter <= `WRAP_SIM(#1) 'd0;
                         cache_in_en <= `WRAP_SIM(#1) 1'b1;
+                        cache_addr_max <= `WRAP_SIM(#1) 'd16;
 
                         state <= `WRAP_SIM(#1) READ_QUEUE_DATA;
                     end
@@ -172,6 +205,10 @@ module FrameUploader
                     if (queue_empty && cache_addr !== 'd0) begin
                         cache_in_en <= `WRAP_SIM(#1) 1'b0;
                         rd_en <= `WRAP_SIM(#1) 1'b0;
+                        //if (cache_addr !== 'dF)
+                            cache_fill_type <= `WRAP_SIM(#1) FILL_INCOMPLETE;
+                        //else
+                        //    cache_fill_type <= `WRAP_SIM(#1) FILL_COMPLETE;
 
                         state <= `WRAP_SIM(#1) WRITE_MEMORY_WAIT;
                     end else if (queue_empty) begin
@@ -203,9 +240,10 @@ module FrameUploader
                                 end
                             endcase
                         end else begin
-                            if (cache_addr_next === 'd16) begin
+                            if (cache_addr_next === cache_addr_max) begin
                                 cache_in_en <= `WRAP_SIM(#1) 1'b0;
                                 rd_en <= `WRAP_SIM(#1) 1'b0;
+                                cache_fill_type <= `WRAP_SIM(#1) FILL_COMPLETE;
 
                                 state <= `WRAP_SIM(#1) WRITE_MEMORY_WAIT;
                             end else begin
@@ -243,9 +281,36 @@ module FrameUploader
                 end
                 WAIT_TRANSACTION_COMPLETE: begin
                     if (cmd_cyc_counter === 'd19) begin
-                        frame_addr_inc <= `WRAP_SIM(#1) cache_addr;
+                        write_rq <= `WRAP_SIM(#1) 1'b0;
+                        if (cache_fill_type == FILL_COMPLETE)
+                            frame_addr_inc <= `WRAP_SIM(#1) cache_addr_next;
+                        else
+                            frame_addr_inc <= `WRAP_SIM(#1) cache_addr;
+
+                        state <= `WRAP_SIM(#1) UPDATE_COL_COUNTERS;
+                        adder_ce <= `WRAP_SIM(#1) 1'b1;
                     end else begin
                         cmd_cyc_counter <= `WRAP_SIM(#1) cmd_cyc_counter + 1'b1;
+                    end
+                end
+                UPDATE_COL_COUNTERS: begin
+                    col_counter <= `WRAP_SIM(#1) col_counter + frame_addr_inc;
+                    adder_ce <= `WRAP_SIM(#1) 1'b0;
+                    state <= `WRAP_SIM(#1) CHECK_COL_COUNTERS;
+                end
+                CHECK_COL_COUNTERS: begin
+                    frame_addr_counter <= `WRAP_SIM(#1) adder_out[20:0];
+
+                    if (col_counter >= FRAME_WIDTH) begin
+                        row_counter <= `WRAP_SIM(#1) row_counter + 1'b1;
+                        state <= `WRAP_SIM(#1) CHECK_ROW_COUNTERS;
+                    end else begin
+                        rd_en <= `WRAP_SIM(#1) 1'b1;
+                        cache_addr <= `WRAP_SIM(#1) 'd0;
+                        cache_in_en <= `WRAP_SIM(#1) 1'b1;
+                        cache_addr_max <= `WRAP_SIM(#1) get_max_cache_load(col_counter);
+
+                        state <= `WRAP_SIM(#1) READ_QUEUE_DATA;
                     end
                 end
             endcase
