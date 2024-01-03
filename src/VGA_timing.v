@@ -242,7 +242,7 @@ VideoController #(
 
     pattern_generator_cam
     (
-        .clk(sys_clk),
+        .clk(PixelClk),
         .reset_n(nRST),
 
         .queue_full(cam_data_full),

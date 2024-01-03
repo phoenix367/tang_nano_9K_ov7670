@@ -23,7 +23,8 @@ package FrameUploaderTypes;
         WRITE_MEMORY_WAIT           = 8'd8,
         UPDATE_COL_COUNTERS         = 8'd9,
         CHECK_COL_COUNTERS          = 8'd10,
-        CHECK_ROW_COUNTERS          = 8'd11
+        CHECK_ROW_COUNTERS          = 8'd11,
+        WAIT_FRAME_END              = 8'd12
     } t_state;
 
     typedef enum bit[1:0] {
@@ -56,7 +57,7 @@ module FrameUploader
         output reg write_rq,
         output [20:0] write_addr,
         output reg mem_wr_en,
-        output reg [31:0] write_data,
+        output [31:0] write_data,
         output reg upload_done
         
     );
@@ -101,6 +102,8 @@ module FrameUploader
     assign cache_addr_next = cache_addr + 1'b1;
     assign write_addr = frame_addr_counter;
     assign write_counter_next = write_counter + 1'b1;
+
+    assign write_data = mem_word;
 
     Gowin_ALU54 frame_addr_adder(
         .dout(adder_out), //output [21:0] dout
@@ -154,7 +157,7 @@ module FrameUploader
             cache_addr_max <= `WRAP_SIM(#1) 'd0;
             write_rq <= `WRAP_SIM(#1) 1'b0;
             mem_wr_en <= `WRAP_SIM(#1) 1'b0;
-            write_data <= `WRAP_SIM(#1) 'd0;
+            //write_data <= `WRAP_SIM(#1) 'd0;
             write_counter <= `WRAP_SIM(#1) 'd0;
             frame_addr_inc <= `WRAP_SIM(#1) 'd0;
             cmd_cyc_counter <= `WRAP_SIM(#1) 'd0;
@@ -173,6 +176,10 @@ module FrameUploader
                         rd_en <= `WRAP_SIM(#1) 1'b0;
                 end
                 FRAME_PROCESSING_START_WAIT: begin
+`ifdef __ICARUS__
+                    string str;
+`endif
+
                     adder_ce <= `WRAP_SIM(#1) 1'b0;
 
                     if (queue_empty)
@@ -180,10 +187,17 @@ module FrameUploader
                     else if (queue_data === 17'h10000) begin
                         row_counter <= `WRAP_SIM(#1) 'd0;
                         state <= `WRAP_SIM(#1) CHECK_ROW_COUNTERS;
+
+`ifdef __ICARUS__
+                        $sformat(str, "Start frame uploading at address %0h", base_addr);
+                        logger.info(module_name, str);
+`endif
                     end
                 end
                 CHECK_ROW_COUNTERS: begin
                     if (row_counter === FRAME_HEIGHT) begin
+                        rd_en <= `WRAP_SIM(#1) 1'b1;
+                        state <= `WRAP_SIM(#1) WAIT_FRAME_END;
                     end else begin
                         rd_en <= `WRAP_SIM(#1) 1'b1;
                         state <= `WRAP_SIM(#1) WAIT_START_ROW;
@@ -205,10 +219,7 @@ module FrameUploader
                     if (queue_empty && cache_addr !== 'd0) begin
                         cache_in_en <= `WRAP_SIM(#1) 1'b0;
                         rd_en <= `WRAP_SIM(#1) 1'b0;
-                        //if (cache_addr !== 'dF)
-                            cache_fill_type <= `WRAP_SIM(#1) FILL_INCOMPLETE;
-                        //else
-                        //    cache_fill_type <= `WRAP_SIM(#1) FILL_COMPLETE;
+                        cache_fill_type <= `WRAP_SIM(#1) FILL_INCOMPLETE;
 
                         state <= `WRAP_SIM(#1) WRITE_MEMORY_WAIT;
                     end else if (queue_empty) begin
@@ -312,6 +323,24 @@ module FrameUploader
 
                         state <= `WRAP_SIM(#1) READ_QUEUE_DATA;
                     end
+                end
+                WAIT_FRAME_END: begin
+                    if (queue_empty)
+                        ; // Do nothing
+                    else if (queue_data === 17'h1FFFF) begin
+                        rd_en <= `WRAP_SIM(#1) 1'b0;
+                        upload_done <= `WRAP_SIM(#1) 1'b1;
+                        state <= `WRAP_SIM(#1) FRAME_PROCESSING_DONE;
+
+`ifdef __ICARUS__
+                        logger.info(module_name, "Frame uploading finished");
+`endif
+                    end
+                end
+                FRAME_PROCESSING_DONE: begin
+                    upload_done <= `WRAP_SIM(#1) 1'b1;
+                    frame_addr_inc <= `WRAP_SIM(#1) 'd0;
+                    state <= `WRAP_SIM(#1) IDLE;
                 end
             endcase
         end
