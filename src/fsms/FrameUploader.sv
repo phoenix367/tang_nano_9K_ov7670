@@ -157,7 +157,6 @@ module FrameUploader
             cache_addr_max <= `WRAP_SIM(#1) 'd0;
             write_rq <= `WRAP_SIM(#1) 1'b0;
             mem_wr_en <= `WRAP_SIM(#1) 1'b0;
-            //write_data <= `WRAP_SIM(#1) 'd0;
             write_counter <= `WRAP_SIM(#1) 'd0;
             frame_addr_inc <= `WRAP_SIM(#1) 'd0;
             cmd_cyc_counter <= `WRAP_SIM(#1) 'd0;
@@ -167,7 +166,7 @@ module FrameUploader
             case (state)
                 IDLE: begin
                     if (start) begin
-                        //rd_en <= `WRAP_SIM(#1) 1'b1;
+                        rd_en <= `WRAP_SIM(#1) 1'b1;
                         frame_addr_counter <= `WRAP_SIM(#1) base_addr;
                         adder_ce <= `WRAP_SIM(#1) 1'b1;
 
@@ -186,6 +185,7 @@ module FrameUploader
                         ; // Do nothing
                     else if (queue_data === 17'h10000) begin
                         row_counter <= `WRAP_SIM(#1) 'd0;
+                        rd_en <= `WRAP_SIM(#1) 1'b0;
                         state <= `WRAP_SIM(#1) CHECK_ROW_COUNTERS;
 
 `ifdef __ICARUS__
