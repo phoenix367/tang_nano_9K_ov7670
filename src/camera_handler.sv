@@ -30,7 +30,12 @@ module CameraHandler
 	typedef enum {
         WAIT_FRAME_START = 8'd0,
         ROW_CAPTURE      = 8'd1,
-        WAIT_CALIBRATION = 8'd2
+        WAIT_CALIBRATION = 8'd2,
+        START_WRITE_ROW  = 8'd3,
+        WAIT_HREF        = 8'd4,
+        READ_HALF_PIXEL  = 8'd5,
+        READ_FULL_PIXEL  = 8'd6,
+        CHECK_ROW_COUNT  = 8'd7
     } state_t;
 
 	state_t FSM_state = WAIT_CALIBRATION;
@@ -38,7 +43,6 @@ module CameraHandler
     reg frame_done = 1'b0;
     reg pixel_valid = 1'b0;
     reg [15:0] pixel_data = 'd0;
-    reg buffer_flip = 1'b0;
 
     assign queue_clk = PixelClk;
 
@@ -50,23 +54,26 @@ module CameraHandler
             queue_wr_en <= `WRAP_SIM(#1) 1'b0;
             pixel_valid <= `WRAP_SIM(#1) 1'b0;
             pixel_data <= `WRAP_SIM(#1) 'd0;
-            buffer_flip = `WRAP_SIM(#1) 1'b0;
+            frame_done <= `WRAP_SIM(#1) 1'b0;
         end else begin                    
             case(FSM_state)
-                WAIT_CALIBRATION:
-                    if (init_done) begin
+                WAIT_CALIBRATION: begin
+                    queue_wr_en <= `WRAP_SIM(#1) 1'b0;
+
+                    if (init_done && cam_vsync) begin
                         FSM_state <= `WRAP_SIM(#1) WAIT_FRAME_START;
 
 `ifdef __ICARUS__
                         logger.info(module_name, "Memory controller sucessfully initialized");
 `endif                    
                     end
+                end
                 WAIT_FRAME_START: begin //wait for VSYNC
                     frame_done <= `WRAP_SIM(#1) 1'b0;
                     pixel_half <= `WRAP_SIM(#1) 1'b0;
 
                     if (!cam_vsync) begin
-                        FSM_state <= `WRAP_SIM(#1) ROW_CAPTURE;
+                        FSM_state <= `WRAP_SIM(#1) START_WRITE_ROW;
 
                         queue_data <= `WRAP_SIM(#1) 17'h10000;
                         queue_wr_en <= `WRAP_SIM(#1) 1'b1;
@@ -76,35 +83,41 @@ module CameraHandler
                     end else
                         queue_wr_en <= `WRAP_SIM(#1) 1'b0;
                 end
-                ROW_CAPTURE: begin 
-                    if (cam_vsync) begin
-                        FSM_state <= `WRAP_SIM(#1) WAIT_FRAME_START;
-                        frame_done <= `WRAP_SIM(#1) 1'b1;
+                START_WRITE_ROW: begin
+                    queue_data <= `WRAP_SIM(#1) 17'h10001;
+                    queue_wr_en <= `WRAP_SIM(#1) 1'b1;
+                    pixel_valid <= `WRAP_SIM(#1) 1'b0;
+                    pixel_half <= `WRAP_SIM(#1) 1'b0;
 
-                        buffer_flip <= `WRAP_SIM(#1) 1'b0;
-                        pixel_valid <= `WRAP_SIM(#1) 1'b0;
-                    end else begin
-                        if (cam_href && pixel_half) begin
-                            pixel_valid <= `WRAP_SIM(#1) 1'b1;
+                    FSM_state <= `WRAP_SIM(#1) WAIT_HREF;
+                end
+                WAIT_HREF: begin
+                    queue_wr_en <= `WRAP_SIM(#1) 1'b0;
 
-                            queue_wr_en <= `WRAP_SIM(#1) 1'b1;
-                            queue_data <= `WRAP_SIM(#1) { 1'b0, pixel_data };
-
-                        end else begin
-                            pixel_valid <= `WRAP_SIM(#1) 1'b0;
-                            queue_wr_en <= `WRAP_SIM(#1) 1'b0;
-                        end
-
-                        if (cam_href) begin
-                            pixel_half <= `WRAP_SIM(#1) ~pixel_half;
-
-                            if (pixel_half) begin
-                                pixel_data[7:0] <= `WRAP_SIM(#1) p_data;
-                            end else 
-                                pixel_data[15:8] <= `WRAP_SIM(#1) p_data;
-                        end
+                    if (cam_href) begin
+                        pixel_data[7:0] <= `WRAP_SIM(#1) p_data;
+                        FSM_state <= `WRAP_SIM(#1) READ_FULL_PIXEL;
                     end
-                end        
+                end
+                READ_HALF_PIXEL: begin
+                    queue_wr_en <= `WRAP_SIM(#1) 1'b0;
+                    if (!cam_href) begin
+                    end else begin
+                        pixel_data[7:0] <= `WRAP_SIM(#1) p_data;
+                        FSM_state <= `WRAP_SIM(#1) READ_FULL_PIXEL;
+                    end
+                end
+                READ_FULL_PIXEL: begin
+                    if (!cam_href) begin
+                    end else begin
+                        queue_wr_en <= `WRAP_SIM(#1) 1'b1;
+                        queue_data <= `WRAP_SIM(#1) { 1'b0, p_data, pixel_data[7:0] };
+
+                        FSM_state <= `WRAP_SIM(#1) READ_HALF_PIXEL;
+                    end
+                end
+                CHECK_ROW_COUNT: begin
+                end
             endcase
         end
 	end
