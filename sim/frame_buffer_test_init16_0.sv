@@ -187,7 +187,7 @@ initial begin
             end
 
             repeat(1) @(negedge fb_clk);
-            if (frame_buffer.frame_uploader.state != CHECK_QUEUE) begin
+            if (/*frame_buffer.frame_uploader.state != CHECK_QUEUE*/1) begin
                 error = 1'b1;
                 logger.error(module_name, "Unexpected uploading FSM state");
             end

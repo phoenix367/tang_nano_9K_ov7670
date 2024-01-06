@@ -5,6 +5,7 @@
     <Version>5</Version>
     <Device name="GW1NR-9C" pn="GW1NR-LV9QN88PC6/I5">gw1nr9c-004</Device>
     <FileList>
+        <File path="sim/cam_handler_test.sv" type="file.verilog" enable="0"/>
         <File path="sim/debug_pattern_test.sv" type="file.verilog" enable="0"/>
         <File path="sim/debug_pattern_test_no_extra.sv" type="file.verilog" enable="0"/>
         <File path="sim/frame_buffer_test_full_frame_23x17.sv" type="file.verilog" enable="0"/>

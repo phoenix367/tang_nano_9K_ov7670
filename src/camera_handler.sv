@@ -4,12 +4,14 @@
 `endif
 
 module CameraHandler
-`ifdef __ICARUS__
 #(
+`ifdef __ICARUS__
     parameter MODULE_NAME = "",
-    parameter LOG_LEVEL = `SVL_VERBOSE_INFO
-)
+    parameter LOG_LEVEL = `SVL_VERBOSE_INFO,
 `endif
+    parameter int FRAME_WIDTH = 640,
+    parameter int FRAME_HEIGHT = 480
+)
 (
     input                   PixelClk,
     input                   nRST,
@@ -27,7 +29,7 @@ module CameraHandler
     `INITIALIZE_LOGGER
 `endif
 
-	typedef enum {
+	typedef enum bit[7:0] {
         WAIT_FRAME_START = 8'd0,
         ROW_CAPTURE      = 8'd1,
         WAIT_CALIBRATION = 8'd2,
