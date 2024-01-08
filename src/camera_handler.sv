@@ -45,8 +45,13 @@ module CameraHandler
     reg frame_done = 1'b0;
     reg pixel_valid = 1'b0;
     reg [15:0] pixel_data = 'd0;
+    reg [10:0] row_counter = 'd0;
+    reg [10:0] col_counter = 'd0;
+
+    wire [10:0] row_counter_next;
 
     assign queue_clk = PixelClk;
+    assign row_counter_next = row_counter + 1'b1;
 
 	always @(posedge PixelClk or negedge nRST)
 	begin
@@ -57,6 +62,8 @@ module CameraHandler
             pixel_valid <= `WRAP_SIM(#1) 1'b0;
             pixel_data <= `WRAP_SIM(#1) 'd0;
             frame_done <= `WRAP_SIM(#1) 1'b0;
+            row_counter <= `WRAP_SIM(#1) 'd0;
+            col_counter <= `WRAP_SIM(#1) 'd0;
         end else begin                    
             case(FSM_state)
                 WAIT_CALIBRATION: begin
@@ -79,6 +86,8 @@ module CameraHandler
 
                         queue_data <= `WRAP_SIM(#1) 17'h10000;
                         queue_wr_en <= `WRAP_SIM(#1) 1'b1;
+                        row_counter <= `WRAP_SIM(#1) 'd0;
+
 `ifdef __ICARUS__
                         logger.info(module_name, "VSYNC signal received");
 `endif                    
@@ -90,6 +99,7 @@ module CameraHandler
                     queue_wr_en <= `WRAP_SIM(#1) 1'b1;
                     pixel_valid <= `WRAP_SIM(#1) 1'b0;
                     pixel_half <= `WRAP_SIM(#1) 1'b0;
+                    col_counter <= `WRAP_SIM(#1) 'd0;
 
                     FSM_state <= `WRAP_SIM(#1) WAIT_HREF;
                 end
@@ -103,22 +113,40 @@ module CameraHandler
                 end
                 READ_HALF_PIXEL: begin
                     queue_wr_en <= `WRAP_SIM(#1) 1'b0;
-                    if (!cam_href) begin
+    
+                    if (col_counter == 'd640) begin
+                        FSM_state <= `WRAP_SIM(#1) CHECK_ROW_COUNT;
                     end else begin
                         pixel_data[7:0] <= `WRAP_SIM(#1) p_data;
                         FSM_state <= `WRAP_SIM(#1) READ_FULL_PIXEL;
                     end
                 end
                 READ_FULL_PIXEL: begin
-                    if (!cam_href) begin
+                    if (col_counter == 'd640) begin
+                        queue_wr_en <= `WRAP_SIM(#1) 1'b0;
+                        FSM_state <= `WRAP_SIM(#1) CHECK_ROW_COUNT;
                     end else begin
                         queue_wr_en <= `WRAP_SIM(#1) 1'b1;
-                        queue_data <= `WRAP_SIM(#1) { 1'b0, p_data, pixel_data[7:0] };
+                        queue_data <= `WRAP_SIM(#1) { 1'b0, 11'b0, col_counter[4:0] };
+                        col_counter <= `WRAP_SIM(#1) col_counter + 1'b1;
 
                         FSM_state <= `WRAP_SIM(#1) READ_HALF_PIXEL;
                     end
                 end
                 CHECK_ROW_COUNT: begin
+                    if (row_counter_next == FRAME_HEIGHT) begin
+                        queue_wr_en <= `WRAP_SIM(#1) 1'b1;
+                        queue_data <= `WRAP_SIM(#1) 17'h1FFFF;
+
+                        FSM_state <= `WRAP_SIM(#1) WAIT_CALIBRATION;
+
+`ifdef __ICARUS__
+                        logger.info(module_name, "Frame writing finished");
+`endif                    
+                    end else begin
+                        row_counter <= `WRAP_SIM(#1) row_counter_next;
+                        FSM_state <= `WRAP_SIM(#1) START_WRITE_ROW;
+                    end
                 end
             endcase
         end

@@ -74,7 +74,7 @@ module VGA_timing
     wire calib_1;
     //wire PixelClk;
 
-    assign debug_led = ~(error0 || error1);
+    //assign debug_led = ~(error0 || error1);
 
     //Gowin_DQCE qce(.clkout(PixelClk), .clkin(PixelClk1), .ce(1'b1));
 
@@ -253,77 +253,34 @@ VideoController #(
     );
     
 `else
+    always @(posedge PixelClk or negedge nRST)
+        if (!nRST)
+            debug_led <= 1'b1;
+        else if (cam_data_full)
+            debug_led <= 1'b0;
 
-	always @(posedge PixelClk or negedge nRST)
-	begin
-        if (!nRST) begin
-            FSM_state <= `WRAP_SIM(#1) WAIT_CALIBRATION;
-            cam_data_in <= 17'h000;
-            cam_data_in_wr_en <= 1'b0;
-            //debug_led <= `WRAP_SIM(#1) 1'b1;
-        end else begin
-                    
-            case(FSM_state)
-            WAIT_CALIBRATION:
-                if (init_done_0 && init_done_1) begin
-                    FSM_state <= `WRAP_SIM(#1) WAIT_FRAME_START;
+    CameraHandler
+    #(
 `ifdef __ICARUS__
-                    logger.info(module_name, "Memory controller sucessfully initialized");
-                    //$finish;
-`endif                    
-                end
-            WAIT_FRAME_START: begin //wait for VSYNC
-                frame_done <= `WRAP_SIM(#1) 1'b0;
-                pixel_half <= `WRAP_SIM(#1) 1'b0;
+        .LOG_LEVEL(LOG_LEVEL),
+`endif
 
-                if (!cam_vsync) begin
-                    FSM_state <= `WRAP_SIM(#1) ROW_CAPTURE;
+        .FRAME_WIDTH(640),
+        .FRAME_HEIGHT(480)
+    )
+    camera_handler
+    (
+        .PixelClk(PixelClk),
+        .nRST(nRST),
+        .cam_vsync(cam_vsync),
+        .cam_href(href),
+        .p_data(p_data),
+        .init_done(init_done_0),
 
-                    cam_data_in <= `WRAP_SIM(#1) 17'h10000;
-                    cam_data_in_wr_en <= `WRAP_SIM(#1) 1'b1;
-`ifdef __ICARUS__
-                    logger.info(module_name, "VSYNC signal received");
-`endif                    
-                end else
-                    cam_data_in_wr_en <= `WRAP_SIM(#1) 1'b0;
-            end
-            
-            ROW_CAPTURE: begin 
-                if (cam_vsync) begin
-                    FSM_state <= `WRAP_SIM(#1) WAIT_FRAME_START;
-                    frame_done <= `WRAP_SIM(#1) 1'b1;
-
-                    buffer_flip <= `WRAP_SIM(#1) 1'b0;
-                    pixel_valid <= `WRAP_SIM(#1) 1'b0;
-
-                    //cam_data_in_wr_en <= `WRAP_SIM(#1) 1'b1;
-                    //cam_data_in <= `WRAP_SIM(#1) 17'h1FFFF;
-                end else begin
-                    if (href && pixel_half) begin
-                        pixel_valid <= `WRAP_SIM(#1) 1'b1;
-
-                        cam_data_in_wr_en <= `WRAP_SIM(#1) 1'b1;
-                        cam_data_in <= `WRAP_SIM(#1) { 1'b0, pixel_data };
-
-                    end else begin
-                        pixel_valid <= `WRAP_SIM(#1) 1'b0;
-
-                        cam_data_in_wr_en <= `WRAP_SIM(#1) 1'b0;
-                    end
-
-                    if (href) begin
-                        pixel_half <= `WRAP_SIM(#1) ~pixel_half;
-
-                        if (pixel_half) begin
-                            pixel_data[7:0] <= `WRAP_SIM(#1) p_data;
-                        end else 
-                            pixel_data[15:8] <= `WRAP_SIM(#1) p_data;
-                    end
-                end
-            end        
-            endcase
-        end
-	end
+        .queue_clk(queue_wr_clk),
+        .queue_data(cam_data_in),
+        .queue_wr_en(cam_data_in_wr_en)
+    );
 `endif
 
     assign LCD_CLK = screen_clk;
@@ -366,7 +323,6 @@ VideoController #(
         .queue_wr_en(lcd_queue_wr_en)
     );
 `endif
-
     LCD_Controller
     #(
     `ifdef __ICARUS__

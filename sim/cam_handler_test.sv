@@ -62,7 +62,7 @@ module main();
 
     always #18.519 clk=~clk;
 
-    always #1200000 begin
+    always #52000000 begin
         logger.error(module_name, "System hangs");
         `TEST_FAIL
     end
@@ -83,6 +83,8 @@ module main();
         .Empty(queue_load_empty), //output Empty
         .Full() //output Full
     );
+
+    assign cam_clk = clk;
 
     CameraHandler
     #(
@@ -106,12 +108,30 @@ module main();
 
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
-            frame_counter = 0;
+            frame_counter <= #1 'd0;
+            pixel_data <= #1 'd0;
         end else if (init_done) begin
-            if (frame_counter < CAM_VSYNC_CLK)
+            integer frame_counter_base;
+
+            frame_counter_base = frame_counter % CAM_FRAME_CLK;
+            if (frame_counter_base < CAM_VSYNC_CLK)
                 v_sync <= #1 1'b1;
             else
                 v_sync <= #1 1'b0;
+
+            if (frame_counter_base >= CAM_HREF_DELAY_CLK) begin
+                integer href_start;
+
+                href_start = (frame_counter_base - CAM_HREF_DELAY_CLK) % CAM_LINE_CLK;
+                if (href_start < CAM_HREF_CLK) begin
+                    bit [15:0] pixel;
+
+                    pixel = $urandom();
+                    h_ref <= #1 1'b1;
+                    pixel_data <= #1 {1'b0, pixel};
+                end else
+                    h_ref <= #1 1'b0;
+            end
 
             frame_counter <= #1 frame_counter + 1;
         end
