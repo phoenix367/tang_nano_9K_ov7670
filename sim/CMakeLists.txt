@@ -5,6 +5,7 @@ set(VIDEO_BUFFER_TEST_SOURCES
     "${SRC_FOLDER}/arbiter.v"
     "${SRC_FOLDER}/timescale.v"
     "${SRC_FOLDER}/ov7670_default.sv"
+    "${SRC_FOLDER}/gowin_clkdiv2/gowin_clkdiv2.v"
     "${SRC_FOLDER}/gowin_rpll/memory_rpll.v"
     "${SRC_FOLDER}/gowin_sdpb/gowin_sdpb.v"
     "${SRC_FOLDER}/gowin_sdpb_dn/gowin_sdpb_dn.v"

@@ -41,8 +41,8 @@ module FrameUploader
 `endif
 
         parameter MEMORY_BURST = 32,
-        parameter FRAME_WIDTH = 640,
-        parameter FRAME_HEIGHT = 480
+        parameter bit[10:0] FRAME_WIDTH = 640,
+        parameter bit[10:0] FRAME_HEIGHT = 480
     )
     (
         input clk,

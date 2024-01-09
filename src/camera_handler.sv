@@ -50,7 +50,8 @@ module CameraHandler
 
     wire [10:0] row_counter_next;
 
-    assign queue_clk = PixelClk;
+    //Gowin_CLKDIV2 clkdiv(queue_clk, PixelClk, nRST);
+    assign queue_clk = ~PixelClk;
     assign row_counter_next = row_counter + 1'b1;
 
 	always @(posedge PixelClk or negedge nRST)
@@ -127,7 +128,8 @@ module CameraHandler
                         FSM_state <= `WRAP_SIM(#1) CHECK_ROW_COUNT;
                     end else begin
                         queue_wr_en <= `WRAP_SIM(#1) 1'b1;
-                        queue_data <= `WRAP_SIM(#1) { 1'b0, 11'b0, col_counter[4:0] };
+                        //queue_data <= `WRAP_SIM(#1) { 1'b0, 11'b0, col_counter[4:0] };
+                        queue_data <= `WRAP_SIM(#1) { 1'b0, pixel_data[7:0], p_data };
                         col_counter <= `WRAP_SIM(#1) col_counter + 1'b1;
 
                         FSM_state <= `WRAP_SIM(#1) READ_HALF_PIXEL;
