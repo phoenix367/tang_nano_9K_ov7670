@@ -3,7 +3,7 @@
 `include "svlogger.sv"
 `endif
 
-`undef DEBUG_CAM_INPUT
+`define DEBUG_CAM_INPUT
 
 `undef DEBUG_LCD
 
@@ -173,14 +173,9 @@ VideoController #(
                       .store_queue_data(video_data_queue_in)
                   );
 
-`ifdef DEBUG_CAM_INPUT
     wire [16:0] cam_data_in;
     wire cam_data_in_wr_en;
     wire queue_wr_clk;
-`else
-    reg [16:0] cam_data_in;
-    reg cam_data_in_wr_en;
-`endif
     wire cam_data_full;
 
     wire lcd_read_clk;
@@ -193,11 +188,7 @@ VideoController #(
 		.Data(cam_data_in), //input [16:0] Data
 		.WrReset(~nRST), //input WrReset
 		.RdReset(~nRST), //input RdReset
-`ifdef DEBUG_CAM_INPUT
 		.WrClk(queue_wr_clk), //input WrClk
-`else
-		.WrClk(PixelClk), //input WrClk
-`endif
 		.RdClk(queue_load_clk), //input RdClk
 		.WrEn(cam_data_in_wr_en), //input WrEn
 		.RdEn(queue_load_rd_en), //input RdEn
@@ -230,7 +221,7 @@ VideoController #(
 	);
 
 `ifdef DEBUG_CAM_INPUT
-    DebugPatternGenerator
+    DebugPatternGenerator2
     #(
     `ifdef __ICARUS__
         .LOG_LEVEL(LOG_LEVEL),

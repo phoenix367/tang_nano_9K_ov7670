@@ -30,6 +30,7 @@
         <File path="sim/test_bench.sv" type="file.verilog" enable="0"/>
         <File path="sim/test_config.sv" type="file.verilog" enable="0"/>
         <File path="sim/test_patter_write_frame_640x20.sv" type="file.verilog" enable="0"/>
+        <File path="sim/test_pattern_write_frame_640x20_2.sv" type="file.verilog" enable="0"/>
         <File path="sim/test_utils.sv" type="file.verilog" enable="0"/>
         <File path="sim/tst_bench_top.v" type="file.verilog" enable="0"/>
         <File path="sim/uploader_test_bench.sv" type="file.verilog" enable="0"/>
@@ -41,7 +42,9 @@
         <File path="src/camera_control_defs.vh" type="file.verilog" enable="1"/>
         <File path="src/camera_handler.sv" type="file.verilog" enable="1"/>
         <File path="src/debug_pattern_generator.sv" type="file.verilog" enable="1"/>
+        <File path="src/debug_pattern_generator2.sv" type="file.verilog" enable="1"/>
         <File path="src/device_delay.sv" type="file.verilog" enable="1"/>
+        <File path="src/fifo_hs/fifo_hs.v" type="file.verilog" enable="1"/>
         <File path="src/fifo_top/fifo_cam_data.v" type="file.verilog" enable="1"/>
         <File path="src/fsms/FrameDownloader.sv" type="file.verilog" enable="1"/>
         <File path="src/fsms/FrameUploader.sv" type="file.verilog" enable="1"/>

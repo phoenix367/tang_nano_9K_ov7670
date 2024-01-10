@@ -51,7 +51,7 @@ module CameraHandler
     wire [10:0] row_counter_next;
 
     //Gowin_CLKDIV2 clkdiv(queue_clk, PixelClk, nRST);
-    assign queue_clk = ~PixelClk;
+    assign queue_clk = PixelClk;
     assign row_counter_next = row_counter + 1'b1;
 
 	always @(posedge PixelClk or negedge nRST)
