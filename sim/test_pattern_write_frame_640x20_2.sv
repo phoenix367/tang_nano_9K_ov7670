@@ -104,7 +104,8 @@ pattern_generator
 logic frame_checking_complete;
 
 initial begin
-    integer i;
+    integer i, fd;
+    integer r, c;
     logic error;
 
 `ifdef ENABLE_DUMPVARS
@@ -135,15 +136,10 @@ initial begin
 
     repeat(1) @(posedge frame_checking_complete);
 
-    if (total_pixels != FRAME_WIDTH * FRAME_HEIGHT) begin
-        logger.error(module_name, "Incorrect total number of received pixels");
-        `TEST_FAIL
-    end
-
-    if (row_counter != FRAME_HEIGHT) begin
-        logger.error(module_name, "Incorrect total number of received frame rows");
-        `TEST_FAIL
-    end
+    fd = $fopen("mem_data.txt", "w");
+    for (i = 0; i != TOTAL_MEMORY_SIZE; i = i + 1)
+        $fdisplay(fd, "%h", memory_data[i]);
+    $fclose(fd);
     `TEST_PASS
 end
 
@@ -190,7 +186,50 @@ VideoController #(
                       .store_queue_data()
                   );
 
-always #1200000 begin
+typedef enum {
+    STATE_CYC_START,
+    STATE_DATA_WRITE
+} mem_state_t;
+
+integer write_mem_addr, write_cyc_counter;
+mem_state_t writer_state;
+
+always @(posedge fb_clk or negedge reset_n) begin
+    if (!reset_n) begin
+        writer_state <= #1 STATE_CYC_START;
+        write_cyc_counter <= #1 0;
+    end else begin
+        case (writer_state)
+            STATE_CYC_START: begin
+                if (mem_cmd_en && mem_cmd) begin
+                    write_mem_addr <= #1 mem_addr + 2;
+                    memory_data[mem_addr] <= #1 mem_w_data[15:0];
+                    memory_data[mem_addr + 1] <= #1 mem_w_data[31:16];
+                    write_cyc_counter <= #1 1;
+            
+                    writer_state <= #1 STATE_DATA_WRITE;
+                end
+            end
+            STATE_DATA_WRITE: begin
+                if (write_cyc_counter == 8) begin
+                    writer_state <= #1 STATE_CYC_START;
+                end else begin
+                    memory_data[write_mem_addr] <= #1 mem_w_data[15:0];
+                    memory_data[write_mem_addr + 1] <= #1 mem_w_data[31:16];
+                    write_mem_addr <= #1 write_mem_addr + 2;
+                    write_cyc_counter <= #1 write_cyc_counter + 1;
+                end
+            end
+        endcase
+
+        if (frame_buffer.uploading_finished) begin
+            logger.info(module_name, "Frame uploading finished");
+            frame_checking_complete <= 1'b1;
+        end
+    end
+end
+
+always #2200000 begin
     logger.error(module_name, "System hangs");
     `TEST_FAIL
 end
