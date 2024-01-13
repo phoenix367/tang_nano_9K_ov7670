@@ -228,6 +228,7 @@ module FrameUploader
                         if (queue_data[16] == 1'b1) begin
                             case (queue_data)
                                 17'h10000: begin
+                                    state <= `WRAP_SIM(#1) FRAME_PROCESSING_DONE;
 `ifdef __ICARUS__
                                     logger.warning(module_name, "Received unxepected start frame");
 `endif

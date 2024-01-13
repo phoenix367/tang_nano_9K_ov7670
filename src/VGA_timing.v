@@ -183,6 +183,26 @@ VideoController #(
     wire lcd_queue_full;
     wire [16:0] lcd_queue_data_out;
     wire lcd_queue_empty;
+/*
+    async_fifo #(
+        .DSIZE(17),
+        .ASIZE(4)
+    ) 
+    q_cam_data_in(
+        .wclk(queue_wr_clk),
+        .wrst_n(nRST),
+        .winc(cam_data_in_wr_en),
+        .wdata(cam_data_in),
+        .wfull(cam_data_full),
+        .awfull(),
+        .rclk(queue_load_clk),
+        .rrst_n(nRST),
+        .rinc(queue_load_rd_en),
+        .rdata(cam_data_queue_out),
+        .rempty(queue_load_empty),
+        .arempty()
+    );
+*/
 
 	FIFO_cam q_cam_data_in(
 		.Data(cam_data_in), //input [16:0] Data
@@ -221,6 +241,13 @@ VideoController #(
 	);
 
 `ifdef DEBUG_CAM_INPUT
+    reg clk_div;
+    always @(posedge PixelClk or negedge nRST)
+        if (!nRST)
+            clk_div <= 1'b0;
+        else
+            clk_div <= ~clk_div;
+
     DebugPatternGenerator2
     #(
     `ifdef __ICARUS__
@@ -233,7 +260,7 @@ VideoController #(
 
     pattern_generator_cam
     (
-        .clk(PixelClk),
+        .clk(clk_div),
         .reset_n(nRST),
 
         .queue_full(cam_data_full),
