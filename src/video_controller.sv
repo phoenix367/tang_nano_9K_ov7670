@@ -108,8 +108,6 @@ typedef enum {
     FRAME_PROCESSING_DONE
 } FrameProcessingStates;
 
-localparam int TOTAL_MEMORY_SIZE = 22'd1 << 21;
-
 function reg [5:0] burst_delay(input int burst);
     case (burst)
          16: burst_delay = 6'd15;
