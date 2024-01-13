@@ -64,6 +64,7 @@
         <File path="src/ov7670_regs.vh" type="file.verilog" enable="1"/>
         <File path="src/psram_memory_interface_hs_2ch/psram_memory_interface_hs_2ch.v" type="file.verilog" enable="1"/>
         <File path="src/psram_test.v" type="file.verilog" enable="1"/>
+        <File path="src/psram_utils.vh" type="file.verilog" enable="1"/>
         <File path="src/timescale.v" type="file.verilog" enable="1"/>
         <File path="src/video_controller.sv" type="file.verilog" enable="1"/>
         <File path="src/camera_ov7670.cst" type="file.cst" enable="1"/>

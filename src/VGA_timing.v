@@ -173,12 +173,16 @@ VideoController #(
                       .store_queue_data(video_data_queue_in)
                   );
 
+    wire cam_data_in_clk;
+
 `ifdef DEBUG_CAM_INPUT
     wire [16:0] cam_data_in;
     wire cam_data_in_wr_en;
 `else
     reg [16:0] cam_data_in;
     reg cam_data_in_wr_en;
+
+    assign cam_data_in_clk = PixelClk;
 `endif
     wire cam_data_full;
 
@@ -192,7 +196,7 @@ VideoController #(
 		.Data(cam_data_in), //input [16:0] Data
 		.WrReset(~nRST), //input WrReset
 		.RdReset(~nRST), //input RdReset
-		.WrClk(PixelClk), //input WrClk
+		.WrClk(cam_data_in_clk), //input WrClk
 		.RdClk(queue_load_clk), //input RdClk
 		.WrEn(cam_data_in_wr_en), //input WrEn
 		.RdEn(queue_load_rd_en), //input RdEn
@@ -232,18 +236,20 @@ VideoController #(
     `endif
 
         .FRAME_WIDTH(640),
-        .FRAME_HEIGHT(480)
+        .FRAME_HEIGHT(480),
+        .SEND_EXTRA_DATA(1'b0)
     )
 
     pattern_generator_cam
     (
-        .clk(screen_clk),
+        .clk(PixelClk),
         .reset_n(nRST),
 
         .queue_full(cam_data_full),
         
         .queue_data(cam_data_in),
-        .queue_wr_en(cam_data_in_wr_en)
+        .queue_wr_en(cam_data_in_wr_en),
+        .queue_clk(cam_data_in_clk)
     );
     
 `else

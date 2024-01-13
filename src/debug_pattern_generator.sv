@@ -76,7 +76,8 @@ module DebugPatternGenerator
     input queue_full,
     
     output reg [16:0] queue_data,
-    output reg queue_wr_en
+    output reg queue_wr_en,
+    output queue_clk
 );
     import ColorUtilities::*;
 
@@ -110,6 +111,7 @@ module DebugPatternGenerator
     end
 
     reg [10:0] row_counter, col_counter;
+    assign queue_clk = clk;
 
     typedef enum {
         STATE_IDLE,
