@@ -38,7 +38,9 @@
         <File path="src/arbiter.v" type="file.verilog" enable="1"/>
         <File path="src/camera_control.v" type="file.verilog" enable="1"/>
         <File path="src/camera_control_defs.vh" type="file.verilog" enable="1"/>
+        <File path="src/color_utilities.vh" type="file.verilog" enable="1"/>
         <File path="src/debug_pattern_generator.sv" type="file.verilog" enable="1"/>
+        <File path="src/debug_pattern_generator2.sv" type="file.verilog" enable="1"/>
         <File path="src/device_delay.sv" type="file.verilog" enable="1"/>
         <File path="src/fifo_top/fifo_cam_data.v" type="file.verilog" enable="1"/>
         <File path="src/fsms/FrameDownloader.sv" type="file.verilog" enable="1"/>
@@ -65,6 +67,7 @@
         <File path="src/psram_memory_interface_hs_2ch/psram_memory_interface_hs_2ch.v" type="file.verilog" enable="1"/>
         <File path="src/psram_test.v" type="file.verilog" enable="1"/>
         <File path="src/psram_utils.vh" type="file.verilog" enable="1"/>
+        <File path="src/sram_2kx16/sram_2kx16.v" type="file.verilog" enable="1"/>
         <File path="src/timescale.v" type="file.verilog" enable="1"/>
         <File path="src/video_controller.sv" type="file.verilog" enable="1"/>
         <File path="src/camera_ov7670.cst" type="file.cst" enable="1"/>

@@ -1,3 +1,6 @@
+`ifndef __PSRAM_UTILS_VH__
+`define __PSRAM_UTILS_VH__
+
 package PSRAM_Utilities;
 
     function reg [5:0] burst_delay(input int burst);
@@ -11,3 +14,4 @@ package PSRAM_Utilities;
     endfunction
 
 endpackage
+`endif /* __PSRAM_UTILS_VH__ */

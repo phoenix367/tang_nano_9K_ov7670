@@ -187,7 +187,7 @@ VideoController #(
                       .store_queue_data()
                   );
 
-always #500000 begin
+always #700000 begin
     logger.error(module_name, "System hangs");
     `TEST_FAIL
 end

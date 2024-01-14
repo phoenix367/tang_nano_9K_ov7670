@@ -1,0 +1,3 @@
+[submodule "FPGADesignElements"]
+	path = FPGADesignElements
+	url = https://github.com/laforest/FPGADesignElements.git

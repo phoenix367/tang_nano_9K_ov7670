@@ -15,6 +15,7 @@ set(VIDEO_BUFFER_TEST_SOURCES
     "${SRC_FOLDER}/fsms/FrameDownloader.sv"
     "${SRC_FOLDER}/lcd_controller.sv"
     "${SRC_FOLDER}/debug_pattern_generator.sv"
+    "${SRC_FOLDER}/sram_2kx16/sram_2kx16.v"
 )
 
 set(TESTS_LIST 
