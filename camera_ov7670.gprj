@@ -5,6 +5,16 @@
     <Version>5</Version>
     <Device name="GW1NR-9C" pn="GW1NR-LV9QN88PC6/I5">gw1nr9c-004</Device>
     <FileList>
+        <File path="FPGADesignElements/CDC_Bit_Synchronizer.v" type="file.verilog" enable="1"/>
+        <File path="FPGADesignElements/CDC_Word_Synchronizer.v" type="file.verilog" enable="1"/>
+        <File path="FPGADesignElements/Pipeline_Skid_Buffer.v" type="file.verilog" enable="1"/>
+        <File path="FPGADesignElements/Pipeline_to_Pulse.v" type="file.verilog" enable="1"/>
+        <File path="FPGADesignElements/Pulse_Generator.v" type="file.verilog" enable="1"/>
+        <File path="FPGADesignElements/Pulse_Latch.v" type="file.verilog" enable="1"/>
+        <File path="FPGADesignElements/Pulse_to_Pipeline.v" type="file.verilog" enable="1"/>
+        <File path="FPGADesignElements/Register.v" type="file.verilog" enable="1"/>
+        <File path="FPGADesignElements/Register_Toggle.v" type="file.verilog" enable="1"/>
+        <File path="FPGADesignElements/Reset_Synchronizer.v" type="file.verilog" enable="1"/>
         <File path="sim/debug_pattern_test.sv" type="file.verilog" enable="0"/>
         <File path="sim/debug_pattern_test_no_extra.sv" type="file.verilog" enable="0"/>
         <File path="sim/frame_buffer_test_full_frame_23x17.sv" type="file.verilog" enable="0"/>

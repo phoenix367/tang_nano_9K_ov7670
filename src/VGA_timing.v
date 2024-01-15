@@ -229,27 +229,19 @@ VideoController #(
 	);
 
 `ifdef DEBUG_CAM_INPUT
-    DebugPatternGenerator
+    DebugPatternGenerator2
     #(
     `ifdef __ICARUS__
         .LOG_LEVEL(LOG_LEVEL),
     `endif
 
         .FRAME_WIDTH(640),
-        .FRAME_HEIGHT(480),
-        .SEND_EXTRA_DATA(1'b0)
+        .FRAME_HEIGHT(480)
     )
 
     pattern_generator_cam
     (
-        .clk(PixelClk),
-        .reset_n(nRST),
-
-        .queue_full(cam_data_full),
-        
-        .queue_data(cam_data_in),
-        .queue_wr_en(cam_data_in_wr_en),
-        .queue_clk(cam_data_in_clk)
+        .clk_cam(PixelClk)
     );
     
 `else
