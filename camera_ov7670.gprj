@@ -77,6 +77,7 @@
         <File path="src/psram_memory_interface_hs_2ch/psram_memory_interface_hs_2ch.v" type="file.verilog" enable="1"/>
         <File path="src/psram_test.v" type="file.verilog" enable="1"/>
         <File path="src/psram_utils.vh" type="file.verilog" enable="1"/>
+        <File path="src/sdpb_1kx32/sdpb_1kx32.v" type="file.verilog" enable="1"/>
         <File path="src/sram_2kx16/sram_2kx16.v" type="file.verilog" enable="1"/>
         <File path="src/timescale.v" type="file.verilog" enable="1"/>
         <File path="src/video_controller.sv" type="file.verilog" enable="1"/>

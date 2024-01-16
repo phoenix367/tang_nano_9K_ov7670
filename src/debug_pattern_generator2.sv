@@ -39,6 +39,8 @@ module DebugPatternGenerator2
 
     reg gen_rdy = 1'b0;
     reg [1:0] command_data_in;
+    reg [10:0] col_counter = 'd0;
+    reg [31:0] input_pixel = 'd0;
 
     Reset_Synchronizer
     #(
@@ -85,10 +87,40 @@ module DebugPatternGenerator2
         .receiving_ready(mem_controller_rdy)
     );
 
+    sdpb_1kx32 row_a(
+        .dout(pixel_data), //output [31:0] dout
+        .clka(clk_cam), //input clka
+        .cea(1'b0), //input cea
+        .reseta(cam_reset_line), //input reseta
+        .clkb(clk_mem), //input clkb
+        .ceb(1'b0), //input ceb
+        .resetb(mem_reset_line), //input resetb
+        .oce(1'b0), //input oce
+        .ada(col_counter[10:1]), //input [9:0] ada
+        .din(input_pixel), //input [31:0] din
+        .adb('d0) //input [9:0] adb
+    );
+
+    sdpb_1kx32 row_b(
+        .dout(pixel_data), //output [31:0] dout
+        .clka(clk_cam), //input clka
+        .cea(1'b0), //input cea
+        .reseta(cam_reset_line), //input reseta
+        .clkb(clk_mem), //input clkb
+        .ceb(1'b0), //input ceb
+        .resetb(mem_reset_line), //input resetb
+        .oce(1'b0), //input oce
+        .ada(col_counter[10:1]), //input [9:0] ada
+        .din(input_pixel), //input [31:0] din
+        .adb('d0) //input [9:0] adb
+    );
+
     always @(posedge clk_cam or negedge reset_n) begin
         if (!reset_n) begin
             gen_rdy <= `WRAP_SIM(#1) 1'b0;
             command_data_in <= `WRAP_SIM(#1) 'd0;
+            col_counter <= `WRAP_SIM(#1) 'd0;
+            input_pixel <= `WRAP_SIM(#1) 'd0;
         end else begin
         end
     end
