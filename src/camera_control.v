@@ -2,6 +2,8 @@
 `include "camera_control_defs.vh"
 `include "ov7670_regs.vh"
 
+`default_nettype wire
+
 module CameraControl_TOP (
     input sys_clk,          // clk input
     input sys_rst_n,        // reset input

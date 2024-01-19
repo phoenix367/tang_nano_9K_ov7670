@@ -12,6 +12,8 @@
 
 `include "color_utilities.vh"
 
+`default_nettype wire
+
 module DebugPatternGenerator
 #(
 `ifdef __ICARUS__

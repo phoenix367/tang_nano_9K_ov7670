@@ -16,6 +16,18 @@ set(VIDEO_BUFFER_TEST_SOURCES
     "${SRC_FOLDER}/lcd_controller.sv"
     "${SRC_FOLDER}/debug_pattern_generator.sv"
     "${SRC_FOLDER}/sram_2kx16/sram_2kx16.v"
+    "${SRC_FOLDER}/debug_pattern_generator2.sv"
+    "${SRC_FOLDER}/sdpb_1kx32/sdpb_1kx32.v"
+    "${FPGA_ELEMENTS_FOLDER}/Register.v"
+    "${FPGA_ELEMENTS_FOLDER}/Register_Toggle.v"
+    "${FPGA_ELEMENTS_FOLDER}/Reset_Synchronizer.v"
+    "${FPGA_ELEMENTS_FOLDER}/CDC_Word_Synchronizer.v"
+    "${FPGA_ELEMENTS_FOLDER}/CDC_Bit_Synchronizer.v"
+    "${FPGA_ELEMENTS_FOLDER}/Pipeline_Skid_buffer.v"
+    "${FPGA_ELEMENTS_FOLDER}/Pipeline_to_Pulse.v"
+    "${FPGA_ELEMENTS_FOLDER}/Pulse_Generator.v"
+    "${FPGA_ELEMENTS_FOLDER}/Pulse_Latch.v"
+    "${FPGA_ELEMENTS_FOLDER}/Pulse_to_Pipeline.v"
 )
 
 set(TESTS_LIST 
@@ -37,6 +49,7 @@ set(TESTS_LIST
     debug_pattern_test
     debug_pattern_test_no_extra
     test_patter_write_frame_640x20
+    debug_pattern_2_test
 )
 
 set(BASE_TEST_DIR "${CMAKE_CURRENT_BINARY_DIR}/tests")

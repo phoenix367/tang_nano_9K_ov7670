@@ -7,6 +7,8 @@
 
 `undef DEBUG_LCD
 
+`default_nettype wire
+
 module VGA_timing
 `ifdef __ICARUS__
 #(

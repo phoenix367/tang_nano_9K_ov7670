@@ -10,6 +10,8 @@
 `include "svlogger.sv"
 `endif
 
+`default_nettype wire
+
 package LCDControllerTypes;
     typedef enum bit[7:0] {
         LCD_CONTROLLER_IDLE      = 8'd00,

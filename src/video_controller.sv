@@ -7,6 +7,8 @@
 
 `define max2(v1, v2) ((v1) > (v2) ? (v1) : (v2))
 
+`default_nettype wire
+
 module VideoController
 #(
 `ifdef __ICARUS__

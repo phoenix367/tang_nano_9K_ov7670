@@ -7,6 +7,8 @@
 //Device Version: C
 //Created Time: Sun Jan 14 11:48:53 2024
 
+`default_nettype wire
+
 module sram_2kx16 (dout, clk, oce, ce, reset, wre, ad, din);
 
 output [31:0] dout;
