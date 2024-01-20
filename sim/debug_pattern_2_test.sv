@@ -23,6 +23,7 @@ wire memory_clk;
 
 reg init_done_0;
 reg lcd_queue_rd_en;
+reg recv_rdy = 1'b0;
 
 string module_name;
 DataLogger #(.verbosity(LOG_LEVEL)) logger();
@@ -71,7 +72,9 @@ pattern_generator
 (
     .clk_cam(clk),
     .clk_mem(fb_clk),
-    .reset_n(reset_n)
+    .reset_n(reset_n),
+    .init(pll_lock),
+    .mem_controller_rdy(recv_rdy)
 );
 
 logic frame_checking_complete;

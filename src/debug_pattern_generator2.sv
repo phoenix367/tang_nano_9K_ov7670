@@ -28,6 +28,7 @@ module DebugPatternGenerator2
     input clk_cam,
     input clk_mem,
     input reset_n,
+    input init,
 
     input mem_controller_rdy,
     input [9:0] mem_addr,
@@ -165,7 +166,8 @@ module DebugPatternGenerator2
         WRITE_FRAME_START,
         PREPARE_ROW_START,
         PREPARE_ROW,
-        WRITE_ROW_START
+        WRITE_ROW_START,
+        CHECK_ROW_COUNT
     } state_t;
 
     state_t state;
@@ -187,14 +189,25 @@ module DebugPatternGenerator2
         end else begin
             case (state)
                 IDLE: begin
-                    if (gen_rdy)
+                    if (init)
                         state <= `WRAP_SIM(#1) WRITE_FRAME_START;
                 end
                 WRITE_FRAME_START: begin
-                    gen_valid <= `WRAP_SIM(#1) 1'b1;
-                    command_data_in <= `WRAP_SIM(#1) 'd1;
+                    if (gen_rdy) begin
+                        gen_valid <= `WRAP_SIM(#1) 1'b1;
+                        command_data_in <= `WRAP_SIM(#1) 'd1;
+                        row_counter <= `WRAP_SIM(#1) 'd0;
 
-                    state <= `WRAP_SIM(#1) PREPARE_ROW_START;
+                        state <= `WRAP_SIM(#1) CHECK_ROW_COUNT;
+                    end
+                end
+                CHECK_ROW_COUNT: begin
+                    gen_valid <= `WRAP_SIM(#1) 1'b0;
+
+                    if (row_counter === FRAME_HEIGHT) begin
+                    end else begin
+                        state <= `WRAP_SIM(#1) PREPARE_ROW_START;
+                    end
                 end
                 PREPARE_ROW_START: begin
                     gen_valid <= `WRAP_SIM(#1) 1'b0;
@@ -233,6 +246,9 @@ module DebugPatternGenerator2
                     if (gen_rdy) begin
                         gen_valid <= `WRAP_SIM(#1) 1'b1;
                         command_data_in <= `WRAP_SIM(#1) 'd2;
+                        row_counter <= `WRAP_SIM(#1) row_counter + 1'b1;
+
+                        state <= `WRAP_SIM(#1) CHECK_ROW_COUNT;
                     end
                 end
             endcase
