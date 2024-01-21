@@ -38,6 +38,11 @@ module DebugPatternGenerator2
     output command_data_valid
 );
 
+// Logger initialization
+`ifdef __ICARUS__
+    `INITIALIZE_LOGGER
+`endif
+
     localparam NUM_COLOR_BARS = 10;
     localparam Colorbar_width = FRAME_WIDTH / NUM_COLOR_BARS;
 
@@ -141,7 +146,7 @@ module DebugPatternGenerator2
         .clkb(clk_mem), //input clkb
         .ceb(clk_mem_en_a), //input ceb
         .resetb(mem_reset_line), //input resetb
-        .oce(1'b0), //input oce
+        .oce(clk_mem_en_a), //input oce
         .ada(col_counter[10:1]), //input [9:0] ada
         .din(input_pixel), //input [31:0] din
         .adb(mem_addr) //input [9:0] adb
@@ -155,7 +160,7 @@ module DebugPatternGenerator2
         .clkb(clk_mem), //input clkb
         .ceb(clk_mem_en_b), //input ceb
         .resetb(mem_reset_line), //input resetb
-        .oce(1'b0), //input oce
+        .oce(clk_mem_en_b), //input oce
         .ada(col_counter[10:1]), //input [9:0] ada
         .din(input_pixel), //input [31:0] din
         .adb(mem_addr) //input [9:0] adb
@@ -167,7 +172,9 @@ module DebugPatternGenerator2
         PREPARE_ROW_START,
         PREPARE_ROW,
         WRITE_ROW_START,
-        CHECK_ROW_COUNT
+        CHECK_ROW_COUNT,
+        WRITE_FRAME_END,
+        FRAME_DONE
     } state_t;
 
     state_t state;
@@ -199,12 +206,17 @@ module DebugPatternGenerator2
                         row_counter <= `WRAP_SIM(#1) 'd0;
 
                         state <= `WRAP_SIM(#1) CHECK_ROW_COUNT;
+
+`ifdef __ICARUS__
+                        logger.info(module_name, "Start frame generation");
+`endif
                     end
                 end
                 CHECK_ROW_COUNT: begin
                     gen_valid <= `WRAP_SIM(#1) 1'b0;
 
                     if (row_counter === FRAME_HEIGHT) begin
+                        state <= `WRAP_SIM(#1) WRITE_FRAME_END;
                     end else begin
                         state <= `WRAP_SIM(#1) PREPARE_ROW_START;
                     end
@@ -229,6 +241,14 @@ module DebugPatternGenerator2
                         clk_cam_en_a <= `WRAP_SIM(#1) 1'b0;
                         clk_cam_en_b <= `WRAP_SIM(#1) 1'b0;
 
+                        if (write_buffer_id == 1'b0) begin
+                            clk_mem_en_a <= `WRAP_SIM(#1) 1'b1;
+                            clk_mem_en_b <= `WRAP_SIM(#1) 1'b0;
+                        end else begin
+                            clk_mem_en_a <= `WRAP_SIM(#1) 1'b0;
+                            clk_mem_en_b <= `WRAP_SIM(#1) 1'b1;
+                        end
+
                         write_buffer_id <= `WRAP_SIM(#1) ~write_buffer_id;
 
                         state <= `WRAP_SIM(#1) WRITE_ROW_START;
@@ -250,6 +270,22 @@ module DebugPatternGenerator2
 
                         state <= `WRAP_SIM(#1) CHECK_ROW_COUNT;
                     end
+                end
+                WRITE_FRAME_END: begin
+                    if (gen_rdy) begin
+                        gen_valid <= `WRAP_SIM(#1) 1'b1;
+                        command_data_in <= `WRAP_SIM(#1) 'd3;
+
+                        state <= `WRAP_SIM(#1) FRAME_DONE;
+                    end
+                end
+                FRAME_DONE: begin
+                    gen_valid <= `WRAP_SIM(#1) 1'b1;
+                    state <= `WRAP_SIM(#1) WRITE_FRAME_START;
+
+`ifdef __ICARUS__
+                        logger.info(module_name, "Frame generation finished");
+`endif
                 end
             endcase
         end
