@@ -375,7 +375,7 @@ always@(posedge clk or negedge rst_n)
 
         if (uploading_state == UPLOADING_FIND_BUFFER)
             //`WRAP_SIM(#1) find_upload_buffer_idx(upload_buffer_idx);
-            upload_buffer_idx <= 'd0;
+            upload_buffer_idx <= 'd1;
         else if (uploading_state == UPLOADING_SELECT_BUFFER) begin
             buffer_states[upload_buffer_idx] <= `WRAP_SIM(#1) BUFFER_WRITE_BUSY;
             write_base_addr <= `WRAP_SIM(#1) frame_addresses[upload_buffer_idx];
