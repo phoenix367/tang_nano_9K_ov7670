@@ -14,24 +14,22 @@
 `include "color_utilities.vh"
 
 package FrameUploaderTypes;
-    typedef enum bit[7:0] {
-        FRAME_PROCESSING_START_WAIT = 8'd0, 
-        CHECK_QUEUE                 = 8'd1, 
-        FRAME_PROCESSING_DONE       = 8'd2, 
-        FRAME_PROCESSING_WRITE_CYC  = 8'd3, 
-        READ_QUEUE_DATA             = 8'd4, 
-        WAIT_TRANSACTION_COMPLETE   = 8'd5, 
-        WRITE_MEMORY                = 8'd6, 
-        WRITE_MEMORY_WAIT           = 8'd7,
-        FRAME_WRITE_ROW_START       = 8'd8,
-        INITIALIZE_PATTERN          = 8'd9,
-        GENERATE_PATTERN            = 8'd10,
-        WAIT_FRAME_START_CMD        = 8'd11,
-        CHECK_FRAME_START           = 8'd12,
-        WAIT_ROW_START              = 8'd13,
-        CHECK_ROW_START             = 8'd14,
-        WAIT_FRAME_END              = 8'd15,
-        CHECK_FRAME_END             = 8'd16
+    typedef enum bit[4:0] {
+        FRAME_PROCESSING_START_WAIT = 'd0, 
+        CHECK_QUEUE                 = 'd1, 
+        FRAME_PROCESSING_DONE       = 'd2, 
+        FRAME_PROCESSING_WRITE_CYC  = 'd3, 
+        READ_QUEUE_DATA             = 'd4, 
+        WAIT_TRANSACTION_COMPLETE   = 'd5, 
+        WRITE_MEMORY                = 'd6, 
+        WRITE_MEMORY_WAIT           = 'd7,
+        FRAME_WRITE_ROW_START       = 'd8,
+        WAIT_FRAME_START_CMD        = 'd11,
+        CHECK_FRAME_START           = 'd12,
+        WAIT_ROW_START              = 'd13,
+        CHECK_ROW_START             = 'd14,
+        WAIT_FRAME_END              = 'd15,
+        CHECK_FRAME_END             = 'd16
     } t_state;
 endpackage
 
@@ -128,15 +126,12 @@ module FrameUploader
             col_counter <= `WRAP_SIM(#1) 'd0;
             write_cyc_counter <= `WRAP_SIM(#1) 'd0;
             frame_addr <= `WRAP_SIM(#1) 'd0;
-            //write_data <= `WRAP_SIM(#1) 'd0;
             write_addr <= `WRAP_SIM(#1) 'd0;
             upload_done <= `WRAP_SIM(#1) 1'b0;
             read_rdy <= `WRAP_SIM(#1) 1'b0;
             write_rq <= `WRAP_SIM(#1) 1'b0;
             mem_wr_en <= `WRAP_SIM(#1) 1'b0;
             frame_counter <= `WRAP_SIM(#1) 'd0;
-            //wr_en <= `WRAP_SIM(#1) 1'b0;
-            //cache_rd_en <= `WRAP_SIM(#1) 1'b0;
             read_rdy <= `WRAP_SIM(#1) 1'b0;
             command_data_recv <= `WRAP_SIM(#1) 'd0;
 
@@ -243,9 +238,6 @@ module FrameUploader
                         mem_wr_en <= `WRAP_SIM(#1) 1'b1;
                         write_addr <= `WRAP_SIM(#1) frame_addr;
                         write_cyc_counter <= `WRAP_SIM(#1) write_cyc_counter + 1'b1;
-                        //write_data <= `WRAP_SIM(#1) {
-                        //    cache_data_out
-                        //};
 
                         if (col_counter !== FRAME_WIDTH) begin
                             logic [11:0] tmp;
@@ -256,9 +248,6 @@ module FrameUploader
                     end else begin
                         mem_wr_en <= `WRAP_SIM(#1) 1'b0;
                         write_cyc_counter <= `WRAP_SIM(#1) write_cyc_counter + 1'b1;
-                        //write_data <= `WRAP_SIM(#1) {
-                        //    cache_data_out
-                        //};
 
                         if (col_counter !== FRAME_WIDTH) begin
                             logic [11:0] tmp;
@@ -280,10 +269,6 @@ module FrameUploader
                             state <= `WRAP_SIM(#1) WRITE_MEMORY_WAIT;
                     end else
                         write_cyc_counter <= `WRAP_SIM(#1) write_cyc_counter + 1'b1;
-                end
-                INITIALIZE_PATTERN: begin
-                    //cache_rd_en <= `WRAP_SIM(#1) 1'b1;
-                    state <= `WRAP_SIM(#1) GENERATE_PATTERN;
                 end
             endcase
         end

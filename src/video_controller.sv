@@ -112,43 +112,6 @@ typedef enum {
     FRAME_PROCESSING_DONE
 } FrameProcessingStates;
 
-function reg [5:0] burst_delay(input int burst);
-    case (burst)
-         16: burst_delay = 6'd15;
-         32: burst_delay = 6'd19;
-         64: burst_delay = 6'd27;
-        128: burst_delay = 6'd43;
-        default: $error("%m Invalid memory burst value");
-    endcase
-endfunction
-
-localparam TCMD128 = burst_delay(MEMORY_BURST);
-
-//localparam   TCMD128             = 6'd19;// burst 128 = 6'd43;
-                                        // burst 64  = 6'd27;
-                                        // burst 32  = 6'd19;
-                                        // burst 16  = 6'd15;
-
-
-function reg [5:0] get_num128(input int burst);
-    reg [5:0] val;
-    case (burst)
-         16: val = 6'd4;
-         32: val = 6'd8;
-         64: val = 6'd16;
-        128: val = 6'd32;
-        default: $error("%m Invalid memory burst value");
-    endcase
-
-    return val;
-endfunction
-
-localparam NUM128 = get_num128(MEMORY_BURST);
-
-//localparam   NUM128              = 6'd8;// burst 128 = 6'd32;
-                                       // burst 64  = 6'd16;
-                                       // burst 32  = 6'd8;
-                                       // burst 16  = 6'd4;
 UploadingStates uploading_state;
 UploadingStates uploading_next_state;
 
@@ -402,7 +365,7 @@ always@(posedge clk or negedge rst_n)
     end else begin
         if (downloading_state == DOWNLOADING_FIND_BUFFER) begin
             //`WRAP_SIM(#1) find_download_buffer_idx(download_buffer_idx);
-            download_buffer_idx <= 'd1;
+            download_buffer_idx <= 'd0;
         end else if (downloading_state == DOWNLOADING_SELECT_BUFFER) begin
             buffer_states[download_buffer_idx] <= `WRAP_SIM(#1) BUFFER_WRITE_BUSY;
             read_base_addr <= `WRAP_SIM(#1) frame_addresses[download_buffer_idx];
@@ -412,7 +375,7 @@ always@(posedge clk or negedge rst_n)
 
         if (uploading_state == UPLOADING_FIND_BUFFER)
             //`WRAP_SIM(#1) find_upload_buffer_idx(upload_buffer_idx);
-            upload_buffer_idx <= 'd1;
+            upload_buffer_idx <= 'd0;
         else if (uploading_state == UPLOADING_SELECT_BUFFER) begin
             buffer_states[upload_buffer_idx] <= `WRAP_SIM(#1) BUFFER_WRITE_BUSY;
             write_base_addr <= `WRAP_SIM(#1) frame_addresses[upload_buffer_idx];
