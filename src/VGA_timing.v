@@ -3,7 +3,7 @@
 `include "svlogger.sv"
 `endif
 
-`define DEBUG_CAM_INPUT
+`undef DEBUG_CAM_INPUT
 
 `undef DEBUG_LCD
 
@@ -234,7 +234,34 @@ VideoController #(
     );
     
 `else
+    CamPixelProcessor
+    #(
+    `ifdef __ICARUS__
+        .LOG_LEVEL(LOG_LEVEL),
+    `endif
 
+        .FRAME_WIDTH(640),
+        .FRAME_HEIGHT(480)
+    )
+
+    pattern_generator_cam
+    (
+        .clk_cam(PixelClk),
+        .clk_mem(mem_load_clk),
+        .reset_n(nRST),
+        .init(init_done_0),
+        .pixel_data(load_pixel_data),
+        .command_data_valid(load_command_valid),
+        .mem_controller_rdy(load_read_rdy),
+        .mem_addr(load_mem_addr),
+        .command_data(load_command_data),
+
+        .v_sync(cam_vsync),
+        .h_ref(href),
+        .cam_data(p_data)
+    );
+
+/*
 	always @(posedge PixelClk or negedge nRST)
 	begin
         if (!nRST) begin
@@ -305,6 +332,7 @@ VideoController #(
             endcase
         end
 	end
+*/
 `endif
 
     assign LCD_CLK = screen_clk;

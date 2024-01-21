@@ -301,7 +301,7 @@ task find_upload_buffer_idx(output reg [1:0] o_idx);
 
     idx = 3'b111;
 
-    for (i = 'd0; i < NUM_FRAMES; i = i + 1) begin
+    for (i = 'd0; i < NUM_FRAMES && idx === 3'b111; i = i + 1) begin
         if (buffer_states[i] == BUFFER_DISPLAYED) begin
             idx = i[1:0];
             //break;
@@ -345,7 +345,7 @@ task find_download_buffer_idx(output reg [1:0] o_idx);
 
     idx = 3'b111;
 
-    for (i = 'd0; i < NUM_FRAMES; i = i + 1) begin
+    for (i = 'd0; i < NUM_FRAMES && idx === 3'b111; i = i + 1) begin
         if (buffer_states[i] == BUFFER_UPDATED) begin
             idx = i[1:0];
             //break;
@@ -401,8 +401,8 @@ always@(posedge clk or negedge rst_n)
         initialize_buffer_states();
     end else begin
         if (downloading_state == DOWNLOADING_FIND_BUFFER) begin
-            `WRAP_SIM(#1) find_download_buffer_idx(download_buffer_idx);
-            //download_buffer_idx <= 'd2;
+            //`WRAP_SIM(#1) find_download_buffer_idx(download_buffer_idx);
+            download_buffer_idx <= 'd1;
         end else if (downloading_state == DOWNLOADING_SELECT_BUFFER) begin
             buffer_states[download_buffer_idx] <= `WRAP_SIM(#1) BUFFER_WRITE_BUSY;
             read_base_addr <= `WRAP_SIM(#1) frame_addresses[download_buffer_idx];
@@ -411,8 +411,8 @@ always@(posedge clk or negedge rst_n)
         end
 
         if (uploading_state == UPLOADING_FIND_BUFFER)
-            `WRAP_SIM(#1) find_upload_buffer_idx(upload_buffer_idx);
-            //upload_buffer_idx <= 'd2;
+            //`WRAP_SIM(#1) find_upload_buffer_idx(upload_buffer_idx);
+            upload_buffer_idx <= 'd1;
         else if (uploading_state == UPLOADING_SELECT_BUFFER) begin
             buffer_states[upload_buffer_idx] <= `WRAP_SIM(#1) BUFFER_WRITE_BUSY;
             write_base_addr <= `WRAP_SIM(#1) frame_addresses[upload_buffer_idx];
