@@ -18,6 +18,7 @@ localparam TOTAL_MEMORY_SIZE = 1 << 21;
 
 reg clk, reset_n;
 reg fb_clk;
+wire pll_lock;
 
 wire memory_clk;
 wire mem_cmd;
@@ -31,7 +32,12 @@ reg lcd_queue_rd_en;
 string module_name;
 DataLogger #(.verbosity(LOG_LEVEL)) logger();
 
-assign cam_clk = clk;
+wire mem_load_clk;
+wire load_read_rdy;
+wire load_command_valid;
+wire [1:0] load_command_data;
+wire [31:0] load_pixel_data;
+wire [9:0] load_mem_addr;
 
 wire [16:0] lcd_queue_data_in;
 wire [16:0] lcd_queue_data_out;
@@ -68,35 +74,22 @@ function logic [15:0] get_pixel_color(input logic [10:0] column_index);
         end
 endfunction
 
-FIFO_cam lcd_Debug_queue(
-    .Data(lcd_queue_data_in), //input [16:0] Data
-    .WrReset(~reset_n), //input WrReset
-    .RdReset(~reset_n), //input RdReset
-    .WrClk(fb_clk), //input WrClk
-    .RdClk(queue_load_clk), //input RdClk
-    .WrEn(lcd_queue_wr_en), //input WrEn
-    .RdEn(lcd_queue_rd_en), //input RdEn
-    .Q(lcd_queue_data_out), //output [16:0] Q
-    .Empty(lcd_queue_empty), //output Empty
-    .Full(lcd_queue_full) //output Full
-);
-
-DebugPatternGenerator
+DebugPatternGenerator2
 #(
     .FRAME_WIDTH(FRAME_WIDTH),
-    .FRAME_HEIGHT(FRAME_HEIGHT),
-    .SEND_EXTRA_DATA(1'b0)
+    .FRAME_HEIGHT(FRAME_HEIGHT)
 )
-
 pattern_generator
 (
-    .clk(fb_clk),
+    .clk_cam(clk),
+    .clk_mem(mem_load_clk),
     .reset_n(reset_n),
-
-    .queue_full(lcd_queue_full),
-    
-    .queue_data(lcd_queue_data_in),
-    .queue_wr_en(lcd_queue_wr_en)
+    .init(init_done_0),
+    .pixel_data(load_pixel_data),
+    .command_data_valid(load_command_valid),
+    .mem_controller_rdy(load_read_rdy),
+    .mem_addr(load_mem_addr),
+    .command_data(load_command_data)
 );
 
 logic frame_checking_complete;
@@ -128,8 +121,9 @@ initial begin
     repeat(1) @(posedge clk);
     reset_n = 1'b1; // negate reset
 
-    init_done_0 = 1'b1;
     logger.info(module_name, "status: done reset");
+    repeat(1) @(posedge pll_lock);
+    init_done_0 = 1'b1;
 
     repeat(1) @(posedge frame_checking_complete);
 
@@ -176,10 +170,12 @@ VideoController #(
                       .error(),
                       .data_mask(),
 
-                      .load_clk_o(queue_load_clk),
-                      .load_rd_en(lcd_queue_rd_en),
-                      .load_queue_empty(lcd_queue_empty),
-                      .load_queue_data(lcd_queue_data_out),
+                      .load_clk_o(mem_load_clk),
+                      .load_read_rdy(load_read_rdy),
+                      .load_command_valid(load_command_valid),
+                      .load_pixel_data(load_pixel_data),
+                      .load_mem_addr(load_mem_addr),
+                      .load_command_data(load_command_data),
 
                       .store_clk_o(),
                       .store_wr_en(),

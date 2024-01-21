@@ -38,9 +38,11 @@ module VideoController
 
       // Load queue interface
       output load_clk_o,
-      output load_rd_en,
-      input load_queue_empty,
-      input [16:0] load_queue_data,
+      output load_read_rdy,
+      output [9:0] load_mem_addr,
+      input load_command_valid,
+      input [31:0] load_pixel_data,
+      input [1:0] load_command_data,
 
       // Store queue interface
       output store_clk_o,
@@ -186,7 +188,6 @@ assign shared_req = {data_read_req, data_write_req, consumer_req, producer_req};
 
 //assign start_downloading = (downloading_state == DOWNLOADING_START_PROCESS_FRAME);
 
-assign load_clk_o = clk;
 assign store_clk_o = clk;
 
 assign cmd = (mem_wr_en) ? 1'b1 : 1'b0;
@@ -220,11 +221,21 @@ FrameUploader #(
     , .LOG_LEVEL(LOG_LEVEL)
 `endif
 ) frame_uploader(.clk(clk), .reset_n(rst_n),
-                 .start(start_uploading), .queue_empty(load_queue_empty),
-                 .queue_data(load_queue_data), .write_ack(shared_grant[DATA_WRITER_IDX]),
-                 .rd_en(load_rd_en), .write_rq(data_write_req),
-                 .write_addr(write_addr_o), .mem_wr_en(mem_wr_en),
-                 .write_data(wr_data), .upload_done(uploading_finished), .base_addr(write_base_addr));
+                 .start(start_uploading), 
+                 .command_data_valid(load_command_valid),
+                 .pixel_data(load_pixel_data), 
+                 .write_ack(shared_grant[DATA_WRITER_IDX]),
+                 .read_rdy(load_read_rdy),
+                 .mem_load_clk(load_clk_o),
+                 .write_rq(data_write_req),
+                 .write_addr(write_addr_o), 
+                 .mem_wr_en(mem_wr_en),
+                 .write_data(wr_data), 
+                 .upload_done(uploading_finished), 
+                 .base_addr(write_base_addr),
+                 .pixel_addr(load_mem_addr),
+                 .command_data(load_command_data)
+                );
 
 FrameDownloader #(
     .FRAME_WIDTH(OUTPUT_IMAGE_WIDTH), 

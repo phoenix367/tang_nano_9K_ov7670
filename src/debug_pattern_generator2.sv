@@ -280,7 +280,7 @@ module DebugPatternGenerator2
                     end
                 end
                 FRAME_DONE: begin
-                    gen_valid <= `WRAP_SIM(#1) 1'b1;
+                    gen_valid <= `WRAP_SIM(#1) 1'b0;
                     state <= `WRAP_SIM(#1) WRITE_FRAME_START;
 
 `ifdef __ICARUS__

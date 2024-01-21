@@ -100,10 +100,12 @@ module VGA_timing
     wire rd_data_valid_1;
     wire clk_2;
 
-    wire queue_load_clk;
-    wire queue_load_rd_en;
-    wire queue_load_empty;
-    wire [16:0] cam_data_queue_out;
+    wire mem_load_clk;
+    wire load_read_rdy;
+    wire load_command_valid;
+    wire [1:0] load_command_data;
+    wire [31:0] load_pixel_data;
+    wire [9:0] load_mem_addr;
 
     wire queue_store_clk;
     wire queue_store_wr_en;
@@ -164,10 +166,12 @@ VideoController #(
                       .error(error0),
                       .data_mask(data_mask_0),
 
-                      .load_clk_o(queue_load_clk),
-                      .load_rd_en(queue_load_rd_en),
-                      .load_queue_empty(queue_load_empty),
-                      .load_queue_data(cam_data_queue_out),
+                      .load_clk_o(mem_load_clk),
+                      .load_read_rdy(load_read_rdy),
+                      .load_command_valid(load_command_valid),
+                      .load_pixel_data(load_pixel_data),
+                      .load_mem_addr(load_mem_addr),
+                      .load_command_data(load_command_data),
 
                       .store_clk_o(queue_store_clk),
                       .store_wr_en(queue_store_wr_en),
@@ -175,37 +179,12 @@ VideoController #(
                       .store_queue_data(video_data_queue_in)
                   );
 
-    wire cam_data_in_clk;
-
-`ifdef DEBUG_CAM_INPUT
-    wire [16:0] cam_data_in;
-    wire cam_data_in_wr_en;
-`else
-    reg [16:0] cam_data_in;
-    reg cam_data_in_wr_en;
-
-    assign cam_data_in_clk = PixelClk;
-`endif
-    wire cam_data_full;
 
     wire lcd_read_clk;
     wire lcd_queue_rd_en;
     wire lcd_queue_full;
     wire [16:0] lcd_queue_data_out;
     wire lcd_queue_empty;
-
-	FIFO_cam q_cam_data_in(
-		.Data(cam_data_in), //input [16:0] Data
-		.WrReset(~nRST), //input WrReset
-		.RdReset(~nRST), //input RdReset
-		.WrClk(cam_data_in_clk), //input WrClk
-		.RdClk(queue_load_clk), //input RdClk
-		.WrEn(cam_data_in_wr_en), //input WrEn
-		.RdEn(queue_load_rd_en), //input RdEn
-		.Q(cam_data_queue_out), //output [16:0] Q
-		.Empty(queue_load_empty), //output Empty
-		.Full(cam_data_full) //output Full
-	);
 
 	FIFO_cam q_cam_data_out(
 		.Data(video_data_queue_in), //input [16:0] Data
@@ -243,7 +222,15 @@ VideoController #(
 
     pattern_generator_cam
     (
-        .clk_cam(PixelClk)
+        .clk_cam(screen_clk),
+        .clk_mem(mem_load_clk),
+        .reset_n(nRST),
+        .init(init_done_0),
+        .pixel_data(load_pixel_data),
+        .command_data_valid(load_command_valid),
+        .mem_controller_rdy(load_read_rdy),
+        .mem_addr(load_mem_addr),
+        .command_data(load_command_data)
     );
     
 `else
