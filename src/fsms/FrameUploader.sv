@@ -66,6 +66,7 @@ module FrameUploader
 
     localparam NUM_COLOR_BARS = 10;
     localparam Colorbar_width = FRAME_WIDTH / NUM_COLOR_BARS;
+    localparam CACHE_DELAY = 'd2;
 
     import FrameUploaderTypes::*;
     import PSRAM_Utilities::*;
@@ -234,7 +235,8 @@ module FrameUploader
                         frame_addr <= `WRAP_SIM(#1) tmp[20:0];
 
                         state <= `WRAP_SIM(#1) FRAME_PROCESSING_WRITE_CYC;
-                    end else if (write_cyc_counter === 'd0) begin
+                    end else if (write_cyc_counter === CACHE_DELAY) begin // Set two-cycles delay to compensate
+                                                                          // delay of BSRAM with buffered output
                         mem_wr_en <= `WRAP_SIM(#1) 1'b1;
                         write_addr <= `WRAP_SIM(#1) frame_addr;
                         write_cyc_counter <= `WRAP_SIM(#1) write_cyc_counter + 1'b1;
@@ -258,7 +260,7 @@ module FrameUploader
                     end
                 end
                 FRAME_PROCESSING_WRITE_CYC: begin
-                    if (write_cyc_counter === TCMD) begin
+                    if (write_cyc_counter === TCMD + CACHE_DELAY) begin
                         write_rq <= `WRAP_SIM(#1) 1'b0;
 
                         if (col_counter === FRAME_WIDTH) begin

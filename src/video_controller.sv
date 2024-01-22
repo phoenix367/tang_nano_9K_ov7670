@@ -119,7 +119,6 @@ DownloadingStates downloading_state;
 DownloadingStates downloading_next_state;
 
 reg [7:0] uploading_start_cnt;
-reg [20:0] frame_addresses[NUM_FRAMES - 1:0];
 BufferStates buffer_states[NUM_FRAMES - 1:0];
 
 reg producer_req;  // Flag to request buffer metadata access for frame data uploader
@@ -237,19 +236,6 @@ generate
     genvar o;
 
     for (o = 0; o < NUM_FRAMES; o = o + 1) begin: blk_addresses
-        initial begin
-`ifdef __ICARUS__
-            string format_str;
-`endif
-
-            frame_addresses[o] = o * (INPUT_IMAGE_WIDTH * INPUT_IMAGE_HEIGHT + MEMORY_BURST);
-
-`ifdef __ICARUS__
-            $sformat(format_str, "Set address %0h for frame %0d", frame_addresses[o], o);
-            #1 logger.info(module_name, format_str);
-`endif
-        end
-
         initial
             buffer_states[o] <= `WRAP_SIM(#1) BUFFER_AVAILABLE;
     end
@@ -359,16 +345,30 @@ endtask
 initial
     initialize_buffer_states();
 
+function logic[20:0] get_base_addr(input logic [1:0] buffer_idx);
+    case (buffer_idx)
+        0: get_base_addr = 'd0;
+        1: get_base_addr = INPUT_IMAGE_WIDTH * INPUT_IMAGE_HEIGHT + 'd32;
+        2: get_base_addr = 2 * (INPUT_IMAGE_WIDTH * INPUT_IMAGE_HEIGHT + 'd32);
+        default: begin
+            get_base_addr = 'd0;
+`ifdef __ICARUS__
+            logger.critical(module_name, "Invalid buffer index");
+`endif
+        end
+    endcase
+endfunction
+
 always@(posedge clk or negedge rst_n)
     if(!rst_n) begin
         initialize_buffer_states();
     end else begin
         if (downloading_state == DOWNLOADING_FIND_BUFFER) begin
             //`WRAP_SIM(#1) find_download_buffer_idx(download_buffer_idx);
-            download_buffer_idx <= 'd0;
+            download_buffer_idx <= 'd1;
         end else if (downloading_state == DOWNLOADING_SELECT_BUFFER) begin
             buffer_states[download_buffer_idx] <= `WRAP_SIM(#1) BUFFER_WRITE_BUSY;
-            read_base_addr <= `WRAP_SIM(#1) frame_addresses[download_buffer_idx];
+            read_base_addr <= `WRAP_SIM(#1) get_base_addr(download_buffer_idx);
         end else if (downloading_state == DOWNLOADING_RELEASE_BUFFER) begin
             buffer_states[download_buffer_idx] <= `WRAP_SIM(#1) BUFFER_DISPLAYED;
         end
@@ -378,7 +378,7 @@ always@(posedge clk or negedge rst_n)
             upload_buffer_idx <= 'd1;
         else if (uploading_state == UPLOADING_SELECT_BUFFER) begin
             buffer_states[upload_buffer_idx] <= `WRAP_SIM(#1) BUFFER_WRITE_BUSY;
-            write_base_addr <= `WRAP_SIM(#1) frame_addresses[upload_buffer_idx];
+            write_base_addr <= `WRAP_SIM(#1) get_base_addr(upload_buffer_idx);
         end else if (uploading_state == UPLOADING_RELEASE_BUFFER) begin
             buffer_states[upload_buffer_idx] <= `WRAP_SIM(#1) BUFFER_UPDATED;
         end
@@ -557,14 +557,7 @@ always@(posedge clk or negedge rst_n)
 //===== pSRAM CTRL =====
 always@(posedge clk or negedge rst_n)
     if(!rst_n) begin
-        //cmd         <= `WRAP_SIM(#1) 1'b0;
-        //cmd_en      <= `WRAP_SIM(#1) 1'b0;
-        //addr        <= `WRAP_SIM(#1)  'b0;
-        //wr_data     <= `WRAP_SIM(#1)  'b0;
         data_mask   <= `WRAP_SIM(#1)  'b0;
-        //addr_add_w  <= `WRAP_SIM(#1)  'b0;
-        //addr_add_r  <= `WRAP_SIM(#1)  'b0;
-        //wr_data_add <= `WRAP_SIM(#1)  'b0;
     end
 
 endmodule

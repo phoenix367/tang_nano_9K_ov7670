@@ -3,7 +3,7 @@
 `include "svlogger.sv"
 `endif
 
-`define DEBUG_CAM_INPUT
+`undef DEBUG_CAM_INPUT
 
 `undef DEBUG_LCD
 
