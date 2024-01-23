@@ -128,26 +128,45 @@ module ov7670_default(
             27: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_COM12, 8'h78);                   //COM12      no HREF when VSYNC low
             28: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_GFIX, 8'h00);                    //GFIX       fix gain control
             29: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_REG74, 8'h00);                   //REG74      Digital gain control
-            30: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_RSVD_B0, 8'h84);                 //RSVD       magic value from the internet *required* for good color
-            31: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_ABLC1, 8'h0C);                   //ABLC1
-            32: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_RSVD_B2, 8'h0E);                 //RSVD       more magic internet values
-            33: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_THL_ST, 8'h80);                  //THL_ST
-            34: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_DBLV, 8'h4A);                    //DBLV       multiply clock by 4
-            35: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_GGAIN, 8'h00);                   //GGAIN
-            36: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HREF, 8'h80);                    //HREF       edge offset
-            33: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HAECC1, 8'h78);//16'hB3_80; //THL_ST
+            30: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_ABLC1, 8'h0C);                   //ABLC1
+            31: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_THL_ST, 8'h80);                  //THL_ST
+            32: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_DBLV, 8'h4A);                    //DBLV       multiply clock by 4
+            33: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_GGAIN, 8'h00);                   //GGAIN
+            34: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HREF, 8'h80);                    //HREF       edge offset
+            35: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HAECC1, 8'h78);//16'hB3_80; //THL_ST
             //begin mystery scaling numbers
-            34: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HAECC2, 8'h68);//16'h70_3a;
-            35: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HAECC3, 8'hDF);//16'h73_f0;
-            36: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HAECC4, 8'hDF);//16'ha2_02;
+            36: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HAECC2, 8'h68);//16'h70_3a;
+            37: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HAECC3, 8'hDF);//16'h73_f0;
+            38: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HAECC4, 8'hDF);//16'ha2_02;
             //gamma curve values
-            37: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HAECC5, 8'hF0);//16'h7a_20;
-            38: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HAECC6, 8'h90);//16'h7b_10;
-            39: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HAECC7, 8'h94);//16'h7c_1e;
+            39: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HAECC5, 8'hF0);//16'h7a_20;
+            40: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HAECC6, 8'h90);//16'h7b_10;
+            41: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HAECC7, 8'h94);//16'h7c_1e;
             //40: dout <= `WRAP_SIM(#1) 16'h71_B5;//16'h71_35;  // Test pattern
-            //40: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_COM8, 
-            //                  `OV7670_COM8_AGC |
-            //                  `OV7670_COM8_AEC);
+            42: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_COM8, 
+                              `OV7670_COM8_FASTAEC | `OV7670_COM8_AECSTEP |
+                              `OV7670_COM8_BANDING | `OV7670_COM8_AGC |
+                              `OV7670_COM8_AEC);
+            43: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_RSVD_B0, 8'h84);                 //RSVD       magic value from the internet *required* for good color
+            44: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_RSVD_B2, 8'h0E);                 //RSVD       more magic internet values
+            45: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_AWBC1, 8'h14);
+            46: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_AWBC2, 8'hF0);
+            47: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_AWBC3, 8'h34);
+            48: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_AWBC4, 8'h58);
+            49: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_AWBC5, 8'h28);
+            50: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_AWBC6, 8'h3A);
+            51: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_LCC3, 8'h04);
+            52: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_LCC4, 8'h20);
+            53: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_LCC5, 8'h05);
+            54: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_LCC6, 8'h04);
+            55: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_LCC7, 8'h08);
+            56: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_AWBCTR3, 8'h0A);
+            57: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_AWBCTR2, 8'h55);
+            58: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_BD50MAX, 8'h05);//16'h69_00; //GFIX       fix gain control
+            59: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_BD60MAX, 8'h07);//16'h74_00; //REG74      Digital gain control
+            60: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_AEW, 8'h75);//16'hB0_84; //RSVD       magic value from the internet *required* for good color
+            61: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_AEB, 8'h63);//16'hB1_0c; //ABLC1
+            62: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_VPT, 8'hA5);//16'hB2_0e; //RSVD       more magic internet values
 
             default: dout <= `WRAP_SIM(#1) 16'hFF_FF;         //mark end of ROM
         endcase
