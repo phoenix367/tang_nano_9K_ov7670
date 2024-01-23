@@ -183,7 +183,9 @@
 `define OV7670_REG_HAECC6 8'hA9             //< Histogram-based AEC/AGC ctrl 6
 `define OV7670_REG_HAECC7 8'hAA             //< Histogram-based AEC/AGC ctrl 7
 `define OV7670_REG_BD60MAX 8'hAB            //< 60 Hz banding step limit
+`define OV7670_REG_RSVD_B0 8'hB0
 `define OV7670_REG_ABLC1 8'hB1              //< ABLC enable
+`define OV7670_REG_RSVD_B2 8'hB2
 `define OV7670_REG_THL_ST 8'hB3             //< ABLC target
 `define OV7670_REG_SATCTR 8'hC9             //< Saturation control
 

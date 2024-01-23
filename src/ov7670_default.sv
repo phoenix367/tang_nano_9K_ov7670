@@ -96,43 +96,58 @@ module ov7670_default(
             73: dout <= `WRAP_SIM(#1) 16'h13_e5; //COM8, enable AGC / AEC
 */
 
-    0:  dout <= 16'h12_80; //reset
-    1:  dout <= 16'hFF_F0; //delay
-    2:  dout <= 16'h12_04; // COM7,     set RGB color output
-    3:  dout <= 16'h11_01; // CLKRC     internal PLL matches input clock
-    4:  dout <= 16'h0C_00; // COM3,     default settings
-    5:  dout <= 16'h3E_00; // COM14,    no scaling, normal pclock
-    6:  dout <= 16'h04_00; // COM1,     disable CCIR656
-    7:  dout <= 16'h40_D0; //COM15,     RGB565, full output range
-    8:  dout <= 16'h3a_04; //TSLB       set correct output data sequence (magic)
-    9:  dout <= 16'h14_18; //COM9       MAX AGC value x4
-    10: dout <= 16'h4F_B3; //MTX1       all of these are magical matrix coefficients
-    11: dout <= 16'h50_B3; //MTX2
-    12: dout <= 16'h51_00; //MTX3
-    13: dout <= 16'h52_3d; //MTX4
-    14: dout <= 16'h53_A7; //MTX5
-    15: dout <= 16'h54_E4; //MTX6
-    16: dout <= 16'h58_9E; //MTXS
-    17: dout <= 16'h3D_C0; //COM13      sets gamma enable, does not preserve reserved bits, may be wrong?
-    18: dout <= 16'h17_14; //HSTART     start high 8 bits
-    19: dout <= 16'h18_02; //HSTOP      stop high 8 bits //these kill the odd colored line
-    //20: dout <= 16'h32_80; //HREF       edge offset
-	20: dout <= 16'h8C_00;
-    21: dout <= 16'h19_03; //VSTART     start high 8 bits
-    22: dout <= 16'h1A_7B; //VSTOP      stop high 8 bits
-    23: dout <= 16'h03_0A; //VREF       vsync edge offset
-    24: dout <= 16'h0F_41; //COM6       reset timings
-    25: dout <= 16'h1E_00; //MVFP       disable mirror / flip //might have magic value of 03
-    26: dout <= 16'h33_0B; //CHLF       //magic value from the internet
-    27: dout <= 16'h3C_78; //COM12      no HREF when VSYNC low
-    28: dout <= 16'h69_00; //GFIX       fix gain control
-    29: dout <= 16'h74_00; //REG74      Digital gain control
-    30: dout <= 16'hB0_84; //RSVD       magic value from the internet *required* for good color
-    31: dout <= 16'hB1_0c; //ABLC1
-    32: dout <= 16'hB2_0e; //RSVD       more magic internet values
-    33: dout <= 16'hB3_80; //THL_ST
-    34: dout <= 16'h6B_4A;
-    35: dout <= 16'h6A_00;
+            0:  dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_COM7, `OV7670_COM7_RESET);       //reset
+            1:  dout <= 16'hFF_F0; //delay
+            2:  dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_COM7, `OV7670_COM7_RGB);         // COM7,     set RGB color output
+            3:  dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_CLKRC, 8'h01);                   // CLKRC     internal PLL divide input clock by 2
+            4:  dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_COM3, 8'h00);                    // COM3,     default settings
+            5:  dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_COM14, 8'h00);                   // COM14,    no scaling, normal pclock
+            6:  dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_COM1, 8'h00);                    // COM1,     disable CCIR656
+            7:  dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_COM15, 
+                                                         `OV7670_COM15_R00FF | `OV7670_COM15_RGB565); //COM15,     RGB565, full output range
+            8:  dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_TSLB, `OV7670_TSLB_YLAST);       //TSLB       set correct output data sequence (magic)
+            9:  dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_COM9, 8'h18);                    //COM9       MAX AGC value x4
+            10: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_MTX1, 8'h80);                    //MTX1       all of these are magical matrix coefficients
+            11: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_MTX2, 8'h80);                    //MTX2
+            12: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_MTX3, 8'h00);                    //MTX3
+            13: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_MTX4, 8'h22);                    //MTX4
+            14: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_MTX5, 8'h5E);                    //MTX5
+            15: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_MTX6, 8'h80);                    //MTX6
+            16: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_MTXS, 8'h9E);                    //MTXS
+            17: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_COM13, 
+                                                         `OV7670_COM13_GAMMA | `OV7670_COM13_UVSAT);  //COM13      sets gamma enable, does not preserve reserved bits, may be wrong?
+            18: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HSTART, 8'h14);                  //HSTART     start high 8 bits
+            19: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HSTOP, 8'h02);                   //HSTOP      stop high 8 bits //these kill the odd colored line
+            20: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_RGB444, 8'h00);                  //RGB444     turn off RGB444 mode
+            21: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_VSTART, 8'h03);                  //VSTART     start high 8 bits
+            22: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_VSTOP, 8'h7B);                   //VSTOP      stop high 8 bits
+            23: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_VREF, 8'h0A);                    //VREF       vsync edge offset
+            24: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_COM6, 8'h41);                    //COM6       reset timings
+            25: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_MVFP, 8'h00);                    //MVFP       disable mirror / flip //might have magic value of 03
+            26: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_CHLF, 8'h0B);                    //CHLF       //magic value from the internet
+            27: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_COM12, 8'h78);                   //COM12      no HREF when VSYNC low
+            28: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_GFIX, 8'h00);                    //GFIX       fix gain control
+            29: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_REG74, 8'h00);                   //REG74      Digital gain control
+            30: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_RSVD_B0, 8'h84);                 //RSVD       magic value from the internet *required* for good color
+            31: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_ABLC1, 8'h0C);                   //ABLC1
+            32: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_RSVD_B2, 8'h0E);                 //RSVD       more magic internet values
+            33: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_THL_ST, 8'h80);                  //THL_ST
+            34: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_DBLV, 8'h4A);                    //DBLV       multiply clock by 4
+            35: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_GGAIN, 8'h00);                   //GGAIN
+            36: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HREF, 8'h80);                    //HREF       edge offset
+            33: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HAECC1, 8'h78);//16'hB3_80; //THL_ST
+            //begin mystery scaling numbers
+            34: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HAECC2, 8'h68);//16'h70_3a;
+            35: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HAECC3, 8'hDF);//16'h73_f0;
+            36: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HAECC4, 8'hDF);//16'ha2_02;
+            //gamma curve values
+            37: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HAECC5, 8'hF0);//16'h7a_20;
+            38: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HAECC6, 8'h90);//16'h7b_10;
+            39: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_HAECC7, 8'h94);//16'h7c_1e;
+            //40: dout <= `WRAP_SIM(#1) 16'h71_B5;//16'h71_35;  // Test pattern
+            //40: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_COM8, 
+            //                  `OV7670_COM8_AGC |
+            //                  `OV7670_COM8_AEC);
 
             default: dout <= `WRAP_SIM(#1) 16'hFF_FF;         //mark end of ROM
         endcase

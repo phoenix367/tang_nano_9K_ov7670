@@ -14,22 +14,20 @@
 `include "color_utilities.vh"
 
 package FrameUploaderTypes;
-    typedef enum bit[4:0] {
+    typedef enum bit[3:0] {
         FRAME_PROCESSING_START_WAIT = 'd0, 
         CHECK_QUEUE                 = 'd1, 
         FRAME_PROCESSING_DONE       = 'd2, 
         FRAME_PROCESSING_WRITE_CYC  = 'd3, 
-        READ_QUEUE_DATA             = 'd4, 
-        WAIT_TRANSACTION_COMPLETE   = 'd5, 
-        WRITE_MEMORY                = 'd6, 
-        WRITE_MEMORY_WAIT           = 'd7,
-        FRAME_WRITE_ROW_START       = 'd8,
-        WAIT_FRAME_START_CMD        = 'd11,
-        CHECK_FRAME_START           = 'd12,
-        WAIT_ROW_START              = 'd13,
-        CHECK_ROW_START             = 'd14,
-        WAIT_FRAME_END              = 'd15,
-        CHECK_FRAME_END             = 'd16
+        WRITE_MEMORY                = 'd4, 
+        WRITE_MEMORY_WAIT           = 'd5,
+        FRAME_WRITE_ROW_START       = 'd6,
+        WAIT_FRAME_START_CMD        = 'd7,
+        CHECK_FRAME_START           = 'd8,
+        WAIT_ROW_START              = 'd9,
+        CHECK_ROW_START             = 'd10,
+        WAIT_FRAME_END              = 'd11,
+        CHECK_FRAME_END             = 'd12
     } t_state;
 endpackage
 
