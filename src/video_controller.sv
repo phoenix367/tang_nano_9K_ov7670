@@ -21,7 +21,8 @@ module VideoController
     parameter int INPUT_IMAGE_HEIGHT = 480,
     parameter int OUTPUT_IMAGE_WIDTH = 480,
     parameter int OUTPUT_IMAGE_HEIGHT = 272,
-    parameter MEMORY_INITIAL_DELAY = 'd152
+    parameter MEMORY_INITIAL_DELAY = 'd152,
+    parameter int ENABLE_OUTPUT_RESIZE = 0
 )
 (
       input clk,
@@ -204,7 +205,8 @@ FrameDownloader #(
     .FRAME_HEIGHT(OUTPUT_IMAGE_HEIGHT),
     .ORIG_FRAME_WIDTH(INPUT_IMAGE_WIDTH), 
     .ORIG_FRAME_HEIGHT(INPUT_IMAGE_HEIGHT),
-    .MEMORY_BURST(MEMORY_BURST)
+    .MEMORY_BURST(MEMORY_BURST),
+    .ENABLE_RESIZE(ENABLE_OUTPUT_RESIZE)
 `ifdef __ICARUS__
     , .LOG_LEVEL(LOG_LEVEL)
 `endif

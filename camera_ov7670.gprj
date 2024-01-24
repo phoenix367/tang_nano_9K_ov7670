@@ -44,6 +44,7 @@
         <File path="sim/uploader_test_bench.sv" type="file.verilog" enable="0"/>
         <File path="sim/video_test_bench.sv" type="file.verilog" enable="0"/>
         <File path="sim/wb_master_model.v" type="file.verilog" enable="0"/>
+        <File path="src/PositionScaler.sv" type="file.verilog" enable="1"/>
         <File path="src/VGA_timing.v" type="file.verilog" enable="1"/>
         <File path="src/arbiter.v" type="file.verilog" enable="1"/>
         <File path="src/cam_pixel_processor.sv" type="file.verilog" enable="1"/>

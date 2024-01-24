@@ -123,7 +123,7 @@ module ov7670_default(
             22: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_VSTOP, 8'h7B);                   //VSTOP      stop high 8 bits
             23: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_VREF, 8'h0A);                    //VREF       vsync edge offset
             24: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_COM6, 8'h41);                    //COM6       reset timings
-            25: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_MVFP, 8'h00);                    //MVFP       disable mirror / flip //might have magic value of 03
+            25: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_MVFP, `OV7670_MVFP_VFLIP);       //MVFP       enable vertical flip
             26: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_CHLF, 8'h0B);                    //CHLF       //magic value from the internet
             27: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_COM12, 8'h78);                   //COM12      no HREF when VSYNC low
             28: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_GFIX, 8'h00);                    //GFIX       fix gain control
@@ -167,6 +167,19 @@ module ov7670_default(
             60: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_AEW, 8'h75);//16'hB0_84; //RSVD       magic value from the internet *required* for good color
             61: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_AEB, 8'h63);//16'hB1_0c; //ABLC1
             62: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_VPT, 8'hA5);//16'hB2_0e; //RSVD       more magic internet values
+            63: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_COM17, 8'h00);//16'hB2_0e; //RSVD       more magic internet values
+            64: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_COM4, 8'h00);//16'hB2_0e; //RSVD       more magic internet values
+            65: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_COM16, 
+                                                         8'h00 | `OV7670_COM16_AWBGAIN);//16'hB2_0e; //RSVD       more magic internet values
+            66: dout <= `WRAP_SIM(#1) make_setting_value(8'h77, 8'h90);//16'hB2_0e; //RSVD       more magic internet values
+            67: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_DNSTH, 8'h90);//16'hB2_0e; //RSVD       more magic internet values
+            68: dout <= `WRAP_SIM(#1) make_setting_value(8'h16, 8'h02);//16'h80_76;
+            69: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_ADCCTR1, 8'h02);//16'h82_88;
+            70: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_ADCCTR2, 8'h91);//16'h83_8f;
+            71: dout <= `WRAP_SIM(#1) make_setting_value(8'h29, 8'h07);//16'h84_96;
+            72: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_ADC, 8'h1D);
+            73: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_ACOM, 8'h71);
+            74: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_OFON, 8'h2A);
 
             default: dout <= `WRAP_SIM(#1) 16'hFF_FF;         //mark end of ROM
         endcase

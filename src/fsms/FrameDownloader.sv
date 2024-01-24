@@ -25,7 +25,8 @@ package FrameDownloaderTypes;
         QUEUE_UPLOAD_CYC                 = 8'd12,
         QUEUE_UPLOAD_DONE                = 8'd13,
         ADJUST_ROW_ADDRESS               = 8'd14,
-        CACHE_COUNTER_INCREMENT          = 8'd15
+        CACHE_COUNTER_INCREMENT          = 8'd15,
+        SKIP_ROW                         = 8'd16
     } t_state;
 endpackage
 
@@ -40,7 +41,8 @@ module FrameDownloader
         parameter FRAME_WIDTH = 480,
         parameter FRAME_HEIGHT = 272,
         parameter ORIG_FRAME_WIDTH = 640,
-        parameter ORIG_FRAME_HEIGHT = 480
+        parameter ORIG_FRAME_HEIGHT = 480,
+        parameter ENABLE_RESIZE = 0
     )
     (
         input clk,
@@ -143,6 +145,13 @@ module FrameDownloader
         row_counter <= `WRAP_SIM(#1) 'd0;
     end
 
+    reg [1:0] row_inc;
+    wire [1:0] row_inc_o;
+    PositionScaler position_scaler(
+        .source_position(row_counter), 
+        .position_increment(row_inc_o)
+    );
+
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             cmd_cyc_counter <= `WRAP_SIM(#1) 'd0;
@@ -160,6 +169,7 @@ module FrameDownloader
 
             download_done <= `WRAP_SIM(#1) 1'b0;
             cache_out_en <= `WRAP_SIM(#1) 1'b0;
+            row_inc <= `WRAP_SIM(#1) 'd0;
         end else begin
             // State Machine:
             case (state)
@@ -254,6 +264,7 @@ module FrameDownloader
                         adder_ce <= `WRAP_SIM(#1) 1'b0;
                         state <= `WRAP_SIM(#1) START_READ_FROM_MEMORY;
                     end else begin
+                        row_inc <= `WRAP_SIM(#1) row_inc_o;
                         row_counter <= `WRAP_SIM(#1) row_counter + 1'b1;
                         frame_addr_inc <= `WRAP_SIM(#1) ORIG_FRAME_WIDTH - FRAME_WIDTH;
                         adder_ce <= `WRAP_SIM(#1) 1'b1;
@@ -311,9 +322,31 @@ module FrameDownloader
                     state <= `WRAP_SIM(#1) READ_ROW_CYC;
                 end
                 ADJUST_ROW_ADDRESS: begin
-                    frame_addr_counter <= `WRAP_SIM(#1) adder_out[20:0];
-                    
-                    state <= `WRAP_SIM(#1) START_READ_CYC;
+                    if (ENABLE_RESIZE) begin
+                        if (row_inc === 'd1) begin
+                            frame_addr_counter <= `WRAP_SIM(#1) adder_out[20:0];
+
+                            state <= `WRAP_SIM(#1) START_READ_CYC;
+                        end else if (row_inc === 'd0)
+                            state <= `WRAP_SIM(#1) START_READ_CYC;
+                        else begin
+                            frame_addr_counter <= `WRAP_SIM(#1) adder_out[20:0];
+
+                            state <= `WRAP_SIM(#1) SKIP_ROW;
+                        end
+                    end else begin
+                        frame_addr_counter <= `WRAP_SIM(#1) adder_out[20:0];
+
+                        state <= `WRAP_SIM(#1) START_READ_CYC;
+                    end
+                end
+                SKIP_ROW: begin
+                    if (row_inc === 'd1)
+                        state <= `WRAP_SIM(#1) START_READ_CYC;
+                    else begin
+                        frame_addr_counter <= `WRAP_SIM(#1) frame_addr_counter + ORIG_FRAME_WIDTH;
+                        row_inc <= `WRAP_SIM(#1) row_inc - 1'b1;
+                    end
                 end
                 FRAME_PROCESSING_DONE: begin
                     download_done <= `WRAP_SIM(#1) 1'b1;

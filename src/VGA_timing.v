@@ -149,7 +149,8 @@ module VGA_timing
     );
 	
 VideoController #(
-.MEMORY_BURST(32)
+.MEMORY_BURST(32),
+.ENABLE_OUTPUT_RESIZE(1)
 `ifdef __ICARUS__
 , .LOG_LEVEL(LOG_LEVEL)
 `endif
@@ -244,7 +245,7 @@ VideoController #(
         .FRAME_WIDTH(640),
         .FRAME_HEIGHT(480)
     )
-    pattern_generator_cam
+    pixel_processor_cam
     (
         .clk_cam(PixelClk),
         .clk_mem(mem_load_clk),
