@@ -347,7 +347,10 @@ module FrameDownloader
                     if (row_inc === 'd1)
                         state <= `WRAP_SIM(#1) START_READ_CYC;
                     else begin
-                        frame_addr_counter <= `WRAP_SIM(#1) frame_addr_counter + ORIG_FRAME_WIDTH;
+                        logic [21:0] tmp;
+
+                        tmp = frame_addr_counter + ORIG_FRAME_WIDTH;
+                        frame_addr_counter <= `WRAP_SIM(#1) tmp[20:0];
                         row_inc <= `WRAP_SIM(#1) row_inc - 1'b1;
                     end
                 end

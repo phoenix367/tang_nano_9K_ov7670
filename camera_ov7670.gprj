@@ -44,6 +44,7 @@
         <File path="sim/uploader_test_bench.sv" type="file.verilog" enable="0"/>
         <File path="sim/video_test_bench.sv" type="file.verilog" enable="0"/>
         <File path="sim/wb_master_model.v" type="file.verilog" enable="0"/>
+        <File path="src/BufferController.sv" type="file.verilog" enable="1"/>
         <File path="src/PositionScaler.sv" type="file.verilog" enable="1"/>
         <File path="src/VGA_timing.v" type="file.verilog" enable="1"/>
         <File path="src/arbiter.v" type="file.verilog" enable="1"/>
@@ -59,10 +60,6 @@
         <File path="src/fsms/FrameUploader.sv" type="file.verilog" enable="1"/>
         <File path="src/functions.v" type="file.verilog" enable="1"/>
         <File path="src/gowin_alu54/gowin_alu54.v" type="file.verilog" enable="1"/>
-        <File path="src/gowin_clkdiv2/gowin_clkdiv2.v" type="file.verilog" enable="1"/>
-        <File path="src/gowin_dhcen/gowin_dhcen.v" type="file.verilog" enable="1"/>
-        <File path="src/gowin_dpb/img_row_biffer.v" type="file.verilog" enable="1"/>
-        <File path="src/gowin_dqce/gowin_dqce.v" type="file.verilog" enable="1"/>
         <File path="src/gowin_rpll/memory_rpll.v" type="file.verilog" enable="1"/>
         <File path="src/gowin_sdpb/gowin_sdpb.v" type="file.verilog" enable="1"/>
         <File path="src/gowin_sdpb_dn/gowin_sdpb_dn.v" type="file.verilog" enable="1"/>
@@ -80,7 +77,6 @@
         <File path="src/psram_test.v" type="file.verilog" enable="1"/>
         <File path="src/psram_utils.vh" type="file.verilog" enable="1"/>
         <File path="src/sdpb_1kx32/sdpb_1kx32.v" type="file.verilog" enable="1"/>
-        <File path="src/sram_2kx16/sram_2kx16.v" type="file.verilog" enable="1"/>
         <File path="src/timescale.v" type="file.verilog" enable="1"/>
         <File path="src/video_controller.sv" type="file.verilog" enable="1"/>
         <File path="src/camera_ov7670.cst" type="file.cst" enable="1"/>
