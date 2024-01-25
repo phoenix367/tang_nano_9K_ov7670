@@ -13,5 +13,15 @@ package PSRAM_Utilities;
         endcase
     endfunction
 
+    function reg [5:0] burst_cycles(input int burst);
+        case (burst)
+             16: burst_cycles = 6'd4;
+             32: burst_cycles = 6'd8;
+             64: burst_cycles = 6'd16;
+            128: burst_cycles = 6'd32;
+            default: $error("%m Invalid memory burst value");
+        endcase
+    endfunction
+
 endpackage
 `endif /* __PSRAM_UTILS_VH__ */

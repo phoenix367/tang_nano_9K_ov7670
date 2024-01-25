@@ -1,9 +1,11 @@
 `ifdef __ICARUS__
 `include "timescale.v"
 `include "camera_control_defs.vh"
+`include "psram_utils.vh"
 `else
 `include "../timescale.v"
 `include "../camera_control_defs.vh"
+`include "../psram_utils.vh"
 `endif
 
 `ifdef __ICARUS__
@@ -62,8 +64,6 @@ module FrameUploader
         output mem_load_clk
     );
 
-    localparam NUM_COLOR_BARS = 10;
-    localparam Colorbar_width = FRAME_WIDTH / NUM_COLOR_BARS;
     localparam CACHE_DELAY = 'd2;
 
     import FrameUploaderTypes::*;
@@ -74,39 +74,11 @@ module FrameUploader
     `INITIALIZE_LOGGER
 `endif
 
-    localparam CACHE_SIZE = MEMORY_BURST / 2;
-    localparam BURST_CYCLES = MEMORY_BURST / 4;
     localparam FRAME_PIXELS_NUM = FRAME_WIDTH * FRAME_HEIGHT;
     localparam TCMD = burst_delay(MEMORY_BURST);
-
-    import ColorUtilities::*;
+    localparam BURST_CYCLES = burst_cycles(MEMORY_BURST);
 
     assign mem_load_clk = clk;
-
-    logic [15:0] bar_colors[NUM_COLOR_BARS];
-
-    initial begin
-        logic [3:0] i;
-        logic [15:0] c;
-
-        for (i = 0; i < NUM_COLOR_BARS; i = i + 1) begin
-            c = get_rgb_color(i);
-            bar_colors[i] = c;
-        end
-    end
-
-    function logic [15:0] get_pixel_color(input logic [10:0] column_index);
-        integer i;
-        logic exit;
-
-        get_pixel_color = 16'h0000;
-        exit = 1'b0;
-        for (i = 0; i < NUM_COLOR_BARS && !exit; i = i + 1)
-            if (column_index < (i + 1) * Colorbar_width) begin
-                get_pixel_color = bar_colors[i];
-                exit = 1'b1;
-            end
-    endfunction
 
     t_state state;
 
@@ -226,7 +198,7 @@ module FrameUploader
                         state <= `WRAP_SIM(#1) WRITE_MEMORY;
                 end
                 WRITE_MEMORY: begin
-                    if (write_cyc_counter === 'd8) begin
+                    if (write_cyc_counter === BURST_CYCLES) begin
                         logic [21:0] tmp;
 
                         tmp = frame_addr + 'd16;

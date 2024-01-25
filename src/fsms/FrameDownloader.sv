@@ -1,9 +1,11 @@
 `ifdef __ICARUS__
 `include "timescale.v"
 `include "camera_control_defs.vh"
+`include "psram_utils.vh"
 `else
 `include "../timescale.v"
 `include "../camera_control_defs.vh"
+`include "../psram_utils.vh"
 `endif
 
 `ifdef __ICARUS__
@@ -63,9 +65,10 @@ module FrameDownloader
     );
 
     import FrameDownloaderTypes::*;
+    import PSRAM_Utilities::*;
 
     localparam CACHE_SIZE = MEMORY_BURST / 2;
-    localparam BURST_CYCLES = MEMORY_BURST / 4;
+    localparam BURST_CYCLES = burst_cycles(MEMORY_BURST);
 
 // Logger initialization
 `ifdef __ICARUS__
@@ -285,9 +288,9 @@ module FrameDownloader
                 end
                 READ_FROM_MEMORY_CYC: begin
                     mem_rd_en <= `WRAP_SIM(#1) 1'b0;
-                    if (rd_data_valid && read_counter !== 5'd8)
+                    if (rd_data_valid && read_counter !== BURST_CYCLES)
                         read_counter <= `WRAP_SIM(#1) read_counter_next;
-                    else if (read_counter === 5'd8) begin
+                    else if (read_counter === BURST_CYCLES) begin
                         state <= `WRAP_SIM(#1) QUEUE_UPLOAD_CYC;
                         cache_addr <= `WRAP_SIM(#1) 'd0;
                         cache_out_en <= `WRAP_SIM(#1) 1'b1;
@@ -297,7 +300,7 @@ module FrameDownloader
                 QUEUE_UPLOAD_CYC: begin
                     if (queue_full)
                         ; // Do nothing
-                    else if (col_counter !== FRAME_WIDTH && cache_addr !== 5'd16) begin
+                    else if (col_counter !== FRAME_WIDTH && cache_addr !== CACHE_SIZE) begin
                         wr_en <= `WRAP_SIM(#1) 1'b1;
                             
                         state <= `WRAP_SIM(#1) CACHE_COUNTER_INCREMENT;

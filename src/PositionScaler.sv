@@ -11,9 +11,11 @@ module PositionScaler
     output reg [1:0] position_increment
 ) /* synthesis syn_romstyle="distributed_rom" */;
 
+    (* syn_romstyle="distributed_rom" *)
+
     localparam real SCALE_FACTOR = real'(TARGET_PIXELS) / real'(SOURCE_PIXELS);
     
-    always_comb @(source_position) begin
+    always @(source_position) begin
         case (source_position) 
         
             0: position_increment = 'd2;
