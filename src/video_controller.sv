@@ -100,18 +100,12 @@ typedef enum {
 } DownloadingStates;
 
 typedef enum {
-    BUFFER_AVAILABLE,
-    BUFFER_WRITE_BUSY,
-    BUFFER_READ_BUSY,
-    BUFFER_DISPLAYED,
-    BUFFER_UPDATED
-} BufferStates;
-
-typedef enum {
     FRAME_PROCESSING_START,
     FRAME_PROCESSING_WRITE_ROW,
     FRAME_PROCESSING_DONE
 } FrameProcessingStates;
+
+import BufferControllerTypes::*;
 
 UploadingStates uploading_state;
 UploadingStates uploading_next_state;
