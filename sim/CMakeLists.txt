@@ -52,6 +52,9 @@ set(TESTS_LIST
     test_patter_write_frame_640x20
     debug_pattern_2_test
     buffer_controller_test_write
+    buffer_controller_test_read
+    buffer_controller_test_read_write_1
+    buffer_controller_test_read_write_2
 )
 
 set(BASE_TEST_DIR "${CMAKE_CURRENT_BINARY_DIR}/tests")

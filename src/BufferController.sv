@@ -41,7 +41,7 @@ module BufferController
         if (current_pos === NUM_BUFFERS - 1)
             get_next = 'd0;
         else
-            get_next = current_pos + 'd1;
+            get_next = current_pos + 1'b1;
     endfunction
 
     BufferStates buffer_states[NUM_BUFFERS - 1:0];
@@ -134,7 +134,9 @@ module BufferController
                         // Do nothing
                         ;
                 endcase
-            end else if (finalize_rd) begin
+            end 
+
+            if (finalize_rd) begin
                 case (read_state)
                     READ_SELECT: begin
 `ifdef __ICARUS__
