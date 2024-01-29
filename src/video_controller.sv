@@ -228,6 +228,26 @@ arbiter #(.width(NUM_DEVICES), .select_width($clog2(NUM_DEVICES))) shared_arbite
     .reset(~rst_n), .clock(clk)
 );
 
+BufferController
+#(
+`ifdef __ICARUS__
+    .LOG_LEVEL(LOG_LEVEL)
+`endif
+)
+buffer_controller
+(
+    .clk(clk),
+    .reset_n(rst_n),
+    .write_rq_rdy(),
+    .finalize_wr(),
+    .read_rq_rdy(),
+    .finalize_rd(),
+
+    .buffer_id_valid(),
+    .buffer_id()
+);
+
+
 generate
     genvar o;
 

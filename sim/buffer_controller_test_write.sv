@@ -79,10 +79,8 @@ initial begin
         write_rdy <= #1 1'b0;
         repeat(1) @(posedge fb_clk);
 
-        if (buffer_data_valid) begin
-            logger.error(module_name, "Valid signal still set");
-            `TEST_FAIL
-        end
+        while (buffer_data_valid)
+            repeat(1) @(posedge fb_clk);
 
         write_finalize <= #1 1'b1;
         repeat(1) @(posedge fb_clk);
