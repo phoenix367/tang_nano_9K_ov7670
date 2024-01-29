@@ -49,36 +49,9 @@ module VGA_timing
     `INITIALIZE_LOGGER
 `endif
 
-    reg buffer_flip;
-    wire reset_p = ~nRST;
-
-    initial begin
-        buffer_flip <= `WRAP_SIM(#1) 1'b0;
-        //debug_led <= `WRAP_SIM(#1) 1'b1;
-    end
-
-	localparam WAIT_FRAME_START = 0;
-	localparam ROW_CAPTURE = 1;
-	localparam WAIT_CALIBRATION = 2;
-
-	reg [1:0] FSM_state = WAIT_CALIBRATION;
-    reg pixel_half = 1'b0;
-    reg frame_done = 1'b0;
-    reg pixel_valid = 1'b0;
-    reg [15:0] pixel_data = 15'd0;
-
-    reg write_a;
-    reg write_b;
-
-    wire [15:0] out_a;
-    wire [15:0] out_b;
-
     wire calib_1;
-    //wire PixelClk;
 
     assign debug_led = ~(error0 || error1);
-
-    //Gowin_DQCE qce(.clkout(PixelClk), .clkin(PixelClk1), .ce(1'b1));
 
     wire [20:0] addr0;
     wire [20:0] addr1;
