@@ -10,6 +10,8 @@
 `include "svlogger.sv"
 `endif
 
+`default_nettype wire
+
 module BufferController
 #(
 `ifdef __ICARUS__

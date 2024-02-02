@@ -92,7 +92,7 @@ module VGA_timing
     assign data_mask_1 = 4'h0;
 
     Video_frame_buffer frame_buffer(
-        .clk(PixelClk), 
+        .clk(sys_clk), 
         .rst_n(nRST),
         .memory_clk(memory_clk), //input memory_clk
 		.pll_lock(pll_lock), //input pll_lock

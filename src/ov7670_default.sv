@@ -180,6 +180,9 @@ module ov7670_default(
             72: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_ADC, 8'h1D);
             73: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_ACOM, 8'h71);
             74: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_OFON, 8'h2A);
+            75: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_BRIGHT, 8'h00);
+            76: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_CONTRAS, 8'h40);
+            77: dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_CONTRAS_CENTER, 8'h80); // 0x40?
 
             default: dout <= `WRAP_SIM(#1) 16'hFF_FF;         //mark end of ROM
         endcase

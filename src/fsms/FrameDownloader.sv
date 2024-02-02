@@ -69,6 +69,8 @@ module FrameDownloader
 
     localparam CACHE_SIZE = MEMORY_BURST / 2;
     localparam BURST_CYCLES = burst_cycles(MEMORY_BURST);
+    localparam real ASPECT_RATIO = real'(ORIG_FRAME_WIDTH) / real'(ORIG_FRAME_HEIGHT);
+    localparam RESIZED_WIDTH = integer'(FRAME_HEIGHT * ASPECT_RATIO);
 
 // Logger initialization
 `ifdef __ICARUS__
@@ -150,9 +152,16 @@ module FrameDownloader
 
     reg [1:0] row_inc;
     wire [1:0] row_inc_o;
-    PositionScaler position_scaler(
+    reg [1:0] col_inc;
+    wire [1:0] col_inc_o;
+
+    PositionScaler_vert position_scaler_vert(
         .source_position(row_counter), 
         .position_increment(row_inc_o)
+    );
+    PositionScaler_horz position_scaler_horz(
+        .source_position(col_counter), 
+        .position_increment(col_inc_o)
     );
 
     always @(posedge clk or negedge reset_n) begin
@@ -173,6 +182,7 @@ module FrameDownloader
             download_done <= `WRAP_SIM(#1) 1'b0;
             cache_out_en <= `WRAP_SIM(#1) 1'b0;
             row_inc <= `WRAP_SIM(#1) 'd0;
+            col_inc <= `WRAP_SIM(#1) 'd0;
         end else begin
             // State Machine:
             case (state)

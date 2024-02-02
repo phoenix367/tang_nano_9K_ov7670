@@ -19,6 +19,8 @@ set(VIDEO_BUFFER_TEST_SOURCES
     "${SRC_FOLDER}/debug_pattern_generator2.sv"
     "${SRC_FOLDER}/BufferController.sv"
     "${SRC_FOLDER}/sdpb_1kx32/sdpb_1kx32.v"
+    "${SRC_FOLDER}/PositionScaler_horz.sv"
+    "${SRC_FOLDER}/PositionScaler_vert.sv"
     "${FPGA_ELEMENTS_FOLDER}/Register.v"
     "${FPGA_ELEMENTS_FOLDER}/Register_Toggle.v"
     "${FPGA_ELEMENTS_FOLDER}/Reset_Synchronizer.v"
