@@ -260,19 +260,19 @@ endtask
 initial
     initialize_buffer_states();
 
-function logic[20:0] get_base_addr(input logic [1:0] buffer_idx);
+task get_base_addr(input logic [1:0] buffer_idx, output logic[20:0] buffer_addr);
     case (buffer_idx)
-        0: get_base_addr = 'd0;
-        1: get_base_addr = INPUT_IMAGE_WIDTH * INPUT_IMAGE_HEIGHT + 'd32;
-        2: get_base_addr = 2 * (INPUT_IMAGE_WIDTH * INPUT_IMAGE_HEIGHT + 'd32);
+        0: buffer_addr = 'd0;
+        1: buffer_addr = INPUT_IMAGE_WIDTH * INPUT_IMAGE_HEIGHT + 'd32;
+        2: buffer_addr = 2 * (INPUT_IMAGE_WIDTH * INPUT_IMAGE_HEIGHT + 'd32);
         default: begin
-            get_base_addr = 'd0;
+            buffer_addr = 'd0;
 `ifdef __ICARUS__
             logger.critical(module_name, "Invalid buffer index");
 `endif
         end
     endcase
-endfunction
+endtask
 
 always@(posedge clk or negedge rst_n)
     if(!rst_n) begin
@@ -284,19 +284,27 @@ always@(posedge clk or negedge rst_n)
         if (downloading_state == DOWNLOADING_FIND_BUFFER) begin
             buffer_read_rdy <= `WRAP_SIM(#1) 1'b1;
         end else if (downloading_state == DOWNLOADING_SELECT_BUFFER) begin
+            logic[20:0] buffer_addr;
+
             if (DEBUG_BUFFER_INDEX >= 0)
-                read_base_addr <= `WRAP_SIM(#1) get_base_addr(DEBUG_BUFFER_INDEX);
+                get_base_addr(DEBUG_BUFFER_INDEX, buffer_addr);
             else
-                read_base_addr <= `WRAP_SIM(#1) get_base_addr(buffer_id_data);
+                get_base_addr(buffer_id_data, buffer_addr);
+
+            read_base_addr <= `WRAP_SIM(#1) buffer_addr;
         end
 
         if (uploading_state == UPLOADING_FIND_BUFFER)
             buffer_write_rdy <= `WRAP_SIM(#1) 1'b1;
         else if (uploading_state == UPLOADING_SELECT_BUFFER) begin
+            logic[20:0] buffer_addr;
+
             if (DEBUG_BUFFER_INDEX >= 0)
-                write_base_addr <= `WRAP_SIM(#1) get_base_addr(DEBUG_BUFFER_INDEX);
+                get_base_addr(DEBUG_BUFFER_INDEX, buffer_addr);
             else
-                write_base_addr <= `WRAP_SIM(#1) get_base_addr(buffer_id_data);
+                get_base_addr(buffer_id_data, buffer_addr);
+
+            write_base_addr <= `WRAP_SIM(#1) buffer_addr;
         end
     end
 
