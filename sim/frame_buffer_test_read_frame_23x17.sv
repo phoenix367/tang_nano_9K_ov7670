@@ -13,10 +13,10 @@ localparam NUM_ITEMS_BATCH = 16;
 localparam CAM_PIXEL_CLK = 2;
 localparam CAM_FRAME_WIDTH = 640;
 localparam CAM_FRAME_HEIGHT = 480;
-localparam LCD_FRAME_WIDTH = 23;
-localparam LCD_FRAME_HEIGHT = 17;
+localparam LCD_FRAME_WIDTH = 480;
+localparam LCD_FRAME_HEIGHT = 20;
 
-localparam READ_BASE_ADDR = 1 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 1 * 32;
+localparam READ_BASE_ADDR = 0;
 
 reg clk, reset_n;
 reg fb_clk;
@@ -24,6 +24,8 @@ reg [16:0] cam_data_in;
 reg cam_data_in_wr_en;
 
 wire memory_clk;
+wire cam_clk_o;
+wire cam_wr_en;
 
 wire queue_load_rd_en;
 wire [16:0] cam_data_out;
@@ -40,6 +42,7 @@ DataLogger #(.verbosity(LOG_LEVEL)) logger();
 wire mem_cmd;
 wire mem_cmd_en;
 wire lcd_clock;
+wire pll_lock;
 
 wire [20:0] mem_addr;
 wire [31:0] mem_w_data;
@@ -55,6 +58,8 @@ reg queue_rd_en;
 
 reg frame_end_signal;
 
+logic[15:0] data_items[3 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 3 * 32];
+
 FIFO_cam q_cam_data_out(
     .Data(cam_data_out), //input [16:0] Data
     .WrReset(~reset_n), //input WrReset
@@ -67,8 +72,6 @@ FIFO_cam q_cam_data_out(
     .Empty(queue_empty_o), //output Empty
     .Full(cam_out_full) //output Full
 );
-
-logic[15:0] data_items[3 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 3 * 32];
 
 initial begin
     integer i;
@@ -83,7 +86,7 @@ initial begin
     queue_rd_en = 1'b0;
     $sformat(module_name, "%m");
 
-    $sformat(str, "Initial write address: %0h", READ_BASE_ADDR);
+    $sformat(str, "Initial read address: %0h", READ_BASE_ADDR);
     logger.info(module_name, str);
 
     logger.info(module_name, " << Starting the Simulation >>");
@@ -193,9 +196,11 @@ VideoController #(
                       .data_mask(),
 
                       .load_clk_o(),
-                      .load_rd_en(),
-                      .load_queue_empty(1'b1),
-                      .load_queue_data(17'd0),
+                      .load_read_rdy(),
+                      .load_command_valid(1'b0),
+                      .load_pixel_data('d0),
+                      .load_mem_addr(),
+                      .load_command_data(2'd0),
 
                       .store_clk_o(cam_clk_o),
                       .store_wr_en(cam_wr_en),
@@ -217,7 +222,7 @@ initial begin
 
     col_counter = 0;
     row_counter = 0;
-    base_address = 1 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 1 * 32;
+    base_address = 0;
 
     $sformat(str, "Downloaded frame base address %0h", base_address);
     logger.info(module_name, str);
@@ -295,7 +300,7 @@ initial begin
     end
 end
 
-always #900000 begin
+always #9000000 begin
     logger.error(module_name, "System hangs");
 
     `TEST_FAIL

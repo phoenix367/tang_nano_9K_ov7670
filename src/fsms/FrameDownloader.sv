@@ -178,6 +178,7 @@ module FrameDownloader
             read_counter <= `WRAP_SIM(#1) 'd0;
             cache_addr <= `WRAP_SIM(#1) 'd0;
             frame_addr_inc <= `WRAP_SIM(#1) 'd0;
+            frame_download_cycle <= `WRAP_SIM(#1) 1'b0;
 
             download_done <= `WRAP_SIM(#1) 1'b0;
             cache_out_en <= `WRAP_SIM(#1) 1'b0;

@@ -76,6 +76,14 @@ module BufferController
         end
     end
 
+`ifdef __ICARUS__
+    always @(write_rq_rdy or read_rq_rdy) begin
+        if (write_rq_rdy && read_rq_rdy)
+            logger.error(module_name, 
+                "\"write_rq_rdy\" and \"read_rq_rdy\" signals can't be set simulatenously");
+    end
+`endif
+
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             integer i;

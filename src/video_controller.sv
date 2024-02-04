@@ -277,13 +277,8 @@ endtask
 always@(posedge clk or negedge rst_n)
     if(!rst_n) begin
         initialize_buffer_states();
-
-        buffer_write_rdy <= `WRAP_SIM(#1) 1'b0;
-        buffer_read_rdy <= `WRAP_SIM(#1) 1'b0;
     end else begin
-        if (downloading_state == DOWNLOADING_FIND_BUFFER) begin
-            buffer_read_rdy <= `WRAP_SIM(#1) 1'b1;
-        end else if (downloading_state == DOWNLOADING_SELECT_BUFFER) begin
+        if (downloading_state == DOWNLOADING_SELECT_BUFFER) begin
             logic[20:0] buffer_addr;
 
             if (DEBUG_BUFFER_INDEX >= 0)
@@ -294,9 +289,7 @@ always@(posedge clk or negedge rst_n)
             read_base_addr <= `WRAP_SIM(#1) buffer_addr;
         end
 
-        if (uploading_state == UPLOADING_FIND_BUFFER)
-            buffer_write_rdy <= `WRAP_SIM(#1) 1'b1;
-        else if (uploading_state == UPLOADING_SELECT_BUFFER) begin
+        if (uploading_state == UPLOADING_SELECT_BUFFER) begin
             logic[20:0] buffer_addr;
 
             if (DEBUG_BUFFER_INDEX >= 0)
@@ -312,6 +305,16 @@ always@(posedge clk or negedge rst_n)
 initial begin
     uploading_state <= `WRAP_SIM(#1) UPLOADING_IDLE;
 end
+
+always@(posedge clk or negedge rst_n)
+    if(!rst_n) begin
+        buffer_write_rdy <= `WRAP_SIM(#1) 1'b0;
+    end else begin
+        if (uploading_state == UPLOADING_FIND_BUFFER)
+            buffer_write_rdy <= `WRAP_SIM(#1) 1'b1;
+        else
+            buffer_write_rdy <= `WRAP_SIM(#1) 1'b0;
+    end
 
 always@(posedge clk or negedge rst_n)
     if(!rst_n)
@@ -393,6 +396,16 @@ initial begin
 end
 
 always@(posedge clk or negedge rst_n)
+    if(!rst_n) begin
+        buffer_read_rdy <= `WRAP_SIM(#1) 1'b0;
+    end else begin
+        if (downloading_state == DOWNLOADING_FIND_BUFFER)
+            buffer_read_rdy <= `WRAP_SIM(#1) 1'b1;
+        else
+            buffer_read_rdy <= `WRAP_SIM(#1) 1'b0;
+    end
+
+always@(posedge clk or negedge rst_n)
     if(!rst_n)
         buffer_read_finalize <= `WRAP_SIM(#1) 1'b0;
     else begin
@@ -423,7 +436,7 @@ initial
 always@(posedge clk or negedge rst_n)
     if(!rst_n)
         start_downloading <= `WRAP_SIM(#1) 1'b0;
-    else if (downloading_state == DOWNLOADING_SELECT_BUFFER)
+    else if (downloading_state == DOWNLOADING_START_PROCESS_FRAME)
         start_downloading <= `WRAP_SIM(#1) 1'b1;
     else
         start_downloading <= `WRAP_SIM(#1) 1'b0;
