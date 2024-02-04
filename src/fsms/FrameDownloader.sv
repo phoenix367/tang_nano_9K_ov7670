@@ -93,6 +93,7 @@ module FrameDownloader
 
     reg [10:0] col_counter;
     reg [10:0] row_counter;
+    reg [1:0] column_increment;
 
     reg [16:0] queue_data;
 
@@ -251,6 +252,8 @@ module FrameDownloader
                 START_READ_CYC: begin
                     adder_ce <= `WRAP_SIM(#1) 1'b0;
                     wr_en <= `WRAP_SIM(#1) 1'b0;
+                    frame_addr_inc <= `WRAP_SIM(#1) 'd0;
+
                     state <= `WRAP_SIM(#1) START_READ_ROW;
                 end
                 START_READ_ROW: begin
@@ -303,6 +306,7 @@ module FrameDownloader
                         read_counter <= `WRAP_SIM(#1) read_counter_next;
                     else if (read_counter === BURST_CYCLES) begin
                         state <= `WRAP_SIM(#1) QUEUE_UPLOAD_CYC;
+                        col_inc <= `WRAP_SIM(#1) col_inc_o;
                         cache_addr <= `WRAP_SIM(#1) 'd0;
                         cache_out_en <= `WRAP_SIM(#1) 1'b1;
                         read_rq <= `WRAP_SIM(#1) 1'b0;

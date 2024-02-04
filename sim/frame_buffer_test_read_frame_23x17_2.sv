@@ -11,12 +11,12 @@ localparam NUM_ITEMS_BATCH = 16;
 
 // Camera timing parameters
 localparam CAM_PIXEL_CLK = 2;
-localparam CAM_FRAME_WIDTH = 23;
-localparam CAM_FRAME_HEIGHT = 17;
-localparam LCD_FRAME_WIDTH = 23;
-localparam LCD_FRAME_HEIGHT = 17;
+localparam CAM_FRAME_WIDTH = 640;
+localparam CAM_FRAME_HEIGHT = 480;
+localparam LCD_FRAME_WIDTH = 480;
+localparam LCD_FRAME_HEIGHT = 20;
 
-localparam READ_BASE_ADDR = 1 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 1 * 32;
+localparam READ_BASE_ADDR = 0;
 
 reg clk, reset_n;
 reg fb_clk;
@@ -24,6 +24,8 @@ reg [16:0] cam_data_in;
 reg cam_data_in_wr_en;
 
 wire memory_clk;
+wire cam_clk_o;
+wire cam_wr_en;
 
 wire queue_load_rd_en;
 wire [16:0] cam_data_out;
@@ -40,6 +42,7 @@ DataLogger #(.verbosity(LOG_LEVEL)) logger();
 wire mem_cmd;
 wire mem_cmd_en;
 wire lcd_clock;
+wire pll_lock;
 
 wire [20:0] mem_addr;
 wire [31:0] mem_w_data;
@@ -54,6 +57,10 @@ reg mem_r_data_valid;
 reg queue_rd_en;
 
 reg frame_end_signal;
+reg [10:0] source_row_counter;
+wire [1:0] row_inc_o;
+
+logic[15:0] data_items[3 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 3 * 32];
 
 FIFO_cam q_cam_data_out(
     .Data(cam_data_out), //input [16:0] Data
@@ -68,8 +75,6 @@ FIFO_cam q_cam_data_out(
     .Full(cam_out_full) //output Full
 );
 
-logic[15:0] data_items[3 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 3 * 32];
-
 initial begin
     integer i;
     logic error;
@@ -83,7 +88,7 @@ initial begin
     queue_rd_en = 1'b0;
     $sformat(module_name, "%m");
 
-    $sformat(str, "Initial write address: %0h", READ_BASE_ADDR);
+    $sformat(str, "Initial read address: %0h", READ_BASE_ADDR);
     logger.info(module_name, str);
 
     logger.info(module_name, " << Starting the Simulation >>");
@@ -175,7 +180,8 @@ VideoController #(
 .INPUT_IMAGE_WIDTH(CAM_FRAME_WIDTH),
 .INPUT_IMAGE_HEIGHT(CAM_FRAME_HEIGHT),
 .OUTPUT_IMAGE_WIDTH(LCD_FRAME_WIDTH),
-.OUTPUT_IMAGE_HEIGHT(LCD_FRAME_HEIGHT)
+.OUTPUT_IMAGE_HEIGHT(LCD_FRAME_HEIGHT),
+.ENABLE_OUTPUT_RESIZE(1)
 `ifdef __ICARUS__
 , .LOG_LEVEL(LOG_LEVEL)
 `endif
@@ -193,9 +199,11 @@ VideoController #(
                       .data_mask(),
 
                       .load_clk_o(),
-                      .load_rd_en(),
-                      .load_queue_empty(1'b1),
-                      .load_queue_data(17'd0),
+                      .load_read_rdy(),
+                      .load_command_valid(1'b0),
+                      .load_pixel_data('d0),
+                      .load_mem_addr(),
+                      .load_command_data(2'd0),
 
                       .store_clk_o(cam_clk_o),
                       .store_wr_en(cam_wr_en),
@@ -210,6 +218,22 @@ always @(posedge memory_clk or negedge reset_n) begin
         fb_clk <= #1 ~fb_clk;
 end
 
+reg [10:0] row_index;
+
+PositionScaler_vert position_scaler_vert(
+    .source_position(row_index), 
+    .position_increment(row_inc_o)
+);
+
+reg [10:0] column_index;
+reg [10:0] source_column_counter;
+wire [1:0] col_inc_o;
+
+PositionScaler_horz position_scaler_horz(
+    .source_position(column_index), 
+    .position_increment(col_inc_o)
+);
+
 initial begin
     integer col_counter, row_counter, i;
     integer cycles_to_wait, base_address;
@@ -217,7 +241,11 @@ initial begin
 
     col_counter = 0;
     row_counter = 0;
-    base_address = 1 * CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT + 1 * 32;
+    base_address = 0;
+    source_row_counter = 'd0;
+    row_index = 'd0;
+    column_index = 'd0;
+    source_column_counter = 'd0;
 
     $sformat(str, "Downloaded frame base address %0h", base_address);
     logger.info(module_name, str);
@@ -238,8 +266,8 @@ initial begin
     end else
         logger.info(module_name, "Frame start sequence received");
 
-    for (i = 0; i < LCD_FRAME_HEIGHT; i = i + 1) begin
-        integer j;
+    for (row_index = 0; row_index < LCD_FRAME_HEIGHT; row_index = row_index + 1) begin
+        integer j, delay_cycles;
 
         repeat(1) @(posedge lcd_clock);
 
@@ -249,19 +277,32 @@ initial begin
             `TEST_FAIL
         end
 
-        for (j = 0; j < LCD_FRAME_WIDTH; j = j + 1) begin
+        delay_cycles = ($urandom() % 10) + 1;
+        queue_rd_en = 1'b0;
+        for (j = 0; j < LCD_FRAME_WIDTH; j = j + 1)
+            repeat(1) @(posedge lcd_clock);
+        queue_rd_en = 1'b1;
+        
+
+        for (column_index = 0; column_index < LCD_FRAME_WIDTH; column_index = column_index + 1) begin
             logic [16:0] pixel_value;
             repeat(1) @(posedge lcd_clock);
 
-            pixel_value = data_items[base_address + i * CAM_FRAME_WIDTH + j];
+            pixel_value = data_items[base_address + source_row_counter * CAM_FRAME_WIDTH + column_index];
             if (pixel_value !== {1'b0, queue_data_out_d}) begin
                 string str;
 
-                $sformat(str, "Invalid pixel value. Got %0h, expected %0h", queue_data_out_d, pixel_value);
+                $sformat(str, "Invalid pixel value. Got %0h, expected %0h (row %0d, column %0d)", 
+                    queue_data_out_d, pixel_value, source_row_counter, source_column_counter);
                 logger.error(module_name, str);
                 `TEST_FAIL
             end
+
+            source_column_counter = source_column_counter + col_inc_o;
         end
+
+        $display("%0d => %0d", row_index, source_row_counter);
+        source_row_counter = source_row_counter + row_inc_o;
     end
 
     repeat(1) @(posedge lcd_clock);
@@ -288,7 +329,7 @@ initial begin
     end
 end
 
-always #900000 begin
+always #9000000 begin
     logger.error(module_name, "System hangs");
 
     `TEST_FAIL
