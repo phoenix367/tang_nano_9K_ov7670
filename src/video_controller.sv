@@ -249,17 +249,6 @@ buffer_controller
     .buffer_id(buffer_id_data)
 );
 
-task initialize_buffer_states;
-    write_base_addr <= `WRAP_SIM(#1) 'd0;
-    upload_buffer_idx <= `WRAP_SIM(#1) 'd0;
-
-    read_base_addr <= `WRAP_SIM(#1) 'd0;
-    download_buffer_idx <= `WRAP_SIM(#1) 'd0;
-endtask
-
-initial
-    initialize_buffer_states();
-
 task get_base_addr(input logic [1:0] buffer_idx, output logic[20:0] buffer_addr);
     case (buffer_idx)
         0: buffer_addr = 'd0;
@@ -276,7 +265,8 @@ endtask
 
 always@(posedge clk or negedge rst_n)
     if(!rst_n) begin
-        initialize_buffer_states();
+        read_base_addr <= `WRAP_SIM(#1) 'd0;
+        download_buffer_idx <= `WRAP_SIM(#1) 'd0;
     end else begin
         if (downloading_state == DOWNLOADING_SELECT_BUFFER) begin
             logic[20:0] buffer_addr;
@@ -288,8 +278,19 @@ always@(posedge clk or negedge rst_n)
 
             read_base_addr <= `WRAP_SIM(#1) buffer_addr;
         end
+    end
 
-        if (uploading_state == UPLOADING_SELECT_BUFFER) begin
+// ============ Frame uploading logic ============
+initial begin
+    uploading_state <= `WRAP_SIM(#1) UPLOADING_IDLE;
+end
+
+always@(posedge clk or negedge rst_n)
+    if(!rst_n) begin
+        write_base_addr <= `WRAP_SIM(#1) 'd0;
+        upload_buffer_idx <= `WRAP_SIM(#1) 'd0;
+    end else begin
+        if (uploading_state === UPLOADING_SELECT_BUFFER) begin
             logic[20:0] buffer_addr;
 
             if (DEBUG_BUFFER_INDEX >= 0)
@@ -300,11 +301,6 @@ always@(posedge clk or negedge rst_n)
             write_base_addr <= `WRAP_SIM(#1) buffer_addr;
         end
     end
-
-// ============ Frame uploading logic ============
-initial begin
-    uploading_state <= `WRAP_SIM(#1) UPLOADING_IDLE;
-end
 
 always@(posedge clk or negedge rst_n)
     if(!rst_n) begin
@@ -483,8 +479,6 @@ initial
 always @(posedge clk or negedge rst_n)
     if (!rst_n)
         uploading_start_cnt <= `WRAP_SIM(#1) 'd0;
-    //else if (curr_state == CYC_DONE_WAITE)
-    // start_cnt <= 'b0;
     else if(uploading_start_cnt === MEMORY_INITIAL_DELAY)
         uploading_start_cnt <= `WRAP_SIM(#1) uploading_start_cnt;
     else if((uploading_state ==  UPLOADING_START_WAITE) && init_done)
