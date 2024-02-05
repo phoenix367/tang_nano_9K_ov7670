@@ -8,17 +8,18 @@ module PositionScaler_horz
 (
     input wire [10:0] source_position,
     output reg [1:0] position_increment
-)/*synthesis syn_romstyle="block_rom"*/;
+);
 
     localparam real SCALE_FACTOR = real'(TARGET_PIXELS) / real'(SOURCE_PIXELS);
     
     always @(source_position) begin
         position_increment = 'd0;
 
-        case (source_position)
+        case (source_position % 3)
             0: position_increment = 'd1;
             1: position_increment = 'd2;
             2: position_increment = 'd1;
+/*
             3: position_increment = 'd1;
             4: position_increment = 'd2;
             5: position_increment = 'd1;
@@ -496,6 +497,7 @@ module PositionScaler_horz
             477: position_increment = 'd1;
             478: position_increment = 'd2;
             479: position_increment = 'd1;
+*/
         endcase
     end
 endmodule

@@ -245,7 +245,6 @@ initial begin
     source_row_counter = 'd0;
     row_index = 'd0;
     column_index = 'd0;
-    source_column_counter = 'd0;
 
     $sformat(str, "Downloaded frame base address %0h", base_address);
     logger.info(module_name, str);
@@ -282,18 +281,21 @@ initial begin
         for (j = 0; j < LCD_FRAME_WIDTH; j = j + 1)
             repeat(1) @(posedge lcd_clock);
         queue_rd_en = 1'b1;
-        
+        source_column_counter = 'd0;
 
         for (column_index = 0; column_index < LCD_FRAME_WIDTH; column_index = column_index + 1) begin
             logic [16:0] pixel_value;
+            integer read_address;
+
             repeat(1) @(posedge lcd_clock);
 
-            pixel_value = data_items[base_address + source_row_counter * CAM_FRAME_WIDTH + column_index];
+            read_address = base_address + source_row_counter * CAM_FRAME_WIDTH + column_index;
+            pixel_value = data_items[read_address];
             if (pixel_value !== {1'b0, queue_data_out_d}) begin
                 string str;
 
-                $sformat(str, "Invalid pixel value. Got %0h, expected %0h (row %0d, column %0d)", 
-                    queue_data_out_d, pixel_value, source_row_counter, source_column_counter);
+                $sformat(str, "Invalid pixel value. Got %0h, expected %0h (row %0d, column %0d, addr %0h)", 
+                    queue_data_out_d, pixel_value, source_row_counter, source_column_counter, read_address);
                 logger.error(module_name, str);
                 `TEST_FAIL
             end
