@@ -123,7 +123,7 @@ module VGA_timing
 	
 VideoController #(
 .MEMORY_BURST(32),
-.ENABLE_OUTPUT_RESIZE(0)
+.ENABLE_OUTPUT_RESIZE(1)
 `ifdef __ICARUS__
 , .LOG_LEVEL(LOG_LEVEL)
 `endif

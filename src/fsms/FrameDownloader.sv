@@ -154,9 +154,9 @@ module FrameDownloader
 
     reg [1:0] row_inc;
     wire [1:0] row_inc_o;
-    reg [3:0] col_inc;
-    wire [1:0] col_inc_o;
-    wire [1:0] col_inc_next_o;
+    //reg [3:0] col_inc;
+    //wire [1:0] col_inc_o;
+    //wire [1:0] col_inc_next_o;
 
     PositionScaler_vert position_scaler_vert(
         .source_position(row_counter), 
@@ -186,7 +186,7 @@ module FrameDownloader
             download_done <= `WRAP_SIM(#1) 1'b0;
             cache_out_en <= `WRAP_SIM(#1) 1'b0;
             row_inc <= `WRAP_SIM(#1) 'd0;
-            col_inc <= `WRAP_SIM(#1) 'd0;
+            //col_inc <= `WRAP_SIM(#1) 'd0;
         end else begin
             // State Machine:
             case (state)
@@ -273,7 +273,7 @@ module FrameDownloader
                         queue_data_o <= `WRAP_SIM(#1) 17'h10001;
                         wr_en <= `WRAP_SIM(#1) 1'b1;
                         col_counter <= `WRAP_SIM(#1) 'd0;
-                        col_inc <= `WRAP_SIM(#1) 'd0;
+                        //col_inc <= `WRAP_SIM(#1) 'd0;
 
                         state <= `WRAP_SIM(#1) READ_ROW_CYC;
                     end
@@ -316,7 +316,7 @@ module FrameDownloader
                         cache_addr <= `WRAP_SIM(#1) 'd0;
                         cache_out_en <= `WRAP_SIM(#1) 1'b1;
                         read_rq <= `WRAP_SIM(#1) 1'b0;
-                        col_inc <= `WRAP_SIM(#1) col_inc + col_inc_o;
+                        //col_inc <= `WRAP_SIM(#1) col_inc + col_inc_o;
 
                         state <= `WRAP_SIM(#1) QUEUE_UPLOAD_CYC;
                     end
@@ -327,13 +327,15 @@ module FrameDownloader
                     else if (col_counter !== FRAME_WIDTH && cache_addr !== CACHE_SIZE) begin
                         wr_en <= `WRAP_SIM(#1) 1'b0;
                             
-                        if (ENABLE_RESIZE) begin
+                        if (/*ENABLE_RESIZE*/0) begin
+/*
                             if (col_inc !== col_inc_o) begin
                                 col_inc <= `WRAP_SIM(#1) col_inc - 1'b1;
                                 cache_addr <= `WRAP_SIM(#1) cache_addr_next;
                             end else begin
                                 state <= `WRAP_SIM(#1) WRITE_NEAREST_PIXEL;
                             end
+*/
                         end else begin
                             state <= `WRAP_SIM(#1) CACHE_COUNTER_INCREMENT;
                         end
@@ -343,6 +345,7 @@ module FrameDownloader
                     end
                 end
                 WRITE_NEAREST_PIXEL: begin
+/*
                     wr_en <= `WRAP_SIM(#1) 1'b1;
                     queue_data_o <= `WRAP_SIM(#1) cache_out;
 
@@ -358,9 +361,11 @@ module FrameDownloader
 
                         state <= `WRAP_SIM(#1) CACHE_COUNTER_INCREMENT;
                     end
+*/
                 end
                 CACHE_COUNTER_INCREMENT: begin
-                    if (ENABLE_RESIZE) begin
+                    if (/*ENABLE_RESIZE*/0) begin
+/*
                         wr_en <= `WRAP_SIM(#1) 1'b0;
                         if (cache_addr === CACHE_SIZE) begin
                             state <= `WRAP_SIM(#1) QUEUE_UPLOAD_CYC;
@@ -373,6 +378,7 @@ module FrameDownloader
 
                             state <= `WRAP_SIM(#1) QUEUE_UPLOAD_CYC;
                         end
+*/
                     end else begin
                         wr_en <= `WRAP_SIM(#1) 1'b1;
                         
