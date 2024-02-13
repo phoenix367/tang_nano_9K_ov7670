@@ -123,35 +123,35 @@ module VGA_timing
 	
 VideoController #(
 .MEMORY_BURST(32),
-.ENABLE_OUTPUT_RESIZE(1)
+.ENABLE_OUTPUT_RESIZE(0)
 `ifdef __ICARUS__
 , .LOG_LEVEL(LOG_LEVEL)
 `endif
-) u_test0(
-                      .clk(clk_2),
-                      .rst_n(nRST), 
-                      .init_done(init_done_0),
-                      .cmd(cmd_0),
-                      .cmd_en(cmd_en_0),
-                      .addr(addr0),
-                      .wr_data(wr_data0),
-                      .rd_data(rd_data0),
-                      .rd_data_valid(rd_data_valid_0),
-                      .error(error0),
-                      .data_mask(data_mask_0),
+) video_controller(
+    .clk(clk_2),
+    .rst_n(nRST), 
+    .init_done(init_done_0),
+    .cmd(cmd_0),
+    .cmd_en(cmd_en_0),
+    .addr(addr0),
+    .wr_data(wr_data0),
+    .rd_data(rd_data0),
+    .rd_data_valid(rd_data_valid_0),
+    .error(error0),
+    .data_mask(data_mask_0),
 
-                      .load_clk_o(mem_load_clk),
-                      .load_read_rdy(load_read_rdy),
-                      .load_command_valid(load_command_valid),
-                      .load_pixel_data(load_pixel_data),
-                      .load_mem_addr(load_mem_addr),
-                      .load_command_data(load_command_data),
+    .load_clk_o(mem_load_clk),
+    .load_read_rdy(load_read_rdy),
+    .load_command_valid(load_command_valid),
+    .load_pixel_data(load_pixel_data),
+    .load_mem_addr(load_mem_addr),
+    .load_command_data(load_command_data),
 
-                      .store_clk_o(queue_store_clk),
-                      .store_wr_en(queue_store_wr_en),
-                      .store_queue_full(queue_store_full),
-                      .store_queue_data(video_data_queue_in)
-                  );
+    .store_clk_o(queue_store_clk),
+    .store_wr_en(queue_store_wr_en),
+    .store_queue_full(queue_store_full),
+    .store_queue_data(video_data_queue_in)
+);
 
 
     wire lcd_read_clk;

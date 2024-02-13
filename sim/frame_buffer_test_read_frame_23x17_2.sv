@@ -289,7 +289,7 @@ initial begin
 
             repeat(1) @(posedge lcd_clock);
 
-            read_address = base_address + source_row_counter * CAM_FRAME_WIDTH + column_index;
+            read_address = base_address + source_row_counter * CAM_FRAME_WIDTH + source_column_counter;
             pixel_value = data_items[read_address];
             if (pixel_value !== {1'b0, queue_data_out_d}) begin
                 string str;
