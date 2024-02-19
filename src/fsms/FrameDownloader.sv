@@ -98,6 +98,7 @@ module FrameDownloader
     reg [1:0] column_increment;
 
     reg [16:0] queue_data;
+    reg clear_horz_resize = 1'b0;
 
     wire [31:0] mem_word;
     wire [21:0] adder_out;
@@ -154,18 +155,24 @@ module FrameDownloader
 
     reg [1:0] row_inc;
     wire [1:0] row_inc_o;
-    //reg [3:0] col_inc;
-    //wire [1:0] col_inc_o;
-    //wire [1:0] col_inc_next_o;
+    reg horz_resize_en = 1'b0;
+    wire resize_write_en;
 
     PositionScaler_vert position_scaler_vert(
         .source_position(row_counter), 
         .position_increment(row_inc_o)
     );
-    //PositionScaler_horz position_scaler_horz(
-    //    .source_position(col_counter), 
-    //    .position_increment(col_inc_o)
-    //);
+
+    if (ENABLE_RESIZE)
+        PositionScaler_horz position_scaler_horz(
+            .clk(clk),
+            .reset_n(reset_n),
+            .clear_state(clear_horz_resize),
+            .resize_en(horz_resize_en),
+            .write_enable(resize_write_en)
+        );
+    else
+        assign resize_write_en = 1'b0;
 
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
@@ -186,7 +193,8 @@ module FrameDownloader
             download_done <= `WRAP_SIM(#1) 1'b0;
             cache_out_en <= `WRAP_SIM(#1) 1'b0;
             row_inc <= `WRAP_SIM(#1) 'd0;
-            //col_inc <= `WRAP_SIM(#1) 'd0;
+            clear_horz_resize <= `WRAP_SIM(#1) 1'b0;
+            horz_resize_en <= `WRAP_SIM(#1) 1'b0;
         end else begin
             // State Machine:
             case (state)
@@ -255,10 +263,13 @@ module FrameDownloader
                     adder_ce <= `WRAP_SIM(#1) 1'b0;
                     wr_en <= `WRAP_SIM(#1) 1'b0;
                     frame_addr_inc <= `WRAP_SIM(#1) 'd0;
+                    clear_horz_resize <= `WRAP_SIM(#1) 1'b1;
 
                     state <= `WRAP_SIM(#1) START_READ_ROW;
                 end
                 START_READ_ROW: begin
+                    clear_horz_resize <= `WRAP_SIM(#1) 1'b0;
+
                     if (row_counter === FRAME_HEIGHT) begin
                         if (!queue_full) begin
 `ifdef __ICARUS__
@@ -322,63 +333,34 @@ module FrameDownloader
                     end
                 end
                 QUEUE_UPLOAD_CYC: begin
-                    if (queue_full)
-                        ; // Do nothing
-                    else if (col_counter !== FRAME_WIDTH && cache_addr !== CACHE_SIZE) begin
+                    if (queue_full) begin
+                        horz_resize_en <= `WRAP_SIM(#1) 1'b0;
+                    end else if (col_counter !== FRAME_WIDTH && cache_addr !== CACHE_SIZE) begin
                         wr_en <= `WRAP_SIM(#1) 1'b0;
                             
-                        if (/*ENABLE_RESIZE*/0) begin
-/*
-                            if (col_inc !== col_inc_o) begin
-                                col_inc <= `WRAP_SIM(#1) col_inc - 1'b1;
-                                cache_addr <= `WRAP_SIM(#1) cache_addr_next;
-                            end else begin
-                                state <= `WRAP_SIM(#1) WRITE_NEAREST_PIXEL;
-                            end
-*/
-                        end else begin
-                            state <= `WRAP_SIM(#1) CACHE_COUNTER_INCREMENT;
+                        if (ENABLE_RESIZE) begin
+                            horz_resize_en <= `WRAP_SIM(#1) 1'b1;
                         end
+
+                        state <= `WRAP_SIM(#1) CACHE_COUNTER_INCREMENT;
                     end else begin
+                        horz_resize_en <= `WRAP_SIM(#1) 1'b0;
                         wr_en <= `WRAP_SIM(#1) 1'b0;
+
                         state <= `WRAP_SIM(#1) QUEUE_UPLOAD_DONE;
                     end
                 end
-                WRITE_NEAREST_PIXEL: begin
-/*
-                    wr_en <= `WRAP_SIM(#1) 1'b1;
-                    queue_data_o <= `WRAP_SIM(#1) cache_out;
-
-                    if (col_inc === 'd1) begin
-                        col_counter <= `WRAP_SIM(#1) col_counter_next;
-                        cache_addr <= `WRAP_SIM(#1) cache_addr_next;
-                        col_inc <= `WRAP_SIM(#1) col_inc_next_o;
-
-                        state <= `WRAP_SIM(#1) QUEUE_UPLOAD_CYC;
-                    end else begin
-                        cache_addr <= `WRAP_SIM(#1) cache_addr_next;
-                        col_inc <= `WRAP_SIM(#1) col_inc - 1'b1;
-
-                        state <= `WRAP_SIM(#1) CACHE_COUNTER_INCREMENT;
-                    end
-*/
-                end
                 CACHE_COUNTER_INCREMENT: begin
-                    if (/*ENABLE_RESIZE*/0) begin
-/*
-                        wr_en <= `WRAP_SIM(#1) 1'b0;
-                        if (cache_addr === CACHE_SIZE) begin
-                            state <= `WRAP_SIM(#1) QUEUE_UPLOAD_CYC;
-                        end else if (col_inc !== 'd0) begin
-                            col_inc <= `WRAP_SIM(#1) col_inc - 1'b1;
-                            cache_addr <= `WRAP_SIM(#1) cache_addr_next;
-                        end else begin
-                            col_inc <= `WRAP_SIM(#1) col_inc_next_o;
-                            col_counter <= `WRAP_SIM(#1) col_counter_next;
+                    cache_addr <= `WRAP_SIM(#1) cache_addr + 1'b1;
 
-                            state <= `WRAP_SIM(#1) QUEUE_UPLOAD_CYC;
+                    if (/*ENABLE_RESIZE*/0) begin
+                        horz_resize_en <= `WRAP_SIM(#1) 1'b0;
+                        wr_en <= `WRAP_SIM(#1) resize_write_en;
+
+                        if (resize_write_en) begin
+                            col_counter <= `WRAP_SIM(#1) col_counter + 1'b1;
+                            queue_data_o <= `WRAP_SIM(#1) { 1'b0, /*cache_out*/16'h1FA8 };
                         end
-*/
                     end else begin
                         wr_en <= `WRAP_SIM(#1) 1'b1;
                         
@@ -387,10 +369,10 @@ module FrameDownloader
                         //else
                         //    queue_data_o <= `WRAP_SIM(#1) 'd0;
                         col_counter <= `WRAP_SIM(#1) col_counter + 1'b1;
-                        cache_addr <= `WRAP_SIM(#1) cache_addr_next;
                         
-                        state <= `WRAP_SIM(#1) QUEUE_UPLOAD_CYC;
                     end
+
+                    state <= `WRAP_SIM(#1) QUEUE_UPLOAD_CYC;
                 end
                 QUEUE_UPLOAD_DONE: begin
                     wr_en <= `WRAP_SIM(#1) 1'b0;
