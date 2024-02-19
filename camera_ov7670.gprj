@@ -7,6 +7,7 @@
     <FileList>
         <File path="FPGADesignElements/CDC_Bit_Synchronizer.v" type="file.verilog" enable="1"/>
         <File path="FPGADesignElements/CDC_Word_Synchronizer.v" type="file.verilog" enable="1"/>
+        <File path="FPGADesignElements/Pipeline_Half_Buffer.v" type="file.verilog" enable="1"/>
         <File path="FPGADesignElements/Pipeline_Skid_Buffer.v" type="file.verilog" enable="1"/>
         <File path="FPGADesignElements/Pipeline_to_Pulse.v" type="file.verilog" enable="1"/>
         <File path="FPGADesignElements/Pulse_Generator.v" type="file.verilog" enable="1"/>
@@ -62,7 +63,6 @@
         <File path="src/functions.v" type="file.verilog" enable="1"/>
         <File path="src/gowin_alu54/gowin_alu54.v" type="file.verilog" enable="1"/>
         <File path="src/gowin_rpll/memory_rpll.v" type="file.verilog" enable="1"/>
-        <File path="src/gowin_sdpb/gowin_sdpb.v" type="file.verilog" enable="1"/>
         <File path="src/gowin_sdpb_dn/gowin_sdpb_dn.v" type="file.verilog" enable="1"/>
         <File path="src/i2c_control_fsm.v" type="file.verilog" enable="1"/>
         <File path="src/i2c_controller.v" type="file.verilog" enable="0"/>
@@ -78,12 +78,11 @@
         <File path="src/psram_test.v" type="file.verilog" enable="1"/>
         <File path="src/psram_utils.vh" type="file.verilog" enable="1"/>
         <File path="src/sdpb_1kx32/sdpb_1kx32.v" type="file.verilog" enable="1"/>
+        <File path="src/sdpb_2kx16/sdpb_2kx16.v" type="file.verilog" enable="1"/>
         <File path="src/timescale.v" type="file.verilog" enable="1"/>
         <File path="src/video_controller.sv" type="file.verilog" enable="1"/>
         <File path="src/camera_ov7670.cst" type="file.cst" enable="1"/>
         <File path="src/camera_control.sdc" type="file.sdc" enable="1"/>
-        <File path="src/camera_ov7670.rao" type="file.gao" enable="0"/>
-        <File path="src/camera_ov7670_2.rao" type="file.gao" enable="0"/>
         <File path="CMakeLists.txt" type="file.other" enable="1"/>
         <File path="sim/CMakeLists.txt" type="file.other" enable="1"/>
         <File path="sim/run_simulator.bat.in" type="file.other" enable="1"/>

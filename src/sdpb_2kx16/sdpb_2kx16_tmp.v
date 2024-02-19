@@ -5,13 +5,13 @@
 //Part Number: GW1NR-LV9QN88PC6/I5
 //Device: GW1NR-9
 //Device Version: C
-//Created Time: Sat Nov 18 00:04:27 2023
+//Created Time: Mon Feb 19 05:39:14 2024
 
 //Change the instance name and port connections to the signal names
 //--------Copy here to design--------
 
-    Cache_SDPB your_instance_name(
-        .dout(dout_o), //output [31:0] dout
+    sdpb_2kx16 your_instance_name(
+        .dout(dout_o), //output [15:0] dout
         .clka(clka_i), //input clka
         .cea(cea_i), //input cea
         .reseta(reseta_i), //input reseta
@@ -19,9 +19,9 @@
         .ceb(ceb_i), //input ceb
         .resetb(resetb_i), //input resetb
         .oce(oce_i), //input oce
-        .ada(ada_i), //input [3:0] ada
+        .ada(ada_i), //input [10:0] ada
         .din(din_i), //input [15:0] din
-        .adb(adb_i) //input [2:0] adb
+        .adb(adb_i) //input [10:0] adb
     );
 
 //--------Copy end-------------------

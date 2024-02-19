@@ -163,16 +163,13 @@ module FrameDownloader
         .position_increment(row_inc_o)
     );
 
-    if (ENABLE_RESIZE)
-        PositionScaler_horz position_scaler_horz(
-            .clk(clk),
-            .reset_n(reset_n),
-            .clear_state(clear_horz_resize),
-            .resize_en(horz_resize_en),
-            .write_enable(resize_write_en)
-        );
-    else
-        assign resize_write_en = 1'b0;
+    PositionScaler_horz position_scaler_horz(
+        .clk(clk),
+        .reset_n(reset_n),
+        .clear_state(clear_horz_resize),
+        .resize_en(horz_resize_en),
+        .write_enable(resize_write_en)
+    );
 
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
