@@ -21,6 +21,7 @@ set(VIDEO_BUFFER_TEST_SOURCES
     "${SRC_FOLDER}/sdpb_2kx16/sdpb_2kx16.v"
     "${SRC_FOLDER}/PositionScaler_horz.sv"
     "${SRC_FOLDER}/PositionScaler_vert.sv"
+    "${SRC_FOLDER}/DownloadBuffer.sv"
     "${FPGA_ELEMENTS_FOLDER}/Register.v"
     "${FPGA_ELEMENTS_FOLDER}/Register_Toggle.v"
     "${FPGA_ELEMENTS_FOLDER}/Reset_Synchronizer.v"

@@ -46,6 +46,7 @@
         <File path="sim/video_test_bench.sv" type="file.verilog" enable="0"/>
         <File path="sim/wb_master_model.v" type="file.verilog" enable="0"/>
         <File path="src/BufferController.sv" type="file.verilog" enable="1"/>
+        <File path="src/DownloadBuffer.sv" type="file.verilog" enable="1"/>
         <File path="src/PositionScaler_horz.sv" type="file.verilog" enable="1"/>
         <File path="src/PositionScaler_vert.sv" type="file.verilog" enable="1"/>
         <File path="src/VGA_timing.v" type="file.verilog" enable="1"/>
