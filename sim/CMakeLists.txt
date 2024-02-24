@@ -59,6 +59,7 @@ set(TESTS_LIST
     buffer_controller_test_read
     buffer_controller_test_read_write_1
     buffer_controller_test_read_write_2
+    download_buffer_test
 )
 
 set(BASE_TEST_DIR "${CMAKE_CURRENT_BINARY_DIR}/tests")

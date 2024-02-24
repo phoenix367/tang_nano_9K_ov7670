@@ -132,7 +132,8 @@ module DownloadBuffer
     typedef enum {
         IDLE,
         WAIT_ROW_SWITCH,
-        SWITCH_ROW
+        SWITCH_ROW,
+        WAIT_RESET
     } state_t;
 
     state_t state = IDLE;
@@ -149,8 +150,14 @@ module DownloadBuffer
         end else begin
             case (state)
                 IDLE: begin
-                    mem_input_en_a <= `WRAP_SIM(#1) 1'b1;
-                    state <= `WRAP_SIM(#1) WAIT_ROW_SWITCH;
+                    if (mem_reset_line)
+                        state <= `WRAP_SIM(#1) WAIT_RESET;
+                end
+                WAIT_RESET: begin
+                    if (!mem_reset_line) begin
+                        mem_input_en_a <= `WRAP_SIM(#1) 1'b1;
+                        state <= `WRAP_SIM(#1) WAIT_ROW_SWITCH;
+                    end
                 end
                 WAIT_ROW_SWITCH: begin
                     if (command_data_in == 'd2 && buffer_rdy && !command_available_in)
