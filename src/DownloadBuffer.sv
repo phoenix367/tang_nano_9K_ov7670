@@ -26,11 +26,11 @@ module DownloadBuffer
     input init,
 
     input [10:0] mem_addr,
-    input [16:0] mem_data,
+    input [15:0] mem_data,
     input mem_data_en,
 
     input [10:0] lcd_addr,
-    output [16:0] lcd_data,
+    output [15:0] lcd_data,
 
     input [1:0] command_data_in,
     input command_available_in,
@@ -46,7 +46,8 @@ module DownloadBuffer
     `INITIALIZE_LOGGER
 `endif
 
-    wire [16:0] pixel_data_a, pixel_data_b;
+    wire [15:0] pixel_data_a;
+    wire [15:0] pixel_data_b;
 
     reg write_buffer_id = 1'b0;
     reg mem_output_en_a = 1'b0;
@@ -58,7 +59,6 @@ module DownloadBuffer
 
     Reset_Synchronizer
     #(
-        .EXTRA_DEPTH(1),
         .RESET_ACTIVE_STATE(1)
     ) 
     cam_reset
@@ -70,7 +70,6 @@ module DownloadBuffer
 
     Reset_Synchronizer
     #(
-        .EXTRA_DEPTH(1),
         .RESET_ACTIVE_STATE(1)
     ) 
     mem_reset
@@ -81,7 +80,7 @@ module DownloadBuffer
     );
 
     sdpb_2kx16 row_a(
-        .dout(pixel_data_a), //output [16:0] dout
+        .dout(pixel_data_a), //output [15:0] dout
         .clka(clk_mem), //input clka
         .cea(mem_input_en_a), //input cea
         .reseta(mem_reset_line), //input reseta
@@ -90,12 +89,12 @@ module DownloadBuffer
         .resetb(lcd_reset_line), //input resetb
         .oce(mem_output_en_a), //input oce
         .ada(mem_addr), //input [10:0] ada
-        .din(mem_data), //input [16:0] din
+        .din(mem_data), //input [15:0] din
         .adb(lcd_addr) //input [10:0] adb
     );
 
     sdpb_2kx16 row_b(
-        .dout(pixel_data_b), //output [16:0] dout
+        .dout(pixel_data_b), //output [15:0] dout
         .clka(clk_mem), //input clka
         .cea(mem_input_en_b), //input cea
         .reseta(mem_reset_line), //input reseta
@@ -104,14 +103,13 @@ module DownloadBuffer
         .resetb(lcd_reset_line), //input resetb
         .oce(mem_output_en_b), //input oce
         .ada(mem_addr), //input [10:0] ada
-        .din(mem_data), //input [16:0] din
+        .din(mem_data), //input [15:0] din
         .adb(lcd_addr) //input [10:0] adb
     );
 
     CDC_Word_Synchronizer
     #(
         .WORD_WIDTH(2),
-        .EXTRA_CDC_DEPTH(1),
         .OUTPUT_BUFFER_TYPE("HALF")
     )
     command_synchronizer
@@ -130,10 +128,10 @@ module DownloadBuffer
     );
 
     typedef enum {
-        IDLE,
-        WAIT_ROW_SWITCH,
-        SWITCH_ROW,
-        WAIT_RESET
+        IDLE                = 'd0,
+        WAIT_ROW_SWITCH     = 'd1,
+        SWITCH_ROW          = 'd2,
+        WAIT_RESET          = 'd3
     } state_t;
 
     state_t state = IDLE;
@@ -160,7 +158,7 @@ module DownloadBuffer
                     end
                 end
                 WAIT_ROW_SWITCH: begin
-                    if (command_data_in == 'd2 && buffer_rdy && !command_available_in)
+                    if (command_data_in == 'd2 && buffer_rdy && command_available_in)
                         state <= `WRAP_SIM(#1) SWITCH_ROW;
                 end
                 SWITCH_ROW: begin

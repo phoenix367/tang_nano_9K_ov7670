@@ -37,6 +37,13 @@ reg [10:0] mem_addr = 'd0;
 reg [15:0] mem_data = 'd0;
 reg mem_data_en = 1'b0;
 
+reg [10:0] lcd_addr = 'd0;
+wire [15:0] lcd_data;
+
+reg lcd_command_ack = 1'b0;
+wire [1:0] lcd_command_data;
+wire lcd_command_available;
+
 DownloadBuffer #(
 .LOG_LEVEL(LOG_LEVEL)
 ) 
@@ -51,16 +58,16 @@ download_buffer
     .mem_data(mem_data),
     .mem_data_en(mem_data_en),
 
-    .lcd_addr(),
-    .lcd_data(),
+    .lcd_addr(lcd_addr),
+    .lcd_data(lcd_data),
 
     .command_data_in(mem_command_data),
     .command_available_in(mem_command_available),
     .buffer_rdy(mem_command_ack),
 
-    .command_data_out(),
-    .command_available_out(),
-    .command_ack()
+    .command_data_out(lcd_command_data),
+    .command_available_out(lcd_command_available),
+    .command_ack(lcd_command_ack)
 );
 
 logic [15:0] frame_data[TOTAL_PIXELS];
@@ -136,8 +143,92 @@ initial begin
         mem_command_available <= #1 1'b1;
 
         repeat(1) @(posedge fb_clk);
+        repeat(1) @(posedge fb_clk);
         while (!mem_command_ack) #1;
         mem_command_available <= #1 1'b0;
+    end
+end
+
+typedef enum {
+    READER_IDLE                 = 'd0,
+    READER_FRAME_START          = 'd1,
+    READER_WAIT_ROW             = 'd2,
+    READER_PREPARE_READ_ROW     = 'd3,
+    READER_READ_ROW             = 'd4,
+    READER_READ_ROW_DONE        = 'd5
+} state_t;
+
+state_t state = READER_IDLE;
+integer row_counter = 'd0;
+
+always @(posedge lcd_clk or negedge reset_n) begin
+    if (!reset_n) begin
+        state <= #1 READER_IDLE;
+        lcd_command_ack <= #1 1'b0;
+        row_counter <= #1 'd0;
+        lcd_addr <= #1 'd0;
+    end else begin
+        case (state)
+            READER_IDLE: begin
+                if (lcd_command_available) begin
+                    if (lcd_command_data === 'd1) begin
+                        lcd_command_ack <= #1 1'b1;
+                        state <= #1 READER_FRAME_START;
+                    end else begin
+                        logger.error(module_name, "Unexpected command. Frame start required");
+                        `TEST_FAIL
+                    end
+                end
+            end
+            READER_FRAME_START: begin
+                lcd_command_ack <= #1 1'b0;
+                row_counter <= #1 'd0;
+                state <= #1 READER_WAIT_ROW;
+            end
+            READER_WAIT_ROW: begin
+                if (lcd_command_available) begin
+                    if (lcd_command_data === 'd2) begin
+                        lcd_command_ack <= #1 1'b1;
+                        state <= #1 READER_PREPARE_READ_ROW;
+                    end else begin
+                        logger.error(module_name, "Unexpected command. Row start required");
+                        `TEST_FAIL
+                    end
+                end                
+            end
+            READER_PREPARE_READ_ROW: begin
+                lcd_command_ack <= #1 1'b0;
+                lcd_addr <= #1 'd0;
+
+                state <= #1 READER_READ_ROW;
+            end
+            READER_READ_ROW: begin
+                if (lcd_addr === FRAME_WIDTH) begin
+                    row_counter <= #1 row_counter + 1'b1;
+                    state <= #1 READER_READ_ROW_DONE;
+                end else begin
+                    integer mem_addr;
+
+                    mem_addr = row_counter * FRAME_WIDTH + lcd_addr;
+                    if (lcd_data !== frame_data[mem_addr]) begin
+                        string str;
+
+                        $sformat(str, "");
+                        logger.error(module_name, str);
+
+                        `TEST_FAIL
+                    end else begin
+                        lcd_addr <= #1 lcd_addr + 1'b1;
+                    end
+                end
+            end
+            READER_READ_ROW_DONE: begin
+                if (row_counter === FRAME_HEIGHT) begin
+
+                end else
+                    state <= #1 READER_WAIT_ROW;
+            end
+        endcase
     end
 end
 
