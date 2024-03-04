@@ -6,6 +6,7 @@
     <Device name="GW1NR-9C" pn="GW1NR-LV9QN88PC6/I5">gw1nr9c-004</Device>
     <FileList>
         <File path="FPGADesignElements/CDC_Bit_Synchronizer.v" type="file.verilog" enable="1"/>
+        <File path="FPGADesignElements/CDC_Pulse_Synchronizer_2phase.v" type="file.verilog" enable="1"/>
         <File path="FPGADesignElements/CDC_Word_Synchronizer.v" type="file.verilog" enable="1"/>
         <File path="FPGADesignElements/Pipeline_Half_Buffer.v" type="file.verilog" enable="1"/>
         <File path="FPGADesignElements/Pipeline_Skid_Buffer.v" type="file.verilog" enable="1"/>

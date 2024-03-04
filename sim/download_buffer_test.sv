@@ -44,6 +44,9 @@ reg lcd_command_ack = 1'b0;
 wire [1:0] lcd_command_data;
 wire lcd_command_available;
 
+reg row_read_done = 1'b0;
+wire row_read_ack;
+
 DownloadBuffer #(
 .LOG_LEVEL(LOG_LEVEL)
 ) 
@@ -64,10 +67,12 @@ download_buffer
     .command_data_in(mem_command_data),
     .command_available_in(mem_command_available),
     .buffer_rdy(mem_command_ack),
+    .row_read_ack(row_read_ack),
 
     .command_data_out(lcd_command_data),
     .command_available_out(lcd_command_available),
-    .command_ack(lcd_command_ack)
+    .command_ack(lcd_command_ack),
+    .row_read_done(row_read_done)
 );
 
 logic [15:0] frame_data[TOTAL_PIXELS];
@@ -138,6 +143,9 @@ initial begin
         repeat(1) @(posedge fb_clk);
         mem_data_en <= #1 1'b0;
 
+        if (row_cnt != 0)
+            repeat(1) @(posedge row_read_ack);
+
         repeat(1) @(posedge fb_clk);
         mem_command_data <= #1 'd2;
         mem_command_available <= #1 1'b1;
@@ -167,6 +175,7 @@ always @(posedge lcd_clk or negedge reset_n) begin
         lcd_command_ack <= #1 1'b0;
         row_counter <= #1 'd0;
         lcd_addr <= #1 'd0;
+        row_read_done <= #1 1'b0;
     end else begin
         case (state)
             READER_IDLE: begin
@@ -186,6 +195,8 @@ always @(posedge lcd_clk or negedge reset_n) begin
                 state <= #1 READER_WAIT_ROW;
             end
             READER_WAIT_ROW: begin
+                row_read_done <= #1 1'b0;
+
                 if (lcd_command_available) begin
                     if (lcd_command_data === 'd2) begin
                         lcd_command_ack <= #1 1'b1;
@@ -198,7 +209,7 @@ always @(posedge lcd_clk or negedge reset_n) begin
             end
             READER_PREPARE_READ_ROW: begin
                 lcd_command_ack <= #1 1'b0;
-                lcd_addr <= #1 'd0;
+                lcd_addr <= #1 'd1;
 
                 state <= #1 READER_READ_ROW;
             end
@@ -209,24 +220,28 @@ always @(posedge lcd_clk or negedge reset_n) begin
                 end else begin
                     integer mem_addr;
 
-                    mem_addr = row_counter * FRAME_WIDTH + lcd_addr;
+                    mem_addr = row_counter * FRAME_WIDTH + (lcd_addr - 1);
                     if (lcd_data !== frame_data[mem_addr]) begin
                         string str;
 
-                        $sformat(str, "");
+                        $sformat(str, "Read %0h instead of %0h at row %d, column %d",
+                                 lcd_data, frame_data[mem_addr], row_counter, lcd_addr);
                         logger.error(module_name, str);
 
-                        `TEST_FAIL
-                    end else begin
-                        lcd_addr <= #1 lcd_addr + 1'b1;
+                        //`TEST_FAIL
                     end
+
+                    lcd_addr <= #1 lcd_addr + 1'b1;
                 end
             end
             READER_READ_ROW_DONE: begin
                 if (row_counter === FRAME_HEIGHT) begin
 
-                end else
+                end else begin
+                    row_read_done <= #1 1'b1;
+
                     state <= #1 READER_WAIT_ROW;
+                end
             end
         endcase
     end

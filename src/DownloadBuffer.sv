@@ -35,10 +35,12 @@ module DownloadBuffer
     input [1:0] command_data_in,
     input command_available_in,
     output buffer_rdy,
+    output row_read_ack,
 
     output [1:0] command_data_out,
     output command_available_out,
-    input command_ack
+    input command_ack,
+    input row_read_done
 );
 
 // Logger initialization
@@ -126,6 +128,16 @@ module DownloadBuffer
         .receiving_valid(command_available_out),
         .receiving_ready(command_ack)
     );
+
+    CDC_Pulse_Synchronizer_2phase row_read_synchronizer (
+        .sending_clock(clk_lcd),
+        .sending_pulse_in(row_read_done),
+        .sending_ready(),
+
+        .receiving_clock(clk_mem),
+        .receiving_pulse_out(row_read_ack)
+    );
+
 
     typedef enum {
         IDLE                = 'd0,

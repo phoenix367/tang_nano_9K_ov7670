@@ -33,6 +33,7 @@ set(VIDEO_BUFFER_TEST_SOURCES
     "${FPGA_ELEMENTS_FOLDER}/Pulse_Generator.v"
     "${FPGA_ELEMENTS_FOLDER}/Pulse_Latch.v"
     "${FPGA_ELEMENTS_FOLDER}/Pulse_to_Pipeline.v"
+    "${FPGA_ELEMENTS_FOLDER}/CDC_Pulse_Synchronizer_2phase.v"
 )
 
 set(TESTS_LIST 
