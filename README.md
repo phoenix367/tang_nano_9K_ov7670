@@ -22,7 +22,7 @@ You can find OpenSCAD file of plastic holder and STL model [here](physical).
 
 ## Working demo
 
-![Demo video](./doc/images/IMG_0023.mov)
+![Demo video](./doc/images/IMG_0023.gif)
 
 ## Known issues
 
