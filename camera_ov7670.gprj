@@ -82,8 +82,6 @@
         <File path="src/video_controller.sv" type="file.verilog" enable="1"/>
         <File path="src/camera_ov7670.cst" type="file.cst" enable="1"/>
         <File path="src/camera_control.sdc" type="file.sdc" enable="1"/>
-        <File path="src/camera_ov7670.rao" type="file.gao" enable="0"/>
-        <File path="src/camera_ov7670_2.rao" type="file.gao" enable="0"/>
         <File path="CMakeLists.txt" type="file.other" enable="1"/>
         <File path="sim/CMakeLists.txt" type="file.other" enable="1"/>
         <File path="sim/run_simulator.bat.in" type="file.other" enable="1"/>
