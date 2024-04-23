@@ -16,9 +16,20 @@ a simple PCB for interconnect between camera module and Tang Nano board.
 
 You can find OpenSCAD file of plastic holder and STL model [here](physical).
 
+
+## How to build
+
+
+## Working demo
+
+![Demo video](./doc/images/IMG_0023.mov)
+
 ## Known issues
+
+* Incorrect image resize
+* Resistors are used for 
 
 ## License
 
-Source code and model files are distributed under MIT license. See the whole license
+Source code and model files are distributed under MIT license. See the full license
 text in the [LICENSE](LICENSE) file.
