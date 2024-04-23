@@ -22,7 +22,9 @@ You can find OpenSCAD file of plastic holder and STL model [here](physical).
 
 ## Working demo
 
-![Demo video](./doc/images/IMG_0023.mp4)
+Here is a short video to demonstrate how the whole setup is working.
+
+https://github.com/phoenix367/tang_nano_9K_ov7670/assets/2589419/772c0f9f-d9df-424a-a7af-923fc6d49a3e
 
 ## Known issues
 
