@@ -1,5 +1,8 @@
 # tang_nano_9K_ov7670
-This is OV7670 camera sensor demo project for Tang Nano 9K board.
+This is OV7670 camera sensor demo project for Tang Nano 9K board. In this
+project the development board is using to capture video from OV7670 sensor
+and show it on 4.3" LCD screen in real time. Additional on-the-flight image
+resize is applied to save aspect ratio of the input video.
 
 ## Hardware setup
 Below you can find main components diagram.
@@ -20,7 +23,16 @@ You can find OpenSCAD file of plastic holder and STL model [here](physical).
 ## System description
 
 Figure below shows high level representation of the system.
+
 ![System components](./doc/images/system_structure.drawio.png)
+
+Here we have tree clock signals:
+* main clock 27 MHz
+* Memory clock 135 MHz
+* LCD screen clock 13.5 MHz
+
+I2C controller is used for camera module initial configuration. You can refer
+to [ov7670_default.sv](src/ov7670_default.sv) file for configuration details.
 
 ## How to build
 
@@ -33,8 +45,8 @@ https://github.com/phoenix367/tang_nano_9K_ov7670/assets/2589419/772c0f9f-d9df-4
 
 ## Known issues
 
-* Incorrect image resize
-* Resistors are used for 
+* Incorrect image resize (only vertical resize was implemented).
+* Resistors are used for logic level converting. Need to replace them to specialized chip.
 
 ## License
 
