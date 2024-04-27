@@ -17,6 +17,11 @@ a simple PCB for interconnect between camera module and Tang Nano board.
 You can find OpenSCAD file of plastic holder and STL model [here](physical).
 
 
+## System description
+
+Figure below shows high level representation of the system.
+![System components](./doc/images/system_structure.drawio.png)
+
 ## How to build
 
 
