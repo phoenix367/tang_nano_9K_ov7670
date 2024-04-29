@@ -36,6 +36,35 @@ to [ov7670_default.sv](src/ov7670_default.sv) file for configuration details.
 
 ## How to build
 
+To build the sample design you need to install Gowin IDE ver. 1.9.9 Beta-4 or
+later. After that you need to download project source code by the following command
+
+`
+git clone --recurse-submodules https://github.com/phoenix367/tang_nano_9K_ov7670.git
+`
+
+and open the projet in Gowin FPGA designer IDE. You may use Gowin Programmer to upload generated FS file
+to the board.
+
+To build and run tests you need the following:
+* CMake ver. 3.17 or later;
+* Icarus verilog ver. 12-20220611 (you can download Windows version from [here](https://bleyer.org/icarus/iverilog-v12-20220611-x64_setup.exe)).
+
+Testbench is working only on Windows OS. Below is the instruction how to generate and run tests:
+1. Generate testbench project with the following command
+
+`
+cmake -D IVerilog_PATH=<bin_folder> <build output>
+`
+
+Here `bin_folder` is a path to Icarus verilog binary folder.
+For example `C:\iverilog\bin`. If you would like to analyze internal states of each test
+you can turn on variables dump with option `DUMP_SIM_VARIABLES=ON`. In this case after test
+run dump file will be generated and you can analyze it with GtkWave of similar software. Dump file
+is saved to `<build_output>\sim\tests\<test_name>\dump.vcd`.
+
+2. Run tests with your target toolchain. For example if you selected Visual Studio 2019 as a project target
+you need to open generated project in Visual Studio and just build "RUN ALL" target.
 
 ## Working demo
 
