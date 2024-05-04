@@ -93,6 +93,5 @@
         <File path="sim/run_test_video.bat" type="file.other" enable="1"/>
         <File path="sim/test_config.sv.in" type="file.other" enable="1"/>
         <File path="src/CMakeLists.txt" type="file.other" enable="1"/>
-        <File path="src/cam_settings.mi" type="file.other" enable="1"/>
     </FileList>
 </Project>
