@@ -149,8 +149,8 @@ VideoController #(
 
     .store_clk_o(queue_store_clk),
     .store_wr_en(queue_store_wr_en),
-    .store_queue_full(queue_store_full),
-    .store_queue_data(video_data_queue_in)
+    .store_command_valid(queue_store_full),
+    .store_pixel_data(video_data_queue_in)
 );
 
 

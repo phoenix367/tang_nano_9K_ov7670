@@ -49,8 +49,11 @@ module VideoController
       // Store queue interface
       output store_clk_o,
       output store_wr_en,
-      input store_queue_full,
-      output [16:0] store_queue_data
+      output [9:0] store_mem_addr,
+      input store_command_valid,
+      output [16:0] store_pixel_data,
+      input [1:0] store_command_data,
+      output store_command_ready
 );
 
 // Logger initialization
@@ -207,7 +210,7 @@ FrameDownloader #(
     .clk(clk),
     .reset_n(rst_n),
     .start(start_downloading),
-    .queue_full(store_queue_full),
+    .queue_full(store_command_valid),
     .read_ack(shared_grant[DATA_READER_IDX]),
     .base_addr(read_base_addr),
     .read_data(rd_data),
