@@ -6,7 +6,9 @@
     <Device name="GW1NR-9C" pn="GW1NR-LV9QN88PC6/I5">gw1nr9c-004</Device>
     <FileList>
         <File path="FPGADesignElements/CDC_Bit_Synchronizer.v" type="file.verilog" enable="1"/>
+        <File path="FPGADesignElements/CDC_Pulse_Synchronizer_2phase.v" type="file.verilog" enable="1"/>
         <File path="FPGADesignElements/CDC_Word_Synchronizer.v" type="file.verilog" enable="1"/>
+        <File path="FPGADesignElements/Pipeline_Half_Buffer.v" type="file.verilog" enable="1"/>
         <File path="FPGADesignElements/Pipeline_Skid_Buffer.v" type="file.verilog" enable="1"/>
         <File path="FPGADesignElements/Pipeline_to_Pulse.v" type="file.verilog" enable="1"/>
         <File path="FPGADesignElements/Pulse_Generator.v" type="file.verilog" enable="1"/>
@@ -17,6 +19,7 @@
         <File path="FPGADesignElements/Reset_Synchronizer.v" type="file.verilog" enable="1"/>
         <File path="sim/debug_pattern_test.sv" type="file.verilog" enable="0"/>
         <File path="sim/debug_pattern_test_no_extra.sv" type="file.verilog" enable="0"/>
+        <File path="sim/download_buffer_test.sv" type="file.verilog" enable="0"/>
         <File path="sim/frame_buffer_test_full_frame_23x17.sv" type="file.verilog" enable="0"/>
         <File path="sim/frame_buffer_test_full_frame_640x480.sv" type="file.verilog" enable="0"/>
         <File path="sim/frame_buffer_test_full_frame_multi_23x17.sv" type="file.verilog" enable="0"/>
@@ -62,7 +65,6 @@
         <File path="src/functions.v" type="file.verilog" enable="1"/>
         <File path="src/gowin_alu54/gowin_alu54.v" type="file.verilog" enable="1"/>
         <File path="src/gowin_rpll/memory_rpll.v" type="file.verilog" enable="1"/>
-        <File path="src/gowin_sdpb/gowin_sdpb.v" type="file.verilog" enable="1"/>
         <File path="src/gowin_sdpb_dn/gowin_sdpb_dn.v" type="file.verilog" enable="1"/>
         <File path="src/i2c_control_fsm.v" type="file.verilog" enable="1"/>
         <File path="src/i2c_controller.v" type="file.verilog" enable="0"/>
@@ -89,6 +91,5 @@
         <File path="sim/run_test_video.bat" type="file.other" enable="1"/>
         <File path="sim/test_config.sv.in" type="file.other" enable="1"/>
         <File path="src/CMakeLists.txt" type="file.other" enable="1"/>
-        <File path="src/cam_settings.mi" type="file.other" enable="1"/>
     </FileList>
 </Project>
