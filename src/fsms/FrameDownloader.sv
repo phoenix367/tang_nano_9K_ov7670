@@ -74,14 +74,6 @@ module FrameDownloader
     localparam RESIZED_WIDTH = integer'(FRAME_HEIGHT * ASPECT_RATIO);
     localparam BORDER_SIZE = (FRAME_WIDTH - RESIZED_WIDTH) / 2;
 
-    // Source columns emitted per row. With horizontal resize the FULL source
-    // row is streamed to HorizontalResizer (which downscales ORIG_FRAME_WIDTH ->
-    // active and pads with pillarbox borders), so the whole image is preserved
-    // rather than cropped. Without resize the legacy leftmost-FRAME_WIDTH crop
-    // is kept (1:1 read path, e.g. frame_roundtrip). The row-end address step is
-    // ORIG_FRAME_WIDTH - EMIT_WIDTH so a full source row is always traversed.
-    localparam EMIT_WIDTH = ENABLE_RESIZE ? ORIG_FRAME_WIDTH : FRAME_WIDTH;
-
 // Logger initialization
 `ifdef __ICARUS__
     `INITIALIZE_LOGGER
@@ -177,7 +169,7 @@ module FrameDownloader
     // increments and row_inc_o is latched). position_increment is combinational
     // from its residual, so row_inc_o is valid for the current row.
     wire vscale_clear   = (state == FRAME_PROCESSING_START_WAIT) && start;
-    wire vscale_advance = (state == READ_ROW_CYC) && (col_counter == EMIT_WIDTH);
+    wire vscale_advance = (state == READ_ROW_CYC) && (col_counter == FRAME_WIDTH);
 
     PositionScaler_vert position_scaler_vert(
         .clk(clk),
@@ -249,8 +241,8 @@ module FrameDownloader
                         state <= `WRAP_SIM(#1) FRAME_PROCESSING_DONE;
 
 `ifdef __ICARUS__
-                        $sformat(str_msg, "Received %0d pixels for frame at address %0h",
-                                 FRAME_HEIGHT * EMIT_WIDTH, base_addr);
+                        $sformat(str_msg, "Received %0d pixels for frame at address %0h", 
+                                 FRAME_HEIGHT * FRAME_WIDTH, base_addr);
                         logger.debug(module_name, str_msg);
 `endif
                     end else begin
@@ -305,7 +297,7 @@ module FrameDownloader
                 end
                 READ_ROW_CYC: begin
                     wr_en <= `WRAP_SIM(#1) 1'b0;
-                    if (col_counter !== EMIT_WIDTH) begin
+                    if (col_counter !== FRAME_WIDTH) begin
                         //col_inc <= `WRAP_SIM(#1) col_inc + col_inc_o;
                         adder_ce <= `WRAP_SIM(#1) 1'b0;
 
@@ -313,9 +305,10 @@ module FrameDownloader
                     end else begin
                         row_inc <= `WRAP_SIM(#1) row_inc_o;
                         row_counter <= `WRAP_SIM(#1) row_counter + 1'b1;
-                        // Step over the unread tail of the source row (zero when
-                        // EMIT_WIDTH == ORIG_FRAME_WIDTH, i.e. full-width read).
-                        frame_addr_inc <= `WRAP_SIM(#1) ORIG_FRAME_WIDTH - EMIT_WIDTH;
+                        if (/*ENABLE_RESIZE*/0)
+                            frame_addr_inc <= `WRAP_SIM(#1) 'd0;
+                        else
+                            frame_addr_inc <= `WRAP_SIM(#1) ORIG_FRAME_WIDTH - FRAME_WIDTH;
                         adder_ce <= `WRAP_SIM(#1) 1'b1;
                         state <= `WRAP_SIM(#1) ADJUST_ROW_ADDRESS;
                     end
@@ -348,7 +341,7 @@ module FrameDownloader
                 QUEUE_UPLOAD_CYC: begin
                     if (queue_full) begin
                         // stall on back-pressure (hold wr_en)
-                    end else if (col_counter !== EMIT_WIDTH && cache_addr !== CACHE_SIZE) begin
+                    end else if (col_counter !== FRAME_WIDTH && cache_addr !== CACHE_SIZE) begin
                         wr_en <= `WRAP_SIM(#1) 1'b0;
                         state <= `WRAP_SIM(#1) CACHE_COUNTER_INCREMENT;
                     end else begin
