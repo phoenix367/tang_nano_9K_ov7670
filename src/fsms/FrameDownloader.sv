@@ -96,6 +96,10 @@ module FrameDownloader
     reg [10:0] col_counter;
     reg [10:0] row_counter;
     reg [1:0] column_increment;
+    // Registered "last row reached" flag. row_counter only changes at row
+    // boundaries (many cycles before it is tested), so registering the
+    // FRAME_HEIGHT compare keeps it off the frame_addr_counter critical path.
+    reg row_at_height;
 
     reg [16:0] queue_data;
 
@@ -182,7 +186,12 @@ module FrameDownloader
             download_done <= `WRAP_SIM(#1) 1'b0;
             cache_out_en <= `WRAP_SIM(#1) 1'b0;
             row_inc <= `WRAP_SIM(#1) 'd0;
+            row_at_height <= `WRAP_SIM(#1) 1'b0;
         end else begin
+            // Registered last-row flag (1-cycle lag is harmless: row_counter
+            // is stable for many cycles before row_at_height is tested).
+            row_at_height <= `WRAP_SIM(#1) (row_counter === FRAME_HEIGHT);
+
             // State Machine:
             case (state)
                 FRAME_PROCESSING_START_WAIT: begin
@@ -200,7 +209,8 @@ module FrameDownloader
 
                         adder_ce <= `WRAP_SIM(#1) 1'b1;
                         row_counter <= `WRAP_SIM(#1) 'd0;
- 
+                        row_at_height <= `WRAP_SIM(#1) 1'b0;   // overrides the stale lagged update
+
 `ifdef __ICARUS__
                         $sformat(str_msg, "Start frame downloading at memory addr %0h", base_addr);
                         logger.info(module_name, str_msg);
@@ -211,7 +221,7 @@ module FrameDownloader
                     wr_en <= `WRAP_SIM(#1) 1'b0;
                     adder_ce <= `WRAP_SIM(#1) 1'b0;
 
-                    if (row_counter === FRAME_HEIGHT) begin
+                    if (row_at_height) begin
 `ifdef __ICARUS__
                         string str_msg;
 `endif
@@ -254,7 +264,7 @@ module FrameDownloader
                     state <= `WRAP_SIM(#1) START_READ_ROW;
                 end
                 START_READ_ROW: begin
-                    if (row_counter === FRAME_HEIGHT) begin
+                    if (row_at_height) begin
                         if (!queue_full) begin
 `ifdef __ICARUS__
                             logger.info(module_name, "Finalized frame downloading");
