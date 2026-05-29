@@ -128,32 +128,93 @@ full list.
 ### Linux: FTDI kernel driver conflict
 
 On Linux the kernel's `ftdi_sio` driver auto-binds to the Tang Nano's
-FT2232H (`0403:6010`) and exposes it as `/dev/ttyUSB0` / `1`. The
-programmer can't open the device while that happens, and you'll see:
+FT2232H (`0403:6010`) and exposes both of its interfaces as
+`/dev/ttyUSB0` and `/dev/ttyUSB1`. The Gowin Programmer can't open
+the device while that happens, and you'll see:
 
 ```
 Error: Cable failed to open via the channel.
 ```
 
+The chip exposes two channels:
+
+| `bInterfaceNumber` | Function       | Linux side                                     |
+| ------------------ | -------------- | ---------------------------------------------- |
+| `0`                | JTAG Debugger  | needs raw libftd2xx access — must NOT be on `ftdi_sio` |
+| `1`                | UART (RX/TX)   | should stay on `ftdi_sio` so it appears as a `/dev/ttyUSB*` for `picocom`/`minicom`/etc. |
+
 The vendor rules at `<Gowin>/Programmer/bin/50-programmer_usb.rules`
 only cover the single-channel FT232H (`0403:6014`). Install a
-companion rule for the dual-channel variant:
+companion rule that selectively detaches `ftdi_sio` from interface 0
+while leaving interface 1 bound:
 
 ```sh
 sudo tee /etc/udev/rules.d/51-gowin-ft2232h.rules <<'RULES'
-ACTION=="add", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6010", MODE="0666"
-ACTION=="add", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6010", \
-    PROGRAM="/bin/sh -c 'echo -n %k > /sys/bus/usb/drivers/ftdi_sio/unbind 2>/dev/null; true'"
+# Tang Nano 9K FT2232H — channel A (interface 0): JTAG, used by
+# Gowin programmer_cli. Unbind ftdi_sio so libftd2xx can claim it.
+ACTION=="add", SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", \
+    ATTRS{idProduct}=="6010", ATTR{bInterfaceNumber}=="00", \
+    MODE="0666", \
+    RUN+="/bin/sh -c 'echo -n %k > /sys/bus/usb/drivers/ftdi_sio/unbind 2>/dev/null; true'"
+
+# Channel B (interface 1): UART. Leave ftdi_sio attached so it
+# appears as /dev/ttyUSB*, add a stable symlink and group-write
+# access so users in `dialout` can open it without sudo.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6010", \
+    ATTRS{bInterfaceNumber}=="01", \
+    MODE="0660", GROUP="dialout", SYMLINK+="ttyGowin"
 RULES
 
 sudo udevadm control --reload-rules
-# Detach the currently-bound device (or just replug):
-sudo sh -c 'for i in /sys/bus/usb/drivers/ftdi_sio/1-*; do \
-    echo -n "$(basename "$i")" > /sys/bus/usb/drivers/ftdi_sio/unbind; done'
 ```
 
-After this, `/dev/ttyUSB*` should disappear for the cable and
-`make hw_program` should program the SRAM in ~3 seconds.
+Then either replug the cable or trigger the rules manually:
+
+```sh
+# Detach interface 0 (JTAG) from ftdi_sio for the already-plugged cable.
+# The interface number suffix (:1.0) is constant; the bus-port prefix
+# (1-3 below) depends on which USB port you're using — adapt as needed:
+sudo sh -c 'for i in /sys/bus/usb/drivers/ftdi_sio/*:1.0; do \
+    [ -e "$i" ] && echo -n "$(basename "$i")" > /sys/bus/usb/drivers/ftdi_sio/unbind; done'
+
+# Re-trigger udev so the SYMLINK+= and MODE for interface 1 apply now:
+sudo udevadm trigger --action=add --attr-match=idVendor=0403 --attr-match=idProduct=6010
+```
+
+After this:
+
+- `make hw_program` programs the SRAM in ~3 seconds.
+- `/dev/ttyGowin` is a stable symlink to the FPGA's UART (kernel-side
+  name `/dev/ttyUSB0` or `/dev/ttyUSB1` depending on enumeration
+  order). Connect with `picocom -b 115200 /dev/ttyGowin` (or any
+  baud your design uses).
+
+Add your user to `dialout` once if you haven't already, so the
+`/dev/ttyGowin` open permissions take effect without sudo:
+
+```sh
+sudo usermod -aG dialout "$USER"   # log out and back in afterwards
+```
+
+### Wiring the UART into your design
+
+The FT2232H's channel B TXD/RXD pins are routed to two FPGA balls on
+the Tang Nano 9K — check the
+[Sipeed Tang Nano 9K schematic](https://dl.sipeed.com/shareURL/TANG/Nano%209K/2_Schematic)
+for the exact pins on your board revision (commonly **17 = UART_TX**,
+FPGA → host, and **18 = UART_RX**, host → FPGA). They are not
+assigned in [`src/camera_ov7670.cst`](../src/camera_ov7670.cst) by
+default — add a pair of `IO_LOC` lines if you need them, e.g.:
+
+```
+IO_LOC "uart_tx" 17;
+IO_PORT "uart_tx" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8 BANK_VCCIO=3.3;
+IO_LOC "uart_rx" 18;
+IO_PORT "uart_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8 BANK_VCCIO=3.3;
+```
+
+…then expose `uart_tx` / `uart_rx` ports on `CameraControl_TOP` and
+wire them to whatever UART core you're using.
 
 ## Make-target cheat-sheet
 
