@@ -99,6 +99,10 @@ owns the write / read pointers and decides when each FSM is allowed
 to advance to the next slot. The PSRAM bus is shared between them by
 [`src/arbiter.v`](../src/arbiter.v).
 
+For the per-state behaviour of the two FSMs (state diagrams, command-token
+handshakes, the resize / pillarbox states), see
+[state_machines.md](state_machines.md).
+
 ## Camera initialization (I2C / SCCB)
 
 OV7670 register values come from a ROM
