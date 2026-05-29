@@ -32,6 +32,16 @@ fans the 27 MHz crystal out into the four clocks the design needs:
 | `lcd_clock`     | 13.5 MHz  | `sys_clk` ÷ 2     | LCD pixel clock                               |
 | `video_clk_i`   | 27 MHz    | Camera PCLK input | OV7670 capture side                           |
 
+```mermaid
+flowchart LR
+    XTAL["27 MHz crystal"] --> SYS["sys_clk<br/>27 MHz"]
+    XTAL --> RPLL["rPLL<br/>memory_rpll"]
+    RPLL -->|"×5"| MEM["memory_clk<br/>135 MHz"]
+    MEM -->|"÷2"| FB["fb_clk<br/>67.5 MHz"]
+    SYS -->|"÷2"| LCDK["lcd_clock<br/>13.5 MHz"]
+    PCLK["OV7670 PCLK"] --> VID["video_clk_i<br/>27 MHz"]
+```
+
 `memory_clk` and `sys_clk` are declared as **exclusive** clock groups
 in the `.sdc`; `lcd_clock`→`video_clock` and
 `video_clock`→`memory_clock` paths are marked `false_path` since
@@ -43,25 +53,46 @@ submodule. Re-use those rather than rolling new synchronizers.
 
 ## High-level data flow
 
-```
-   OV7670 ──► cam_pixel_processor ──► fifo_cam_data ──► FrameDownloader ─┐
-                                                                         │
-                                                                       PSRAM
-                                                                  (3-frame ring)
-                                                                         │
-            LCD ◄── lcd_controller ◄── video_controller ◄── FrameUploader┘
-                          ▲                  ▲
-                    VGA_timing.v    PositionScaler_horz/_vert
+```mermaid
+flowchart LR
+    OV["OV7670 camera"]
+    CPP["cam_pixel_processor<br/>bytes → RGB565"]
+    CFIFO["fifo_cam_data<br/>async FIFO"]
+    FU["FrameUploader<br/>camera → PSRAM"]
+    PSRAM[("PSRAM<br/>3-frame ring")]
+    FD["FrameDownloader<br/>PSRAM → LCD<br/>resize via PositionScaler_horz / _vert"]
+    SFIFO["store FIFO<br/>async FIFO"]
+    LCDC["lcd_controller<br/>VGA_timing"]
+    LCD["480×272 LCD"]
+
+    OV -->|"video_clk_i"| CPP --> CFIFO
+    CFIFO -->|"CDC → fb_clk"| FU -->|"write"| PSRAM
+    PSRAM -->|"read"| FD --> SFIFO
+    SFIFO -->|"CDC → lcd_clock"| LCDC --> LCD
+
+    BC["BufferController<br/>rd / wr pointers"] -.->|"grant slot"| FU
+    BC -.->|"grant slot"| FD
+    ARB["arbiter"] -.->|"PSRAM bus"| FU
+    ARB -.->|"PSRAM bus"| FD
 ```
 
-Two FSMs sit on either side of PSRAM:
+Two FSMs sit on either side of PSRAM (the direction names are from the
+*memory's* perspective — easy to flip mentally, so check the port list
+before wiring anything):
 
-- **`FrameDownloader`** ([`src/fsms/FrameDownloader.sv`](../src/fsms/FrameDownloader.sv))
-  drains the camera FIFO and writes 640×480 RGB565 pixels into a
-  free frame slot.
 - **`FrameUploader`** ([`src/fsms/FrameUploader.sv`](../src/fsms/FrameUploader.sv))
-  reads pixels back out of the active display frame and feeds them
-  to the LCD path.
+  drains the camera FIFO and **writes** 640×480 RGB565 pixels *into* a
+  free frame slot (uploads pixels into memory).
+- **`FrameDownloader`** ([`src/fsms/FrameDownloader.sv`](../src/fsms/FrameDownloader.sv))
+  **reads** pixels back *out* of the active display frame (downloads
+  pixels from memory) and feeds them to the LCD path, applying the
+  resize.
+
+`FrameUploader`, `FrameDownloader`, `BufferController` and the
+`arbiter` all live inside
+[`src/video_controller.sv`](../src/video_controller.sv), which is in
+turn wrapped by [`src/VGA_timing.v`](../src/VGA_timing.v) together with
+the PSRAM IP, `cam_pixel_processor` and `lcd_controller`.
 
 `BufferController` ([`src/BufferController.sv`](../src/BufferController.sv))
 owns the write / read pointers and decides when each FSM is allowed
@@ -88,7 +119,7 @@ packs the byte stream into 16-bit pixels and pushes them into the
 camera-side FIFO (`fifo_cam_data`, a Gowin async FIFO instance from
 [`src/fifo_top/`](../src/fifo_top)).
 
-`FrameDownloader` (running on `fb_clk`) drains the FIFO in bursts,
+`FrameUploader` (running on `fb_clk`) drains the FIFO in bursts,
 forms PSRAM write commands, and hands them to the arbiter. When it
 finishes the last row of a frame it asks `BufferController` to
 advance the write pointer.
@@ -98,6 +129,16 @@ advance the write pointer.
 The buffer organizes the PSRAM as three frame slots and runs two
 pointers around them, mirroring Gowin's Video Frame Buffer IP
 behavior:
+
+```mermaid
+flowchart LR
+    subgraph RING["PSRAM — 3 frame slots"]
+        direction LR
+        F1["frame 1"] --> F2["frame 2"] --> F3["frame 3"] --> F1
+    end
+    WR(["wr_pt — FrameUploader (write)"]) -.-> F1
+    RD(["rd_pt — FrameDownloader (read)"]) -.-> F2
+```
 
 - `rd_pt` cycles frame1 → frame2 → frame3 → frame1 …
 - `wr_pt` does the same, independently.
@@ -111,7 +152,7 @@ or be PLL-locked.
 
 ## Display path
 
-`FrameUploader` reads pixels out of the active display frame and
+`FrameDownloader` reads pixels out of the active display frame and
 pushes them into an asynchronous FIFO toward the LCD domain.
 [`src/video_controller.sv`](../src/video_controller.sv) pulls pixels
 from that FIFO and drives [`src/lcd_controller.sv`](../src/lcd_controller.sv),
@@ -133,8 +174,8 @@ Two synthetic pattern generators bypass the camera input entirely:
 - [`src/debug_pattern_generator.sv`](../src/debug_pattern_generator.sv)
 - [`src/debug_pattern_generator2.sv`](../src/debug_pattern_generator2.sv)
 
-These are wired into several testbenches (`debug_pattern_test*`,
-`buffer_controller_test_*`) and are useful when you need a known,
+These are wired into several testbenches (`debug_pattern_generator/*`,
+`buffer_controller/*`) and are useful when you need a known,
 predictable input to chase an integration bug without the camera in
 the loop.
 
@@ -145,40 +186,40 @@ shape of the connections.
 
 ### LCD (480×272 RGB565, 16 bpp + DE/HSYNC/VSYNC)
 
-```
-LCD_R[4:0]      71 72 73 74 75
-LCD_G[5:0]      55 56 57 68 69 70
-LCD_B[4:0]      41 42 51 53 54
-LCD_CLK         35
-LCD_DEN         33
-LCD_SYNC        34          (VSYNC)
-LCD_HYNC        40          (HSYNC; note repo spelling)
-```
+| Signal       | Pins                | Notes              |
+| ------------ | ------------------- | ------------------ |
+| `LCD_R[4:0]` | 71 72 73 74 75      |                    |
+| `LCD_G[5:0]` | 55 56 57 68 69 70   |                    |
+| `LCD_B[4:0]` | 41 42 51 53 54      |                    |
+| `LCD_CLK`    | 35                  |                    |
+| `LCD_DEN`    | 33                  |                    |
+| `LCD_SYNC`   | 34                  | VSYNC              |
+| `LCD_HYNC`   | 40                  | HSYNC (repo spelling) |
 
 ### OV7670
 
-```
-cam_data_i[7:0] 79 77 81 80 83 82 85 84
-v_sync_i        31          (VSYNC from camera)
-h_sync_i        32          (HREF from camera)
-video_clk_i     28          (PCLK from camera)
-cam_clk         29          (XCLK to camera, = sys_clk)
-cam_reset       63
-cam_pwdn        27          (held low — camera always powered)
-master_sda      25          (SCCB data)
-master_scl      26          (SCCB clock)
-```
+| Signal            | Pins                    | Notes                  |
+| ----------------- | ----------------------- | ---------------------- |
+| `cam_data_i[7:0]` | 79 77 81 80 83 82 85 84 |                        |
+| `v_sync_i`        | 31                      | VSYNC from camera      |
+| `h_sync_i`        | 32                      | HREF from camera       |
+| `video_clk_i`     | 28                      | PCLK from camera       |
+| `cam_clk`         | 29                      | XCLK to camera (= sys_clk) |
+| `cam_reset`       | 63                      |                        |
+| `cam_pwdn`        | 27                      | held low — always powered |
+| `master_sda`      | 25                      | SCCB data              |
+| `master_scl`      | 26                      | SCCB clock             |
 
 ### Board
 
-```
-sys_clk         52          (27 MHz crystal)
-sys_rst_n       4           (S2 button)
-status_leds     14 15 16
-debug_led       13
-led_out         10
-led_out1        11
-```
+| Signal        | Pins      | Notes              |
+| ------------- | --------- | ------------------ |
+| `sys_clk`     | 52        | 27 MHz crystal     |
+| `sys_rst_n`   | 4         | S2 button          |
+| `status_leds` | 14 15 16  |                    |
+| `debug_led`   | 13        |                    |
+| `led_out`     | 10        |                    |
+| `led_out1`    | 11        |                    |
 
 PSRAM (`O_psram_*` / `IO_psram_*`) is routed to the GW1NR-9C's
 on-package HyperRAM through the Gowin
@@ -206,8 +247,10 @@ src/                  Synthesizable RTL
    camera_ov7670.cst, camera_control.sdc, …)
 
 sim/                  Icarus Verilog testbenches and behavioural models
-├── psram_model.sv    Simulation model for the HyperRAM IP
-└── i2c_slave_model.sv  Simulation model for the OV7670 SCCB endpoint
+├── common/           Shared infra + models (psram_model.sv, i2c_slave_model.sv,
+│                     svlogger.sv, test_utils.sv, …)
+├── unit/             Per-module tests (unit/<dut>/<scenario>.sv)
+└── integration/      Cross-module tests (integration/<topic>/<scenario>.sv)
 
 FPGADesignElements/   Submodule — CDC and pipeline primitives
 scripts/              Codegen helpers (e.g. scaler_generator.py)
