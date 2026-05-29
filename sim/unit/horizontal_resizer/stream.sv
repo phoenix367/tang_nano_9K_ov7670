@@ -14,6 +14,12 @@
 // accepts it (!in_full) -- this exercises the left-border stall (in_full held
 // high while no input is consumed). An output-side monitor captures every
 // emitted beat. A parallel ENABLE=0 instance must be a bit-exact pass-through.
+//
+// out_full is driven by a deterministic pseudo-random toggle so the output
+// skid is hammered with backpressure: the captured stream must still match the
+// expected stream exactly (no dropped / duplicated beats). This is the guard
+// the earlier (skid-free) tests lacked -- a skid handshake bug shows up here
+// rather than only on the device.
 
 module main();
 
@@ -77,6 +83,11 @@ always @(posedge clk or negedge reset_n)
         cap[oi] <= out_data;
         oi      <= oi + 1;
     end
+
+// Pseudo-random downstream backpressure (deterministic seed -> reproducible).
+always @(posedge clk or negedge reset_n)
+    if (!reset_n) out_full <= 1'b0;
+    else          out_full <= $random;
 
 // ENABLE=0 must forward verbatim, every presented beat.
 always @(posedge clk)
