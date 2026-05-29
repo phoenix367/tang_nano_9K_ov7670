@@ -21,6 +21,7 @@ set(VIDEO_BUFFER_TEST_SOURCES
     "${SRC_FOLDER}/sdpb_1kx32/sdpb_1kx32.v"
     "${SRC_FOLDER}/PositionScaler_horz.sv"
     "${SRC_FOLDER}/PositionScaler_vert.sv"
+    "${SRC_FOLDER}/device_delay.sv"
     "${FPGA_ELEMENTS_FOLDER}/Register.v"
     "${FPGA_ELEMENTS_FOLDER}/Register_Toggle.v"
     "${FPGA_ELEMENTS_FOLDER}/Reset_Synchronizer.v"
@@ -45,6 +46,11 @@ set(UNIT_TESTS
     buffer_controller/read_write_2
     debug_pattern_generator/version2
     lcd_controller/timing
+    position_scaler_vert/scale_272_480
+    position_scaler_horz/characterization
+    device_delay/countdown
+    arbiter/round_robin
+    cam_pixel_processor/frame_sequence
 )
 set(INTEGRATION_TESTS
     frame_roundtrip/read_23x17

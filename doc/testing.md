@@ -29,8 +29,18 @@ sim/
 │   │   └── read_write_2.sv          contention scenario 2
 │   ├── debug_pattern_generator/
 │   │   └── version2.sv              DebugPatternGenerator2 colour bars
-│   └── lcd_controller/
-│       └── timing.sv                VSYNC / HSYNC counts for a 23x17 frame
+│   ├── lcd_controller/
+│   │   └── timing.sv                VSYNC / HSYNC counts for a 23x17 frame
+│   ├── position_scaler_vert/
+│   │   └── scale_272_480.sv         LUT vs the generator's scaling algorithm
+│   ├── position_scaler_horz/
+│   │   └── characterization.sv      write_enable stream vs a reference model
+│   ├── device_delay/
+│   │   └── countdown.sv             cycle count to delay_done + syn_rst restart
+│   ├── arbiter/
+│   │   └── round_robin.sv           grant / hold / mask / round-robin (width 2)
+│   └── cam_pixel_processor/
+│       └── frame_sequence.sv        start / per-row / end command framing
 │
 └── integration/                     cross-module tests
     └── frame_roundtrip/
@@ -307,9 +317,19 @@ because:
   pre-refactor port list and would have needed a full rewrite to
   cover the same write+read scenario; deferred.
 
-The gap is the camera **write** path — there's currently no green
-test that drives camera-side pixels into PSRAM through
-`FrameUploader`. Adding one is on the menu but blocked on a
-`DPG2 ↔ FrameUploader` handshake question (DPG2 doesn't emit until
-its consumer asserts ready, but `FrameUploader` only asserts ready
-after seeing `command_data_valid`).
+The remaining gap is the camera **write** path *through PSRAM* —
+`unit/cam_pixel_processor/frame_sequence.sv` now covers the camera
+front end (it drives an OV7670-like byte stream and checks the
+start / per-row / end command framing across the clk_cam→clk_mem
+CDC), but there's still no green test that carries those pixels all
+the way into PSRAM through `FrameUploader`. Adding one is on the menu
+but blocked on a `DPG2 ↔ FrameUploader` handshake question (DPG2
+doesn't emit until its consumer asserts ready, but `FrameUploader`
+only asserts ready after seeing `command_data_valid`).
+
+The `cam_pixel_processor` test deliberately stops at the command
+framing and does **not** assert the packed RGB565 bytes: the IP
+writes `input_pixel` to the row buffer combinationally while the word
+address advances, so the stored word depends on byte-level write
+timing that smoothly-varying image data tolerates but that no simple
+golden model captures.
