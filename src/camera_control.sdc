@@ -42,4 +42,13 @@ set_clock_groups -asynchronous -group [get_clocks {fb_clk}] -group [get_clocks {
 // any future refactor that renames the clkdiv pin.
 set_clock_groups -asynchronous -group [get_clocks {fb_clk}] -group [get_clocks {video_clock}]
 
+// The HyperRAM IP leaves 3 iserdes -> u_psram_init/calib_0_s0 hold
+// violations (worst -0.252 ns) that can't be cleaned from user SDC:
+// the synthesis-mangled cell name visible in the timing report isn't
+// reachable via get_pins / get_cells (Gowin errors with TA2003 on a
+// wildcard, silently no-ops on the literal hierarchy). Calibration
+// runs once at power-up before any traffic, so these paths are not
+// silicon-real; clearing them would require an IP version that ships
+// its own SDC carve-out.
+
 report_high_fanout_nets -max_nets 10
