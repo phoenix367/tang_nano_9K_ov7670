@@ -50,89 +50,34 @@ quality. The flow is owned by `cmake --build build --target hw_all` (synth
    - Any `ERROR (TA2003)` — constraint targets an object that doesn't
      exist; the SDC change in this build silently no-op'd.
 
-4. **Parse the timing report** with the Python snippet below. Pull:
+4. **Parse the timing report** by running the `parse_timing.py` script
+   that ships with this skill (path is relative to the skill's base
+   directory — adjust if your cwd differs). It pulls all of:
 
    - Endpoints analyzed, setup-violated, hold-violated counts.
-   - Per-clock Max Frequency Summary (Constraint vs Actual Fmax).
+   - Per-clock Max Frequency Summary (Constraint vs Actual Fmax, with an
+     OK / TIGHT / FAIL flag at the 1.05× threshold).
    - Per-clock Total Negative Slack Summary (Setup / Hold TNS).
    - Worst 3 setup paths from the Setup Paths Table.
-   - Any hold paths with negative slack.
+   - Worst negative-slack hold paths.
+   - The belt-and-braces scan of the `*.timing_paths` critical-path file
+     (step 5 below, now folded in).
+   - A before/after delta table when `--prev` is supplied (step 6 below).
 
    ```bash
-   python3 << 'PY'
-   import re, html
-   with open('impl/pnr/camera_ov7670_tr_content.html') as f:
-       text = f.read()
-   text = re.sub('<[^>]+>', '|', text)
-   text = re.sub(r'\|+', '|', text)
-   text = html.unescape(text)
-
-   def grab_count(label):
-       m = re.search(re.escape(label) + r'\|\s*\|(\d+)\|', text)
-       return m.group(1) if m else "?"
-
-   print("=== Endpoint counts ===")
-   print(f"  Analyzed:        {grab_count('Numbers of Endpoints Analyzed')}")
-   print(f"  Setup violated:  {grab_count('Numbers of Setup Violated Endpoints')}")
-   print(f"  Hold violated:   {grab_count('Numbers of Hold Violated Endpoints')}")
-
-   print("\n=== Max Frequency Summary ===")
-   idx = text.find('Max Frequency Summary')
-   end = text.find('Total Negative Slack', idx)
-   block = text[idx:end]
-   for m in re.finditer(
-       r'\|\d+\|\s*\|([^|]+)\|\s*\|(Base|Generated)?\|?\s*\|?([0-9.]+)\(MHz\)\|\s*\|([0-9.]+)\(MHz\)\|\s*\|(\d+)\|',
-       block):
-       clk, _, constraint, fmax, levels = m.groups()
-       fmax_f = float(fmax); cons_f = float(constraint)
-       margin = fmax_f / cons_f
-       flag = "  OK" if margin > 1.05 else ("  TIGHT" if margin > 1.0 else "  *** FAIL ***")
-       print(f"  {clk.strip():40s} {cons_f:8.3f} -> {fmax_f:8.3f} MHz (x{margin:.2f}, {levels} levels){flag}")
-
-   print("\n=== Total Negative Slack ===")
-   idx = text.find('Total Negative Slack Summary')
-   end = text.find('Path Slacks Table', idx)
-   block = text[idx:end]
-   for m in re.finditer(r'\|([^|]+)\|\s*\|(Setup|Hold)\|\s*\|(-?[0-9.]+)\|\s*\|(\d+)\|', block):
-       clk, kind, tns, n = m.groups()
-       if float(tns) != 0 or int(n) > 0:
-           print(f"  {clk.strip():40s} {kind:5s} TNS={tns} ns over {n} endpoints  *** VIOLATION ***")
-   print("  (entries with TNS=0 / 0 endpoints omitted)")
-
-   print("\n=== Worst 3 setup paths ===")
-   idx = text.find('Setup Paths Table')
-   end = text.find('Hold Paths Table', idx)
-   block = text[idx:end]
-   paths = re.findall(
-       r'\|\d+\|\s*\|(-?\d+\.\d{3})\|\s*\|([^|]+)\|\s*\|([^|]+)\|\s*\|([^|]+:\[[RF]\])\|\s*\|([^|]+:\[[RF]\])\|',
-       block)
-   for slack, fn, tn, fc, tc in paths[:3]:
-       sign = " (VIOLATION)" if float(slack) < 0 else ""
-       print(f"  slack={slack} ns  {fc.strip()} -> {tc.strip()}{sign}")
-       print(f"    from: {fn.strip()}")
-       print(f"    to:   {tn.strip()}")
-   PY
+   python3 .claude/skills/hw-check/parse_timing.py \
+       --prev /tmp/hw_check_prev_tr.html
    ```
 
-5. **Check critical-path file** for any actual negative slack endpoints
-   (a quick belt-and-braces against the HTML summary):
+   Drop `--prev` if no snapshot was taken in step 1. Both the report path
+   (`--report`) and the critical-path file (`--timing-paths`) default to
+   their `impl/pnr/` locations and rarely need overriding. Run
+   `parse_timing.py --help` for the full argument list.
 
-   ```bash
-   awk '
-   BEGIN { mode="" }
-   /^=====$/ { mode=""; next }
-   /^SETUP$/ { mode="SETUP"; getline s; if (s+0 < 0) setup++; next }
-   /^HOLD$/  { mode="HOLD";  getline s; if (s+0 < 0) hold++;  next }
-   END { printf "timing_paths file: setup<0 = %d, hold<0 = %d\n", setup+0, hold+0 }
-   ' impl/pnr/camera_ov7670.timing_paths
-   ```
+   (The critical-path scan and the before/after diff are both produced by
+   this script now; no separate snippet.)
 
-6. **If a previous snapshot exists** (`/tmp/hw_check_prev_tr.html` from
-   step 1), re-run the parsing snippet against it (substitute the path)
-   and present a before/after delta table for the per-clock Fmax and the
-   endpoint counts. Otherwise just present the absolute numbers.
-
-7. **Report.** Lead with a one-line verdict — one of:
+5. **Report.** Lead with a one-line verdict — one of:
 
    - `Timing clean.` — TNS = 0.000 across every named clock, every Fmax >
      1.05 × constraint, no relevant warnings.
