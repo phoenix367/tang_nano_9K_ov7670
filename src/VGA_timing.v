@@ -73,6 +73,36 @@ module VGA_timing
     wire rd_data_valid_1;
     wire clk_2;
 
+    // Pipeline register between VideoController's outputs and the
+    // PSRAM IP. The original combinational cmd/cmd_en/addr/wr_data
+    // path from FrameUploader.mem_wr_en (a single FF) to the IP's
+    // many WRE pins was the fb_clk bottleneck (~13.5 ns / 14.8 ns
+    // budget). Splitting it with one register stage halves the route
+    // and lets the placer cluster each half near its endpoint.
+    // Cost: one fb_clk cycle of latency on every PSRAM transaction
+    // (latency-tolerant — the FSMs gate on grant/rd_data_valid, not
+    // absolute cycle count).
+    reg        cmd_0_p;
+    reg        cmd_en_0_p;
+    reg [20:0] addr0_p;
+    reg [31:0] wr_data0_p;
+    reg [3:0]  data_mask_0_p;
+    always @(posedge clk_2 or negedge nRST) begin
+        if (!nRST) begin
+            cmd_0_p       <= 1'b0;
+            cmd_en_0_p    <= 1'b0;
+            addr0_p       <= 21'd0;
+            wr_data0_p    <= 32'd0;
+            data_mask_0_p <= 4'd0;
+        end else begin
+            cmd_0_p       <= cmd_0;
+            cmd_en_0_p    <= cmd_en_0;
+            addr0_p       <= addr0;
+            wr_data0_p    <= wr_data0;
+            data_mask_0_p <= data_mask_0;
+        end
+    end
+
     wire mem_load_clk;
     wire load_read_rdy;
     wire load_command_valid;
@@ -105,19 +135,19 @@ module VGA_timing
 		.init_calib0(init_done_0), //output init_calib0
 		.init_calib1(init_done_1), //output init_calib1
 		.clk_out(clk_2), //output clk_out
-		.cmd0(cmd_0), //input cmd0
+		.cmd0(cmd_0_p), //input cmd0  (pipelined)
 		.cmd1(cmd_1), //input cmd1
-		.cmd_en0(cmd_en_0), //input cmd_en0
+		.cmd_en0(cmd_en_0_p), //input cmd_en0 (pipelined)
 		.cmd_en1(cmd_en_1), //input cmd_en1
-		.addr0(addr0), //input [20:0] addr0
+		.addr0(addr0_p), //input [20:0] addr0 (pipelined)
 		.addr1(addr1), //input [20:0] addr1
-		.wr_data0(wr_data0), //input [31:0] wr_data0
+		.wr_data0(wr_data0_p), //input [31:0] wr_data0 (pipelined)
 		.wr_data1(wr_data1), //input [31:0] wr_data1
 		.rd_data0(rd_data0), //output [31:0] rd_data0
 		.rd_data1(rd_data1), //output [31:0] rd_data1
 		.rd_data_valid0(rd_data_valid_0), //output rd_data_valid0
 		.rd_data_valid1(rd_data_valid_1), //output rd_data_valid1
-		.data_mask0(data_mask_0), //input [3:0] data_mask0
+		.data_mask0(data_mask_0_p), //input [3:0] data_mask0 (pipelined)
 		.data_mask1(data_mask_1) //input [3:0] data_mask1
     );
 	
