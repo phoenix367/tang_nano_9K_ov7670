@@ -67,3 +67,39 @@ enable_testing()
 
 add_subdirectory("src")
 add_subdirectory("sim")
+
+# Hardware build targets — drive Gowin's gw_sh in console mode to
+# synthesize / place-and-route / generate the bitstream without the IDE
+# GUI. `Gowin_PATH` is the IDE-root sibling, so strip the trailing /IDE
+# segment to feed `GOWIN_PATH` to the wrapper script (which then sets
+# the LD_LIBRARY_PATH / LD_PRELOAD the Linux launcher needs).
+get_filename_component(GOWIN_ROOT "${Gowin_PATH}" DIRECTORY)
+set(GPRJ_FILE "${CMAKE_CURRENT_SOURCE_DIR}/camera_ov7670.gprj")
+set(HW_WRAPPER "${CMAKE_CURRENT_SOURCE_DIR}/scripts/gw_run.sh")
+add_custom_target(hw_synth
+    COMMAND ${CMAKE_COMMAND} -E env
+            GOWIN_PATH=${GOWIN_ROOT}
+            GPRJ=${GPRJ_FILE}
+            STAGE=syn
+            ${HW_WRAPPER}
+    COMMENT "Gowin synthesis"
+    USES_TERMINAL
+)
+add_custom_target(hw_impl
+    COMMAND ${CMAKE_COMMAND} -E env
+            GOWIN_PATH=${GOWIN_ROOT}
+            GPRJ=${GPRJ_FILE}
+            STAGE=pnr
+            ${HW_WRAPPER}
+    COMMENT "Gowin place-and-route + bitstream"
+    USES_TERMINAL
+)
+add_custom_target(hw_all
+    COMMAND ${CMAKE_COMMAND} -E env
+            GOWIN_PATH=${GOWIN_ROOT}
+            GPRJ=${GPRJ_FILE}
+            STAGE=all
+            ${HW_WRAPPER}
+    COMMENT "Gowin synthesis + place-and-route + bitstream"
+    USES_TERMINAL
+)
