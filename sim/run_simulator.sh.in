@@ -1,0 +1,2 @@
+#!/bin/sh
+"@VERILOG_SIM@" -n "@TEST_OUTPUT_FILE@" > output.txt 2>&1

@@ -26,7 +26,7 @@ set(VIDEO_BUFFER_TEST_SOURCES
     "${FPGA_ELEMENTS_FOLDER}/Reset_Synchronizer.v"
     "${FPGA_ELEMENTS_FOLDER}/CDC_Word_Synchronizer.v"
     "${FPGA_ELEMENTS_FOLDER}/CDC_Bit_Synchronizer.v"
-    "${FPGA_ELEMENTS_FOLDER}/Pipeline_Skid_buffer.v"
+    "${FPGA_ELEMENTS_FOLDER}/Pipeline_Skid_Buffer.v"
     "${FPGA_ELEMENTS_FOLDER}/Pipeline_to_Pulse.v"
     "${FPGA_ELEMENTS_FOLDER}/Pulse_Generator.v"
     "${FPGA_ELEMENTS_FOLDER}/Pulse_Latch.v"
@@ -65,7 +65,7 @@ set(CMAKE_CTEST_ARGUMENTS "--extra-verbose")
 if (WIN32)
     set(RUN_SIM_SCRIPT_NAME "run_simulator.bat")
 else()
-    message(FATAL_ERROR "Only Windows OS is supported")
+    set(RUN_SIM_SCRIPT_NAME "run_simulator.sh")
 endif()
 
 set(TEST_SCRIPT_TEMPLATE "${SIM_SRC_FOLDER}/${RUN_SIM_SCRIPT_NAME}.in")
@@ -121,9 +121,15 @@ foreach (TEST_NAME IN LISTS TESTS_LIST)
         WORKING_DIRECTORY "${WORKING_TEST_DIR}"
     )
 
-    add_test(NAME ${TEST_NAME_RUN} 
-        COMMAND "${WORKING_TEST_DIR}/${RUN_SIM_SCRIPT_NAME}"
-    )
+    if (WIN32)
+        add_test(NAME ${TEST_NAME_RUN}
+            COMMAND "${WORKING_TEST_DIR}/${RUN_SIM_SCRIPT_NAME}"
+        )
+    else()
+        add_test(NAME ${TEST_NAME_RUN}
+            COMMAND sh "${WORKING_TEST_DIR}/${RUN_SIM_SCRIPT_NAME}"
+        )
+    endif()
 
     set_tests_properties(${TEST_NAME_RUN} PROPERTIES DEPENDS ${TEST_OUTPUT_FILE}
         WORKING_DIRECTORY "${WORKING_TEST_DIR}")
