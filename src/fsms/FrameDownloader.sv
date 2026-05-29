@@ -162,8 +162,20 @@ module FrameDownloader
     // Vertical resize only. Horizontal geometry (pillarbox borders / crop) is
     // applied downstream by HorizontalResizer on the pixel stream, so no
     // horizontal scaler is instantiated here.
+    //
+    // The vertical scaler is a stateful DDA kernel kept in lockstep with
+    // row_counter: clear when the frame restarts (row_counter <= 0), advance
+    // once per finished output row (the READ_ROW_CYC row-end, where row_counter
+    // increments and row_inc_o is latched). position_increment is combinational
+    // from its residual, so row_inc_o is valid for the current row.
+    wire vscale_clear   = (state == FRAME_PROCESSING_START_WAIT) && start;
+    wire vscale_advance = (state == READ_ROW_CYC) && (col_counter == FRAME_WIDTH);
+
     PositionScaler_vert position_scaler_vert(
-        .source_position(row_counter),
+        .clk(clk),
+        .reset_n(reset_n),
+        .clear(vscale_clear),
+        .advance(vscale_advance),
         .position_increment(row_inc_o)
     );
 
