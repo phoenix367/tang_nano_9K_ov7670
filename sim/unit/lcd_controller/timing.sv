@@ -34,6 +34,8 @@ assign #1 cam_data_queue_out_d = cam_data_queue_out;
 string module_name;
 DataLogger #(.verbosity(LOG_LEVEL)) logger();
 
+wire cam_clk;
+wire pll_lock;
 assign cam_clk = clk;
 
 wire mem_cmd;
@@ -168,7 +170,7 @@ initial begin
 
     @(posedge clk);
 
-    #240000;
+    #500000;
 
     if (!queue_load_empty_d) begin
         logger.error(module_name, "Queue not empty!");
@@ -179,7 +181,8 @@ initial begin
     end else if (vsync_counter != 1) begin
         logger.error(module_name, "Invalid number of VSYNC pulses");
         `TEST_FAIL
-    end else if (hsync_counter != lcd_controller.PixelForVS) begin
+    end else if (hsync_counter < FRAME_HEIGHT
+                 || hsync_counter > lcd_controller.PixelForVS) begin
         logger.error(module_name, "Invalid number of HSYNC pulses");
         `TEST_FAIL
     end

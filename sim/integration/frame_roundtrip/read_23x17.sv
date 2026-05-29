@@ -231,10 +231,10 @@ initial begin
     cycles_to_wait = ($urandom() % 10) + 1;
 
     for (i = 0; i != cycles_to_wait; i = i + 1)
-        repeat(1) @(posedge lcd_clock);
+        repeat(1) @(posedge lcd_clock); #2;
 
     queue_rd_en = #1 1'b1;
-    repeat(1) @(posedge lcd_clock);
+    repeat(1) @(posedge lcd_clock); #2;
 
     if (queue_data_out_d !== 17'h10000) begin
         logger.error(module_name, "Frame start sequence not found");
@@ -246,7 +246,7 @@ initial begin
     for (i = 0; i < LCD_FRAME_HEIGHT; i = i + 1) begin
         integer j, delay_cycles;
 
-        repeat(1) @(posedge lcd_clock);
+        repeat(1) @(posedge lcd_clock); #2;
 
         if (queue_data_out_d !== 17'h10001) begin
             logger.error(module_name, "Row start sequence not found");
@@ -257,13 +257,13 @@ initial begin
         delay_cycles = ($urandom() % 10) + 1;
         queue_rd_en = 1'b0;
         for (j = 0; j < LCD_FRAME_WIDTH; j = j + 1)
-            repeat(1) @(posedge lcd_clock);
+            repeat(1) @(posedge lcd_clock); #2;
         queue_rd_en = 1'b1;
         
 
         for (j = 0; j < LCD_FRAME_WIDTH; j = j + 1) begin
             logic [16:0] pixel_value;
-            repeat(1) @(posedge lcd_clock);
+            repeat(1) @(posedge lcd_clock); #2;
 
             pixel_value = data_items[base_address + i * CAM_FRAME_WIDTH + j];
             if (pixel_value !== {1'b0, queue_data_out_d}) begin
@@ -276,7 +276,7 @@ initial begin
         end
     end
 
-    repeat(1) @(posedge lcd_clock);
+    repeat(1) @(posedge lcd_clock); #2;
 
     if (queue_data_out_d != 17'h1FFFF) begin
         logger.error(module_name, "Frame stop sequence not found");
@@ -289,7 +289,7 @@ initial begin
 end
 
 initial begin
-    repeat(1) @(posedge lcd_clock);
+    repeat(1) @(posedge lcd_clock); #2;
 
     #1;
     repeat(1) @(posedge queue_empty_o);

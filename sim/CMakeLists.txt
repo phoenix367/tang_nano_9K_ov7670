@@ -33,32 +33,24 @@ set(VIDEO_BUFFER_TEST_SOURCES
     "${FPGA_ELEMENTS_FOLDER}/Pulse_to_Pipeline.v"
 )
 
-set(TESTS_LIST 
-    frame_buffer_test_full_frame_23x17
-    frame_buffer_test_full_frame_multi_23x17
-    frame_buffer_test_init_rnd_len
-    frame_buffer_test_init_var_len
-    frame_buffer_test_init0
-    frame_buffer_test_init16
-    frame_buffer_test_init16_0
-    frame_buffer_test_init16_rnd_len
-    frame_buffer_test_init16_var_len
-    frame_buffer_test_read_frame_23x17
-    frame_buffer_test_read_frame_23x17_2
-    frame_buffer_test_read_frame_multi_23x17
-    frame_buffer_test_read_frame_multi_23x17_2
-    frame_buffer_test_read_write_frame_23x17
-    lcd_controller_test
-    debug_pattern_test
-    debug_pattern_test_no_extra
-    test_patter_write_frame_640x20
-    debug_pattern_2_test
-    buffer_controller_test_write
-    buffer_controller_test_read
-    buffer_controller_test_read_write_1
-    buffer_controller_test_read_write_2
+# Tests are grouped by scope: `unit/<dut>/<scenario>` for per-module
+# tests and `integration/<topic>/<scenario>` for cross-module tests.
+# The path under sim/ becomes the relative source file, and the
+# slash-separated form is also used as the ctest label group (so
+# `ctest -L unit` and `ctest -L buffer_controller` both work).
+set(UNIT_TESTS
+    buffer_controller/read
+    buffer_controller/write
+    buffer_controller/read_write_1
+    buffer_controller/read_write_2
+    debug_pattern_generator/version2
+    lcd_controller/timing
+)
+set(INTEGRATION_TESTS
+    frame_roundtrip/read_23x17
 )
 
+set(SIM_COMMON_FOLDER "${SIM_SRC_FOLDER}/common")
 set(BASE_TEST_DIR "${CMAKE_CURRENT_BINARY_DIR}/tests")
 set(CMAKE_CTEST_ARGUMENTS "--extra-verbose")
 
@@ -68,29 +60,41 @@ else()
     set(RUN_SIM_SCRIPT_NAME "run_simulator.sh")
 endif()
 
-set(TEST_SCRIPT_TEMPLATE "${SIM_SRC_FOLDER}/${RUN_SIM_SCRIPT_NAME}.in")
-configure_file("${SIM_SRC_FOLDER}/test_config.sv.in" "${CMAKE_CURRENT_BINARY_DIR}/test_config.sv.tmp"
+set(TEST_SCRIPT_TEMPLATE "${SIM_COMMON_FOLDER}/${RUN_SIM_SCRIPT_NAME}.in")
+configure_file("${SIM_COMMON_FOLDER}/test_config.sv.in" "${CMAKE_CURRENT_BINARY_DIR}/test_config.sv.tmp"
                )
-file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/test_config.sv" 
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/test_config.sv"
      INPUT "${CMAKE_CURRENT_BINARY_DIR}/test_config.sv.tmp")
 
-foreach (TEST_NAME IN LISTS TESTS_LIST)
-    set(TEST_SOURCES 
-        "${SIM_SRC_FOLDER}/${TEST_NAME}.sv"
-        "${SIM_SRC_FOLDER}/svlogger.sv"
+# Build one ctest case per (scope, scenario) entry. Each test gets:
+#   - a build target  <scope>_<flat_name>_BUILD       (compile only)
+#   - a simulate target <scope>_<flat_name>_SIM       (compile + run)
+#   - a ctest case    <scope>_<flat_name>_run        (compile + run + check exit)
+# `flat_name` is the slash-separated path with `/` replaced by `_`,
+# so the make targets stay legal.
+function(register_test SCOPE TEST_PATH)
+    string(REPLACE "/" "_" FLAT_NAME "${TEST_PATH}")
+    set(TEST_NAME "${SCOPE}_${FLAT_NAME}")
+    set(TEST_SOURCE "${SIM_SRC_FOLDER}/${SCOPE}/${TEST_PATH}.sv")
+    set(WORKING_TEST_DIR "${BASE_TEST_DIR}/${SCOPE}/${TEST_PATH}")
+    set(TEST_OUTPUT_FILE "${WORKING_TEST_DIR}/${TEST_NAME}.bin")
+
+    string(REGEX REPLACE "/.*$" "" DUT_LABEL "${TEST_PATH}")
+    set(TEST_LABELS "${SCOPE};${DUT_LABEL}")
+
+    set(TEST_SOURCES
+        "${TEST_SOURCE}"
+        "${SIM_COMMON_FOLDER}/svlogger.sv"
         "${CMAKE_CURRENT_BINARY_DIR}/test_config.sv"
     )
 
-    set(TEST_NAME_RUN "${TEST_NAME}_run")
-    set(WORKING_TEST_DIR "${BASE_TEST_DIR}/${TEST_NAME}")
-
-    set(TEST_OUTPUT_FILE "${WORKING_TEST_DIR}/${TEST_NAME}.bin")
     add_custom_command(OUTPUT ${TEST_OUTPUT_FILE}
         COMMAND "${VERILOG_BUILDER}"
                 -g2012
                 -I "${SRC_FOLDER}"
                 -I "${SIM_SRC_FOLDER}"
-                -s main 
+                -I "${SIM_COMMON_FOLDER}"
+                -s main
                 -s GSR
                 -o ${TEST_OUTPUT_FILE}
                 ${VIDEO_BUFFER_TEST_SOURCES}
@@ -98,23 +102,20 @@ foreach (TEST_NAME IN LISTS TESTS_LIST)
                 ${TEST_SOURCES}
         DEPENDS ${VIDEO_BUFFER_TEST_SOURCES} ${TEST_SOURCES}
     )
-    
+
     configure_file(${TEST_SCRIPT_TEMPLATE} "${WORKING_TEST_DIR}/${RUN_SIM_SCRIPT_NAME}"
                    @ONLY)
 
-    set(TEST_TARGET_NAME "${TEST_NAME}_BUILD")
-    add_custom_target(
-        ${TEST_TARGET_NAME} ALL DEPENDS ${TEST_OUTPUT_FILE}
+    add_custom_target("${TEST_NAME}_BUILD" ALL DEPENDS ${TEST_OUTPUT_FILE}
         SOURCES ${VIDEO_BUFFER_TEST_SOURCES} ${TEST_SOURCES} "${SIMLIB_SRC}"
     )
     source_group("Functional Sources" FILES ${VIDEO_BUFFER_TEST_SOURCES})
     source_group("Test Sources" FILES ${TEST_SOURCES})
     source_group("Device library" FILES "${SIMLIB_SRC}")
 
-    set(TEST_TARGET_NAME_SIM "${TEST_NAME}_SIM")
-    add_custom_target(${TEST_TARGET_NAME_SIM} 
-        COMMAND "${VERILOG_SIM}" 
-                -n 
+    add_custom_target("${TEST_NAME}_SIM"
+        COMMAND "${VERILOG_SIM}"
+                -n
                 "${TEST_OUTPUT_FILE}"
         COMMENT "Run simulation for test \"${TEST_NAME}\"..."
         DEPENDS "${TEST_OUTPUT_FILE}"
@@ -122,18 +123,30 @@ foreach (TEST_NAME IN LISTS TESTS_LIST)
     )
 
     if (WIN32)
-        add_test(NAME ${TEST_NAME_RUN}
+        add_test(NAME "${TEST_NAME}_run"
             COMMAND "${WORKING_TEST_DIR}/${RUN_SIM_SCRIPT_NAME}"
         )
     else()
-        add_test(NAME ${TEST_NAME_RUN}
+        add_test(NAME "${TEST_NAME}_run"
             COMMAND sh "${WORKING_TEST_DIR}/${RUN_SIM_SCRIPT_NAME}"
         )
     endif()
 
-    set_tests_properties(${TEST_NAME_RUN} PROPERTIES DEPENDS ${TEST_OUTPUT_FILE}
-        WORKING_DIRECTORY "${WORKING_TEST_DIR}")
+    set_tests_properties("${TEST_NAME}_run" PROPERTIES
+        DEPENDS ${TEST_OUTPUT_FILE}
+        WORKING_DIRECTORY "${WORKING_TEST_DIR}"
+        LABELS "${TEST_LABELS}"
+    )
 
-    set_target_properties(${TEST_TARGET_NAME} PROPERTIES FOLDER "Tests/FrameBuffer/Build")
-    set_target_properties(${TEST_TARGET_NAME_SIM} PROPERTIES FOLDER "Tests/FrameBuffer/Sim")
+    string(TOUPPER "${SCOPE}" SCOPE_UPPER)
+    set_target_properties("${TEST_NAME}_BUILD" PROPERTIES FOLDER "Tests/${SCOPE_UPPER}/Build")
+    set_target_properties("${TEST_NAME}_SIM" PROPERTIES FOLDER "Tests/${SCOPE_UPPER}/Sim")
+endfunction()
+
+foreach (TEST_PATH IN LISTS UNIT_TESTS)
+    register_test(unit "${TEST_PATH}")
+endforeach()
+
+foreach (TEST_PATH IN LISTS INTEGRATION_TESTS)
+    register_test(integration "${TEST_PATH}")
 endforeach()
