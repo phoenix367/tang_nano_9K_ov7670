@@ -122,6 +122,8 @@ levels, FTDI udev setup on Linux, GtkWave dumps — see
   CMake on Linux or Windows.
 - **[doc/architecture.md](doc/architecture.md)** — clock plan, data
   path, frame buffer, scaler, pin map.
+- **[doc/testing.md](doc/testing.md)** — simulation testbench layout,
+  CTest labels, NBA-race conventions, how to add a new test.
 - **[CLAUDE.md](CLAUDE.md)** — quick context for AI coding agents
   (Claude Code etc.) working in the tree.
 

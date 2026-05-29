@@ -84,9 +84,13 @@ list — any new top-level synthesizable RTL must be registered there.
 ## Run the simulation tests
 
 CTest drives Icarus Verilog through per-test wrappers
-(`sim/run_simulator.sh.in` on POSIX, `sim/run_simulator.bat.in` on
-Windows). The list of tests lives in `TESTS_LIST` in
-`sim/CMakeLists.txt`.
+(`sim/common/run_simulator.sh.in` on POSIX,
+`sim/common/run_simulator.bat.in` on Windows). Tests are grouped into
+`sim/unit/<dut>/` and `sim/integration/<topic>/` folders and
+registered in `UNIT_TESTS` / `INTEGRATION_TESTS` in
+`sim/CMakeLists.txt`. The full reference — layout, conventions, how
+to add a new test, the NBA-race trap — lives in
+[testing.md](testing.md).
 
 ```sh
 cmake --build build              # builds every per-test binary
@@ -103,11 +107,10 @@ If you only want to build (not run) a specific test, use the
 per-test `_BUILD` or `_SIM` custom targets, e.g.
 `make frame_buffer_test_init0_BUILD`.
 
-Adding a new testbench: drop the `.sv` into `sim/`, then append its
-base name to `TESTS_LIST` in `sim/CMakeLists.txt`. The testbench must
-include the generated `test_config.sv` (it inherits the log level and
-optional `ENABLE_DUMPVARS` macros) and should use `svlogger.sv`
-rather than raw `$display`.
+Adding a new testbench: see [testing.md](testing.md) — drop the `.sv`
+under `sim/unit/<dut>/` or `sim/integration/<topic>/`, then append
+its path (without `.sv`) to `UNIT_TESTS` or `INTEGRATION_TESTS` in
+`sim/CMakeLists.txt`.
 
 ## Program the board
 
