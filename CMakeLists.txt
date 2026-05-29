@@ -56,6 +56,18 @@ else()
     message(STATUS "Found Gowin synthesis at ${GOWIN_SYNTHESIS}")
 endif()
 
+# `programmer_cli` ships alongside the IDE under <root>/Programmer/bin.
+# Strip the trailing /IDE off Gowin_PATH to find it. Not fatal if missing —
+# the programming targets just won't be registered.
+get_filename_component(_GOWIN_ROOT_FOR_PROG "${Gowin_PATH}" DIRECTORY)
+find_program(GOWIN_PROGRAMMER programmer_cli
+             HINTS "${_GOWIN_ROOT_FOR_PROG}/Programmer/bin")
+if (GOWIN_PROGRAMMER)
+    message(STATUS "Found Gowin programmer at ${GOWIN_PROGRAMMER}")
+else()
+    message(STATUS "Gowin programmer_cli not found - hw_program targets disabled")
+endif()
+
 set(SRC_FOLDER "${CMAKE_CURRENT_SOURCE_DIR}/src")
 set(SIM_SRC_FOLDER "${CMAKE_CURRENT_SOURCE_DIR}/sim")
 set(FPGA_ELEMENTS_FOLDER "${CMAKE_CURRENT_SOURCE_DIR}/FPGADesignElements")
@@ -103,3 +115,30 @@ add_custom_target(hw_all
     COMMENT "Gowin synthesis + place-and-route + bitstream"
     USES_TERMINAL
 )
+
+# Programming targets — load the bitstream onto the Tang Nano 9K via
+# the Gowin USB JTAG cable. `hw_program` writes SRAM only (volatile,
+# fast — the FPGA reverts on power cycle). `hw_program_flash` writes
+# the embedded flash so the bitstream survives a power cycle.
+# Operation indices come from `programmer_cli --help`:
+#   2 = SRAM Program
+#   6 = embFlash Erase, Program, Verify
+if (GOWIN_PROGRAMMER)
+    set(BITSTREAM_FILE "${CMAKE_CURRENT_SOURCE_DIR}/impl/pnr/camera_ov7670.fs")
+    add_custom_target(hw_program
+        COMMAND ${GOWIN_PROGRAMMER}
+                --device GW1NR-9C
+                --run 2
+                --fsFile ${BITSTREAM_FILE}
+        COMMENT "Loading bitstream into SRAM (volatile)"
+        USES_TERMINAL
+    )
+    add_custom_target(hw_program_flash
+        COMMAND ${GOWIN_PROGRAMMER}
+                --device GW1NR-9C
+                --run 6
+                --fsFile ${BITSTREAM_FILE}
+        COMMENT "Programming embedded flash (persistent)"
+        USES_TERMINAL
+    )
+endif()
