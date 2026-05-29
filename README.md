@@ -1,8 +1,9 @@
 # tang_nano_9K_ov7670
 This is OV7670 camera sensor demo project for Tang Nano 9K board. In this
 project the development board is using to capture video from OV7670 sensor
-and show it on 4.3" LCD screen in real time. Additional on-the-flight image
-resize is applied to save aspect ratio of the input video.
+and show it on 4.3" LCD screen in real time. On-the-fly vertical resize
+is applied to fit the 480×272 LCD; full aspect-preserving (pillarbox)
+output is being developed on the `img_resize` branch.
 
 ## Hardware setup
 Below you can find main components diagram.
@@ -81,35 +82,48 @@ Here memory controller is a Gowin PSRAM IP instance.
 
 ## How to build
 
-To build the sample design you need to install Gowin IDE ver. 1.9.9 Beta-4 or
-later. After that you need to download project source code by the following command
+Clone the repo with submodules (the `FPGADesignElements` library is a
+submodule):
 
-`
+```sh
 git clone --recurse-submodules https://github.com/phoenix367/tang_nano_9K_ov7670.git
-`
+cd tang_nano_9K_ov7670
+```
 
-and open the projet in Gowin FPGA designer IDE. You may use Gowin Programmer to upload generated FS file
-to the board.
+Configure the build (Gowin IDE 1.9.9 Beta-4 or newer required for the
+hardware flow, Icarus Verilog 12+ for the simulation flow):
 
-To build and run tests you need the following:
-* CMake ver. 3.17 or later;
-* Icarus verilog ver. 12-20220611 (you can download Windows version from [here](https://bleyer.org/icarus/iverilog-v12-20220611-x64_setup.exe)).
+```sh
+cmake -S . -B build \
+    -D IVerilog_PATH=/usr/bin \
+    -D Gowin_PATH=/opt/Gowin/IDE
+```
 
-Testbench is working only on Windows OS. Below is the instruction how to generate and run tests:
-1. Generate testbench project with the following command
+Then pick what you want to do — every step has a CMake target and
+runs on Linux as well as Windows:
 
-`
-cmake -D IVerilog_PATH=<bin_folder> <build output>
-`
+```sh
+cmake --build build --target hw_all       # synthesis + PnR + bitstream
+cmake --build build --target hw_program   # load bitstream into SRAM
+ctest --test-dir build                    # run simulation tests
+```
 
-Here `bin_folder` is a path to Icarus verilog binary folder.
-For example `C:\iverilog\bin`. If you would like to analyze internal states of each test
-you can turn on variables dump with option `DUMP_SIM_VARIABLES=ON`. In this case after test
-run dump file will be generated and you can analyze it with GtkWave of similar software. Dump file
-is saved to `<build_output>\sim\tests\<test_name>\dump.vcd`.
+The Gowin IDE GUI still works as a fallback — `camera_ov7670.gprj` is
+the authoritative project file and any synthesizable source has to be
+registered there.
 
-2. Run tests with your target toolchain. For example if you selected Visual Studio 2019 as a project target
-you need to open generated project in Visual Studio and just build "RUN ALL" target.
+For the full reference — every target, the `--device` flag list, log
+levels, FTDI udev setup on Linux, GtkWave dumps — see
+**[doc/build.md](doc/build.md)**.
+
+## Documentation
+
+- **[doc/build.md](doc/build.md)** — build, simulate, and program from
+  CMake on Linux or Windows.
+- **[doc/architecture.md](doc/architecture.md)** — clock plan, data
+  path, frame buffer, scaler, pin map.
+- **[CLAUDE.md](CLAUDE.md)** — quick context for AI coding agents
+  (Claude Code etc.) working in the tree.
 
 ## Working demo
 
@@ -119,8 +133,11 @@ https://github.com/phoenix367/tang_nano_9K_ov7670/assets/2589419/772c0f9f-d9df-4
 
 ## Known issues
 
-* Incorrect image resize (only vertical resize was implemented).
-* Resistors are used for logic level converting. Need to replace them to specialized chip.
+* Only vertical resize is implemented in this baseline; horizontal
+  scaling and pillarbox/aspect-preserving output are tracked on the
+  `img_resize` branch.
+* Resistors are used for logic level converting. Need to replace them
+  with a specialized level-shifter IC.
 
 ## License
 
