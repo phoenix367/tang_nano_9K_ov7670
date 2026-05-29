@@ -36,6 +36,7 @@ reg         clk, reset_n;
 reg  [16:0] instream [0:IN_LEN-1];
 reg  [16:0] expout   [0:OUT_LEN-1];
 reg  [16:0] cap      [0:OUT_LEN-1];
+integer     kept     [0:INPUT_WIDTH-1];   // DDA-selected source columns
 
 integer ii, oi;
 reg         in_wr_en;
@@ -85,7 +86,7 @@ always @(posedge clk)
     end
 
 initial begin
-    integer row, c, b, n, m;
+    integer row, c, b, n, m, nk, acc;
     string  str;
 
 `ifdef ENABLE_DUMPVARS
@@ -103,14 +104,27 @@ initial begin
     end
     instream[n] = FRAME_END; n = n + 1;
 
-    // build expected output stream: row-start, left border, active (src 0..ACTIVE-1), right border
+    // model the DDA: which INPUT_WIDTH columns the kernel keeps (-> ACTIVE_WIDTH)
+    acc = 0; nk = 0;
+    for (c = 0; c < INPUT_WIDTH; c = c + 1)
+        if (acc + ACTIVE_WIDTH >= INPUT_WIDTH) begin
+            kept[nk] = c; nk = nk + 1;
+            acc = acc + ACTIVE_WIDTH - INPUT_WIDTH;
+        end else
+            acc = acc + ACTIVE_WIDTH;
+    if (nk !== ACTIVE_WIDTH) begin
+        logger.error(module_name, "model keep-count != ACTIVE_WIDTH"); `TEST_FAIL
+    end
+
+    // build expected output stream: row-start, left border, downscaled active
+    // (the DDA-kept source columns), right border
     m = 0;
     expout[m] = FRAME_START; m = m + 1;
     for (row = 0; row < ROWS; row = row + 1) begin
         expout[m] = ROW_START; m = m + 1;
-        for (b = 0; b < BORDER_SIZE; b = b + 1)  begin expout[m] = BLACK;          m = m + 1; end
-        for (c = 0; c < ACTIVE_WIDTH; c = c + 1) begin expout[m] = {1'b0, 16'(c)}; m = m + 1; end
-        for (b = 0; b < BORDER_SIZE; b = b + 1)  begin expout[m] = BLACK;          m = m + 1; end
+        for (b = 0; b < BORDER_SIZE; b = b + 1)  begin expout[m] = BLACK;                 m = m + 1; end
+        for (c = 0; c < ACTIVE_WIDTH; c = c + 1) begin expout[m] = {1'b0, 16'(kept[c])}; m = m + 1; end
+        for (b = 0; b < BORDER_SIZE; b = b + 1)  begin expout[m] = BLACK;                 m = m + 1; end
     end
     expout[m] = FRAME_END; m = m + 1;
 

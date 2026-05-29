@@ -117,8 +117,10 @@ initial begin
     end
 end
 
+integer kept [0:LCD_FRAME_WIDTH-1];   // DDA-selected source columns
+
 initial begin
-    integer i, row, col, idx, a, R, exp_addr, prev_R;
+    integer i, row, col, idx, a, R, exp_addr, prev_R, nk, acc;
     string  str;
 
 `ifdef ENABLE_DUMPVARS
@@ -129,6 +131,15 @@ initial begin
 
     for (i = 0; i < $size(data_items); i = i + 1)
         data_items[i] = (i % CAM_FRAME_WIDTH);   // encode source column
+
+    // model the DDA: which LCD_FRAME_WIDTH input columns the block keeps
+    acc = 0; nk = 0;
+    for (i = 0; i < LCD_FRAME_WIDTH; i = i + 1)
+        if (acc + ACTIVE_WIDTH >= LCD_FRAME_WIDTH) begin
+            kept[nk] = i; nk = nk + 1;
+            acc = acc + ACTIVE_WIDTH - LCD_FRAME_WIDTH;
+        end else
+            acc = acc + ACTIVE_WIDTH;
 
     clk = 1'b0; init_done_0 = 1'b0;
     reset_n = 1'b1; #2; reset_n = 1'b0;
@@ -167,10 +178,10 @@ initial begin
                 end
             end else begin
                 a = col - LEFT_BORDER;
-                if (e !== (CROP_OFFSET + a)) begin
+                if (e !== kept[a]) begin
                     $sformat(str,
-                        "row %0d active[%0d]: source column %0d, expected %0d (centre crop)",
-                        row, a, e, CROP_OFFSET + a);
+                        "row %0d active[%0d]: source column %0d, expected DDA-kept column %0d",
+                        row, a, e, kept[a]);
                     logger.error(module_name, str); `TEST_FAIL
                 end
             end

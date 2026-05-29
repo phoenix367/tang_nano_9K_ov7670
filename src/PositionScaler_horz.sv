@@ -45,32 +45,49 @@ module PositionScaler_horz
     typedef enum bit [1:0] { IDLE, STATE_CLEAR, STATE_RESIZE } state_t;
 
     state_t              state = IDLE;
-    reg [ACC_WIDTH-1:0]  acc   = 'd0;
+    reg [ACC_WIDTH-1:0]  acc    = 'd0;
+    reg                  keep_q = 1'b0;   // registered keep(acc) -- held in lockstep with acc
 
-    wire [ACC_WIDTH-1:0] acc_next = acc + TARGET_PIXELS[ACC_WIDTH-1:0];
-    wire                 keep     = (acc_next >= SOURCE_PIXELS[ACC_WIDTH-1:0]);
+    // "Keep this column" is a REGISTERED output (keep_q), so write_enable feeds
+    // the downstream FIFO write logic from a flop -- the accumulate + compare
+    // no longer sits in series with the store-FIFO Full/wptr path within one
+    // fb_clk cycle (that was the fb_clk critical path). The recurrence below
+    // (acc -> keep for the next column) is a register-to-register path with a
+    // full cycle to settle. keep_q does NOT depend on resize_en; the consumer
+    // reads write_enable to decide keep/drop and pulses resize_en to advance.
+    assign write_enable = keep_q && (state == STATE_RESIZE);
 
-    assign write_enable = keep && resize_en && (state == STATE_RESIZE);
+    // Next accumulator value, using the registered keep_q (== keep(acc)).
+    wire [ACC_WIDTH-1:0] acc_plus = acc + TARGET_PIXELS[ACC_WIDTH-1:0];
+    wire [ACC_WIDTH-1:0] acc_adv  = keep_q ? (acc_plus - SOURCE_PIXELS[ACC_WIDTH-1:0])
+                                           : acc_plus;
+    // keep for that next accumulator value (registered into keep_q).
+    wire keep_adv = ((acc_adv + TARGET_PIXELS[ACC_WIDTH-1:0]) >= SOURCE_PIXELS[ACC_WIDTH-1:0]);
+    // keep for column 0 (acc = 0): only when not downscaling (TARGET >= SOURCE).
+    localparam KEEP0 = (TARGET_PIXELS >= SOURCE_PIXELS);
 
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
-            acc   <= `WRAP_SIM(#1) 'd0;
-            state <= `WRAP_SIM(#1) IDLE;
+            acc    <= `WRAP_SIM(#1) 'd0;
+            keep_q <= `WRAP_SIM(#1) 1'b0;
+            state  <= `WRAP_SIM(#1) IDLE;
         end else begin
             case (state)
                 IDLE:
                     if (clear_state)
                         state <= `WRAP_SIM(#1) STATE_CLEAR;
                 STATE_CLEAR: begin
-                    acc   <= `WRAP_SIM(#1) 'd0;
-                    state <= `WRAP_SIM(#1) STATE_RESIZE;
+                    acc    <= `WRAP_SIM(#1) 'd0;
+                    keep_q <= `WRAP_SIM(#1) KEEP0[0];
+                    state  <= `WRAP_SIM(#1) STATE_RESIZE;
                 end
                 STATE_RESIZE:
-                    if (clear_state)
-                        state <= `WRAP_SIM(#1) STATE_CLEAR;
-                    else if (resize_en)
-                        acc <= `WRAP_SIM(#1) keep ? (acc_next - SOURCE_PIXELS[ACC_WIDTH-1:0])
-                                                  : acc_next;
+                    if (clear_state) begin
+                        state  <= `WRAP_SIM(#1) STATE_CLEAR;
+                    end else if (resize_en) begin
+                        acc    <= `WRAP_SIM(#1) acc_adv;
+                        keep_q <= `WRAP_SIM(#1) keep_adv;
+                    end
             endcase
         end
     end

@@ -119,8 +119,10 @@ initial begin
     end
 end
 
+integer kept [0:LCD_FRAME_WIDTH-1];   // DDA-selected source columns
+
 initial begin
-    integer i, row, col, idx, a, R, exp_addr, prev_R;
+    integer i, row, col, idx, a, R, exp_addr, prev_R, nk, acc;
     string  str;
 
 `ifdef ENABLE_DUMPVARS
@@ -131,6 +133,15 @@ initial begin
 
     for (i = 0; i < $size(data_items); i = i + 1)
         data_items[i] = i[15:0];
+
+    // model the DDA: which LCD_FRAME_WIDTH input columns the block keeps
+    acc = 0; nk = 0;
+    for (i = 0; i < LCD_FRAME_WIDTH; i = i + 1)
+        if (acc + ACTIVE_WIDTH >= LCD_FRAME_WIDTH) begin
+            kept[nk] = i; nk = nk + 1;
+            acc = acc + ACTIVE_WIDTH - LCD_FRAME_WIDTH;
+        end else
+            acc = acc + ACTIVE_WIDTH;
 
     clk = 1'b0; init_done_0 = 1'b0;
     reset_n = 1'b1; #2; reset_n = 1'b0;
@@ -155,13 +166,13 @@ initial begin
         end
         idx = idx + 1;
 
-        // Derive the source row R from the first active pixel: it must be of
-        // the form R*640 + CROP_OFFSET (centre crop). The exact vertical map
-        // is the PositionScaler_vert LUT's business; we require R monotonic,
-        // row 0 -> source row 0.
-        R = (cap[idx + LEFT_BORDER] - CROP_OFFSET) / CAM_FRAME_WIDTH;
-        if ((R * CAM_FRAME_WIDTH + CROP_OFFSET) !== cap[idx + LEFT_BORDER]) begin
-            $sformat(str, "row %0d active[0]=%0d not of form R*640+%0d", row, cap[idx + LEFT_BORDER], CROP_OFFSET);
+        // Derive the source row R from the first active pixel: it is
+        // R*640 + kept[0] (first DDA-kept column). The exact vertical map is
+        // PositionScaler_vert's business; we require R monotonic, row 0 -> 0.
+        R = (cap[idx + LEFT_BORDER] - kept[0]) / CAM_FRAME_WIDTH;
+        if ((R * CAM_FRAME_WIDTH + kept[0]) !== cap[idx + LEFT_BORDER]) begin
+            $sformat(str, "row %0d active[0]=%0d not of form R*640+kept[0]=%0d",
+                     row, cap[idx + LEFT_BORDER], R * CAM_FRAME_WIDTH + kept[0]);
             logger.error(module_name, str); `TEST_FAIL
         end
         if (row == 0 && R !== 0) begin
@@ -186,11 +197,11 @@ initial begin
                 end
             end else begin
                 a = col - LEFT_BORDER;
-                exp_addr = R * CAM_FRAME_WIDTH + CROP_OFFSET + a;   // 1:1 centre crop
+                exp_addr = R * CAM_FRAME_WIDTH + kept[a];   // DDA-kept source column
                 if (e !== exp_addr[15:0]) begin
                     $sformat(str,
                         "row %0d active[%0d]: got addr %0d, expected %0d (src row %0d, src col %0d)",
-                        row, a, e, exp_addr, R, CROP_OFFSET + a);
+                        row, a, e, exp_addr, R, kept[a]);
                     logger.error(module_name, str); `TEST_FAIL
                 end
             end
