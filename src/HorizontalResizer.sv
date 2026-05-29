@@ -11,12 +11,12 @@
 //
 //     FrameDownloader -> HorizontalResizer -> q_cam_data_out FIFO -> LCD
 //
-// FrameDownloader emits INPUT_WIDTH (e.g. 480) source pixels per row. For each
-// row this block emits: row-start token, BORDER_SIZE black pixels, the row
-// horizontally downscaled to ACTIVE_WIDTH pixels, BORDER_SIZE black pixels.
-// Command tokens (bit 16 = 1) pass through untouched. OUTPUT_WIDTH = INPUT_WIDTH
-// (the LCD width); the active band is centred: BORDER_SIZE = (OUTPUT_WIDTH -
-// ACTIVE_WIDTH)/2.
+// FrameDownloader emits INPUT_WIDTH (the full source width, e.g. 640) pixels
+// per row. For each row this block emits: row-start token, BORDER_SIZE black
+// pixels, the row horizontally downscaled to ACTIVE_WIDTH pixels, BORDER_SIZE
+// black pixels. Command tokens (bit 16 = 1) pass through untouched. OUTPUT_WIDTH
+// is the LCD width (e.g. 480); the active band is centred:
+// BORDER_SIZE = (OUTPUT_WIDTH - ACTIVE_WIDTH)/2.
 //
 // The downscale is done by the PositionScaler_horz DDA kernel: every input
 // column is streamed through it (one resize_en per consumed column) and kept
@@ -33,7 +33,8 @@
 
 module HorizontalResizer
 #(
-    parameter integer INPUT_WIDTH  = 480,   // source pixels per row from FrameDownloader
+    parameter integer INPUT_WIDTH  = 640,   // source pixels per row from FrameDownloader
+    parameter integer OUTPUT_WIDTH = 480,   // LCD width: borders + active band
     parameter integer ACTIVE_WIDTH = 362,   // downscaled active width
     parameter integer ENABLE       = 1
 )
@@ -52,7 +53,6 @@ module HorizontalResizer
     input  wire        out_full
 );
 
-    localparam integer OUTPUT_WIDTH = INPUT_WIDTH;
     localparam integer BORDER_SIZE  = (OUTPUT_WIDTH - ACTIVE_WIDTH) / 2;
 
     localparam [16:0] TOKEN_ROW_START = 17'h10001;

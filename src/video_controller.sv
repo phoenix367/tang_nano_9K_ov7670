@@ -230,10 +230,12 @@ FrameDownloader #(
     .download_done(downloading_finished)
 );
 
-// Pillarbox borders on the download pixel stream (transparent when resize is
-// off). 1:1, so back-pressure passes straight through to FrameDownloader.
+// Horizontal downscale + pillarbox borders on the download pixel stream
+// (transparent when resize is off). Consumes the full INPUT_IMAGE_WIDTH source
+// row and emits OUTPUT_IMAGE_WIDTH (borders + ACTIVE band) to the store FIFO.
 HorizontalResizer #(
-    .INPUT_WIDTH(OUTPUT_IMAGE_WIDTH),
+    .INPUT_WIDTH(INPUT_IMAGE_WIDTH),
+    .OUTPUT_WIDTH(OUTPUT_IMAGE_WIDTH),
     .ACTIVE_WIDTH(RESIZE_ACTIVE_WIDTH),
     .ENABLE(ENABLE_OUTPUT_RESIZE)
 ) horizontal_resizer(

@@ -117,7 +117,7 @@ initial begin
     end
 end
 
-integer kept [0:LCD_FRAME_WIDTH-1];   // DDA-selected source columns
+integer kept [0:CAM_FRAME_WIDTH-1];   // DDA-selected source columns (of the full 640-wide row)
 
 initial begin
     integer i, row, col, idx, a, R, exp_addr, prev_R, nk, acc;
@@ -132,12 +132,13 @@ initial begin
     for (i = 0; i < $size(data_items); i = i + 1)
         data_items[i] = (i % CAM_FRAME_WIDTH);   // encode source column
 
-    // model the DDA: which LCD_FRAME_WIDTH input columns the block keeps
+    // model the DDA: which of the CAM_FRAME_WIDTH (640) source columns the block
+    // keeps when downscaling the full row to ACTIVE_WIDTH
     acc = 0; nk = 0;
-    for (i = 0; i < LCD_FRAME_WIDTH; i = i + 1)
-        if (acc + ACTIVE_WIDTH >= LCD_FRAME_WIDTH) begin
+    for (i = 0; i < CAM_FRAME_WIDTH; i = i + 1)
+        if (acc + ACTIVE_WIDTH >= CAM_FRAME_WIDTH) begin
             kept[nk] = i; nk = nk + 1;
-            acc = acc + ACTIVE_WIDTH - LCD_FRAME_WIDTH;
+            acc = acc + ACTIVE_WIDTH - CAM_FRAME_WIDTH;
         end else
             acc = acc + ACTIVE_WIDTH;
 

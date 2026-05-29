@@ -25,9 +25,10 @@ module main();
 
 localparam LOG_LEVEL = `SVL_VERBOSE_INFO;
 
-localparam integer INPUT_WIDTH  = 480;
+localparam integer INPUT_WIDTH  = 640;   // full source row from FrameDownloader
+localparam integer OUTPUT_WIDTH = 480;   // LCD width: borders + active band
 localparam integer ACTIVE_WIDTH = 362;
-localparam integer BORDER_SIZE  = (INPUT_WIDTH - ACTIVE_WIDTH) / 2;   // 59
+localparam integer BORDER_SIZE  = (OUTPUT_WIDTH - ACTIVE_WIDTH) / 2;   // 59
 localparam integer ROWS         = 2;
 
 localparam [16:0] FRAME_START = 17'h10000;
@@ -35,8 +36,8 @@ localparam [16:0] ROW_START   = 17'h10001;
 localparam [16:0] FRAME_END   = 17'h1FFFF;
 localparam [16:0] BLACK       = 17'h00000;
 
-localparam integer IN_LEN  = 1 + ROWS*(1 + INPUT_WIDTH) + 1;
-localparam integer OUT_LEN = 1 + ROWS*(1 + INPUT_WIDTH) + 1;   // 480 emitted per row
+localparam integer IN_LEN  = 1 + ROWS*(1 + INPUT_WIDTH)  + 1;   // 640 consumed per row
+localparam integer OUT_LEN = 1 + ROWS*(1 + OUTPUT_WIDTH) + 1;   // 480 emitted per row
 
 reg         clk, reset_n;
 reg  [16:0] instream [0:IN_LEN-1];
@@ -57,12 +58,12 @@ reg         out_full;
 string module_name;
 DataLogger #(.verbosity(LOG_LEVEL)) logger();
 
-HorizontalResizer #(.INPUT_WIDTH(INPUT_WIDTH), .ACTIVE_WIDTH(ACTIVE_WIDTH), .ENABLE(1))
+HorizontalResizer #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH), .ACTIVE_WIDTH(ACTIVE_WIDTH), .ENABLE(1))
 dut (.clk(clk), .reset_n(reset_n),
      .in_wr_en(in_wr_en), .in_data(in_data), .in_full(in_full),
      .out_wr_en(out_wr_en), .out_data(out_data), .out_full(out_full));
 
-HorizontalResizer #(.INPUT_WIDTH(INPUT_WIDTH), .ACTIVE_WIDTH(ACTIVE_WIDTH), .ENABLE(0))
+HorizontalResizer #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH), .ACTIVE_WIDTH(ACTIVE_WIDTH), .ENABLE(0))
 dut0 (.clk(clk), .reset_n(reset_n),
       .in_wr_en(in_wr_en), .in_data(in_data), .in_full(in_full0),
       .out_wr_en(out_wr_en0), .out_data(out_data0), .out_full(out_full));
