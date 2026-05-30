@@ -45,8 +45,10 @@ sim/
 │   │   └── countdown.sv             cycle count to delay_done + syn_rst restart
 │   ├── arbiter/
 │   │   └── round_robin.sv           grant / hold / mask / round-robin (width 2)
-│   └── cam_pixel_processor/
-│       └── frame_sequence.sv        start / per-row / end command framing
+│   ├── cam_pixel_processor/
+│   │   └── frame_sequence.sv        start / per-row / end command framing
+│   └── uart/
+│       └── frame.sv                 8-E-1 UART: loopback + parity/frame error paths
 │
 └── integration/                     cross-module tests
     ├── frame_roundtrip/
