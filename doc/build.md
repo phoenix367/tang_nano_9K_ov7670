@@ -182,27 +182,14 @@ The chip exposes two channels:
 | `1`                | UART (RX/TX)   | should stay on `ftdi_sio` so it appears as a `/dev/ttyUSB*` for `picocom`/`minicom`/etc. |
 
 The vendor rules at `<Gowin>/Programmer/bin/50-programmer_usb.rules`
-only cover the single-channel FT232H (`0403:6014`). Install a
-companion rule that selectively detaches `ftdi_sio` from interface 0
-while leaving interface 1 bound:
+only cover the single-channel FT232H (`0403:6014`). This repo ships a
+companion rule at [`udev/51-gowin-ft2232h.rules`](../udev/51-gowin-ft2232h.rules)
+that makes the raw device node read/write (so the programmer can open the
+cable), detaches `ftdi_sio` from interface 0 (JTAG), and leaves interface 1
+bound as the UART. Install it:
 
 ```sh
-sudo tee /etc/udev/rules.d/51-gowin-ft2232h.rules <<'RULES'
-# Tang Nano 9K FT2232H — channel A (interface 0): JTAG, used by
-# Gowin programmer_cli. Unbind ftdi_sio so libftd2xx can claim it.
-ACTION=="add", SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", \
-    ATTRS{idProduct}=="6010", ATTR{bInterfaceNumber}=="00", \
-    MODE="0666", \
-    RUN+="/bin/sh -c 'echo -n %k > /sys/bus/usb/drivers/ftdi_sio/unbind 2>/dev/null; true'"
-
-# Channel B (interface 1): UART. Leave ftdi_sio attached so it
-# appears as /dev/ttyUSB*, add a stable symlink and group-write
-# access so users in `dialout` can open it without sudo.
-SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6010", \
-    ATTRS{bInterfaceNumber}=="01", \
-    MODE="0660", GROUP="dialout", SYMLINK+="ttyGowin"
-RULES
-
+sudo install -m 644 udev/51-gowin-ft2232h.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules
 ```
 
@@ -255,11 +242,11 @@ Note `DRIVE` is an output-only attribute — leave it off the `uart_rx`
 input or place-and-route rejects the constraint (`CT1108`).
 
 `CameraControl_TOP` instantiates [`src/uart.sv`](../src/uart.sv) (9600 baud,
-8-E-1) wired to these pins as a bring-up **echo**: each received byte is
-transmitted straight back (bytes arriving while the transmitter is busy are
-dropped). Connect with `picocom -b 9600 /dev/ttyGowin` and type — you should see
-your characters echoed. Replace the echo `always` block in `camera_control.v` to
-drive the UART from your own logic.
+8-E-1) feeding a [`src/modbus_rtu_slave.sv`](../src/modbus_rtu_slave.sv)
+**Modbus RTU slave** (address 7, 8 holding registers). A Modbus master can read
+and write the registers; holding register 0's low 3 bits drive the status LEDs,
+so e.g. writing register 0 = 5 lights LEDs 0 and 2. Point any Modbus-RTU master
+at `/dev/ttyGowin` (9600 8-E-1, slave id 7) to talk to it.
 
 ## Make-target cheat-sheet
 

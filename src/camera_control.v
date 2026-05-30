@@ -38,28 +38,18 @@ module CameraControl_TOP (
     input  uart_rx          // host -> FPGA
 );
 
-assign status_leds = 3'h7;
+// ---- UART (9600 8-E-1) + Modbus RTU slave on the FT2232H channel B ----
+// A Modbus master/PC can read and write MODBUS_REGS holding registers; holding
+// register 0's low 3 bits drive the status LEDs as a visible demo.
+localparam integer MODBUS_REGS = 8;
 
-// ---- UART: echo received bytes back to the host (bring-up loopback) ----
 wire [7:0] uart_rx_data;
-wire       uart_rx_valid;
-wire       uart_tx_busy;
-reg  [7:0] uart_tx_data;
-reg        uart_tx_start;
+wire       uart_rx_valid, uart_rx_perr;
+wire [7:0] uart_tx_data;
+wire       uart_tx_start, uart_tx_busy;
+wire [16*MODBUS_REGS-1:0] modbus_regs;
 
-always @(posedge sys_clk or negedge sys_rst_n)
-    if (!sys_rst_n) begin
-        uart_tx_start <= `WRAP_SIM(#1) 1'b0;
-        uart_tx_data  <= `WRAP_SIM(#1) 8'h00;
-    end else begin
-        uart_tx_start <= `WRAP_SIM(#1) 1'b0;
-        // echo a received byte when the transmitter is free (bytes arriving
-        // while busy are dropped -- adequate for an echo bring-up)
-        if (uart_rx_valid && !uart_tx_busy) begin
-            uart_tx_data  <= `WRAP_SIM(#1) uart_rx_data;
-            uart_tx_start <= `WRAP_SIM(#1) 1'b1;
-        end
-    end
+assign status_leds = modbus_regs[2:0];   // holding[0][2:0] -> status LEDs
 
 uart #(
     .CLK_FREQ('d27_000_000),
@@ -74,8 +64,29 @@ uart #(
     .rx(uart_rx),
     .rx_data(uart_rx_data),
     .rx_valid(uart_rx_valid),
-    .rx_parity_error(),
+    .rx_parity_error(uart_rx_perr),
     .rx_frame_error()
+);
+
+modbus_rtu_slave #(
+    .CLK_FREQ('d27_000_000),
+    .BAUD('d9600),
+    .SLAVE_ADDR(8'd7),
+    .REG_COUNT(MODBUS_REGS)
+    , .MAX_FRAME(32)        // 8 regs -> longest frame ~25 bytes; keeps the buffers small
+) modbus_inst (
+    .clk(sys_clk),
+    .reset_n(sys_rst_n),
+    .rx_data(uart_rx_data),
+    .rx_valid(uart_rx_valid),
+    .rx_parity_error(uart_rx_perr),
+    .tx_data(uart_tx_data),
+    .tx_start(uart_tx_start),
+    .tx_busy(uart_tx_busy),
+    .reg_o(modbus_regs),
+    .host_we(1'b0),
+    .host_addr(8'h00),
+    .host_wdata(16'h0000)
 );
 
 typedef enum {
