@@ -237,22 +237,29 @@ sudo usermod -aG dialout "$USER"   # log out and back in afterwards
 ### Wiring the UART into your design
 
 The FT2232H's channel B TXD/RXD pins are routed to two FPGA balls on
-the Tang Nano 9K — check the
+the Tang Nano 9K (commonly **17 = UART_TX**, FPGA → host, and
+**18 = UART_RX**, host → FPGA — check the
 [Sipeed Tang Nano 9K schematic](https://dl.sipeed.com/shareURL/TANG/Nano%209K/2_Schematic)
-for the exact pins on your board revision (commonly **17 = UART_TX**,
-FPGA → host, and **18 = UART_RX**, host → FPGA). They are not
-assigned in [`src/camera_ov7670.cst`](../src/camera_ov7670.cst) by
-default — add a pair of `IO_LOC` lines if you need them, e.g.:
+for your board revision). `CameraControl_TOP` already exposes
+`uart_tx` / `uart_rx` ports, constrained in
+[`src/camera_ov7670.cst`](../src/camera_ov7670.cst):
 
 ```
 IO_LOC "uart_tx" 17;
 IO_PORT "uart_tx" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8 BANK_VCCIO=3.3;
 IO_LOC "uart_rx" 18;
-IO_PORT "uart_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8 BANK_VCCIO=3.3;
+IO_PORT "uart_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP BANK_VCCIO=3.3;
 ```
 
-…then expose `uart_tx` / `uart_rx` ports on `CameraControl_TOP` and
-wire them to whatever UART core you're using.
+Note `DRIVE` is an output-only attribute — leave it off the `uart_rx`
+input or place-and-route rejects the constraint (`CT1108`).
+
+`CameraControl_TOP` instantiates [`src/uart.sv`](../src/uart.sv) (9600 baud,
+8-E-1) wired to these pins as a bring-up **echo**: each received byte is
+transmitted straight back (bytes arriving while the transmitter is busy are
+dropped). Connect with `picocom -b 9600 /dev/ttyGowin` and type — you should see
+your characters echoed. Replace the echo `always` block in `camera_control.v` to
+drive the UART from your own logic.
 
 ## Make-target cheat-sheet
 

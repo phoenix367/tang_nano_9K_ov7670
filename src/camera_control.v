@@ -32,10 +32,51 @@ module CameraControl_TOP (
     output[1:0]           O_psram_reset_n,
     inout [15:0]           IO_psram_dq,
     output[1:0]           O_psram_cs_n,
-    output [2:0] status_leds
+    output [2:0] status_leds,
+    // UART (FT2232H channel B), 9600 8-E-1; see doc/build.md.
+    output uart_tx,         // FPGA -> host
+    input  uart_rx          // host -> FPGA
 );
 
 assign status_leds = 3'h7;
+
+// ---- UART: echo received bytes back to the host (bring-up loopback) ----
+wire [7:0] uart_rx_data;
+wire       uart_rx_valid;
+wire       uart_tx_busy;
+reg  [7:0] uart_tx_data;
+reg        uart_tx_start;
+
+always @(posedge sys_clk or negedge sys_rst_n)
+    if (!sys_rst_n) begin
+        uart_tx_start <= `WRAP_SIM(#1) 1'b0;
+        uart_tx_data  <= `WRAP_SIM(#1) 8'h00;
+    end else begin
+        uart_tx_start <= `WRAP_SIM(#1) 1'b0;
+        // echo a received byte when the transmitter is free (bytes arriving
+        // while busy are dropped -- adequate for an echo bring-up)
+        if (uart_rx_valid && !uart_tx_busy) begin
+            uart_tx_data  <= `WRAP_SIM(#1) uart_rx_data;
+            uart_tx_start <= `WRAP_SIM(#1) 1'b1;
+        end
+    end
+
+uart #(
+    .CLK_FREQ('d27_000_000),
+    .BAUD('d9600)
+) uart_inst (
+    .clk(sys_clk),
+    .reset_n(sys_rst_n),
+    .tx_data(uart_tx_data),
+    .tx_start(uart_tx_start),
+    .tx_busy(uart_tx_busy),
+    .tx(uart_tx),
+    .rx(uart_rx),
+    .rx_data(uart_rx_data),
+    .rx_valid(uart_rx_valid),
+    .rx_parity_error(),
+    .rx_frame_error()
+);
 
 typedef enum {
     WAIT_RDY, 
