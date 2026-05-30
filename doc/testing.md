@@ -53,7 +53,8 @@ sim/
     │   └── read_23x17.sv            PSRAM read → LCD queue round-trip
     ├── i2c/
     │   ├── register_write.sv        i2c_control_fsm + i2c_master_top + slave model: SCCB register writes
-    │   └── register_read.sv         i2c_master_top SCCB reads (WISHBONE BFM) vs seeded slave memory
+    │   ├── register_read.sv         i2c_master_top SCCB reads (WISHBONE BFM) vs seeded slave memory
+    │   └── fsm_read.sv              i2c_control_fsm recv_data read path: data_out vs seeded slave memory
     └── pillarbox/
         └── borders{,_full,_vmap}.sv vertical resize + pillarbox pixel mapping
 ```

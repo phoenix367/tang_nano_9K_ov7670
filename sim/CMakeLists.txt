@@ -180,11 +180,20 @@ register_test(integration "i2c/register_write"
     "${SIM_COMMON_FOLDER}/i2c_slave_model.sv"
 )
 
-# Register read exercises the i2c_master_top SCCB read path directly (the
-# control FSM has no read support), so it does not need i2c_control_fsm.
+# Register read exercises the i2c_master_top SCCB read path directly via a
+# WISHBONE BFM, so it does not need i2c_control_fsm.
 register_test(integration "i2c/register_read"
     "${SRC_FOLDER}/i2c_master.v"
     "${SRC_FOLDER}/i2c_master_bit_ctrl.v"
     "${SRC_FOLDER}/i2c_master_byte_ctrl.v"
+    "${SIM_COMMON_FOLDER}/i2c_slave_model.sv"
+)
+
+# FSM read exercises the read path added to i2c_control_fsm end to end.
+register_test(integration "i2c/fsm_read"
+    "${SRC_FOLDER}/i2c_master.v"
+    "${SRC_FOLDER}/i2c_master_bit_ctrl.v"
+    "${SRC_FOLDER}/i2c_master_byte_ctrl.v"
+    "${SRC_FOLDER}/i2c_control_fsm.v"
     "${SIM_COMMON_FOLDER}/i2c_slave_model.sv"
 )
