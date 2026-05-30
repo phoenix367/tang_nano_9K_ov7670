@@ -3,7 +3,8 @@ This is OV7670 camera sensor demo project for Tang Nano 9K board. In this
 project the development board is using to capture video from OV7670 sensor
 and show it on 4.3" LCD screen in real time. On-the-fly vertical resize
 is applied to fit the 480×272 LCD; full aspect-preserving (pillarbox)
-output is being developed on the `img_resize` branch.
+output — horizontal downscale plus black side borders — is implemented
+on the `img_resize` branch.
 
 ## Hardware setup
 Below you can find main components diagram.
@@ -135,9 +136,15 @@ https://github.com/phoenix367/tang_nano_9K_ov7670/assets/2589419/772c0f9f-d9df-4
 
 ## Known issues
 
-* Only vertical resize is implemented in this baseline; horizontal
-  scaling and pillarbox/aspect-preserving output are tracked on the
-  `img_resize` branch.
+* Horizontal pillarbox / aspect-preserving output (in addition to the
+  baseline vertical resize) is implemented on the `img_resize` branch:
+  each row is horizontally downscaled to the centred active band with
+  black side borders. Emitting more than the original leftmost-480
+  crop per row used to break real-time because of download PSRAM read
+  bandwidth; the ping-pong row prefetch cache (`DownloadRowCache`)
+  removed that limit by overlapping reads with the LCD-paced drain, so
+  the wider-row downscale (currently 624 source columns/row) now meets
+  the real-time budget on the device.
 * Resistors are used for logic level converting. Need to replace them
   with a specialized level-shifter IC.
 
