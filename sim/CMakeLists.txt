@@ -13,6 +13,7 @@ set(VIDEO_BUFFER_TEST_SOURCES
     "${SRC_FOLDER}/video_controller.sv"
     "${SRC_FOLDER}/fsms/FrameUploader.sv"
     "${SRC_FOLDER}/fsms/FrameDownloader.sv"
+    "${SRC_FOLDER}/DownloadRowCache.sv"
     "${SRC_FOLDER}/cam_pixel_processor.sv"
     "${SRC_FOLDER}/lcd_controller.sv"
     "${SRC_FOLDER}/debug_pattern_generator.sv"
@@ -53,6 +54,8 @@ set(UNIT_TESTS
     arbiter/round_robin
     cam_pixel_processor/frame_sequence
     horizontal_resizer/stream
+    download_row_cache/prefetch
+    frame_downloader/stream
 )
 set(INTEGRATION_TESTS
     frame_roundtrip/read_23x17

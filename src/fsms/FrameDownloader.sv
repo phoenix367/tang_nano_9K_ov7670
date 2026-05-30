@@ -14,24 +14,34 @@
 
 package FrameDownloaderTypes;
     typedef enum bit[7:0] {
-        FRAME_PROCESSING_START_WAIT      = 8'd01,
-        FRAME_PROCESSING_READ_CYC        = 8'd02,
-        FRAME_PROCESSING_DONE            = 8'd03,
-        CHECK_QUEUE                      = 8'd04,
-        START_READ_CYC                   = 8'd05,
-        START_READ_ROW                   = 8'd07,
-        READ_ROW_CYC                     = 8'd08,
-        START_READ_FROM_MEMORY           = 8'd09,
-        READ_FROM_MEMORY_CYC             = 8'd10,
-        READ_MEMORY_WAIT                 = 8'd11,
-        QUEUE_UPLOAD_CYC                 = 8'd12,
-        QUEUE_UPLOAD_DONE                = 8'd13,
-        ADJUST_ROW_ADDRESS               = 8'd14,
-        CACHE_COUNTER_INCREMENT          = 8'd15,
-        SKIP_ROW                         = 8'd16,
-        WRITE_NEAREST_PIXEL              = 8'd17
+        S_START_WAIT  = 8'd01,   // wait for frame `start`, seed the prefetch cache
+        S_FRAME_START = 8'd02,   // emit frame-start token
+        S_ROW_WAIT    = 8'd03,   // wait for the next prefetched row (or finish)
+        S_ROW_START   = 8'd04,   // emit row-start token
+        S_DRAIN_W1    = 8'd05,   // BRAM read latency cycle 1
+        S_DRAIN_W2    = 8'd06,   // BRAM read latency cycle 2
+        S_DRAIN_PUSH  = 8'd07,   // push one pixel to the queue (honours back-pressure)
+        S_ROW_END     = 8'd08,   // release the drained bank
+        S_ROW_GAP     = 8'd09,   // let the release register-update settle
+        S_FRAME_END   = 8'd10,   // emit frame-end token
+        S_DONE        = 8'd11    // pulse download_done
     } t_state;
 endpackage
+
+// FrameDownloader streams a frame out of PSRAM to the store interface
+// (HorizontalResizer -> FIFO -> LCD). The PSRAM read path, the two ping-pong
+// row banks and the source-row addressing (including the vertical-resize DDA)
+// live in DownloadRowCache; this FSM is a pure sequencer + drain:
+//
+//   * on `start` it seeds the cache with base_addr and emits the frame-start
+//     token, then for each of FRAME_HEIGHT output rows it waits for a prefetched
+//     row, emits a row-start token and drains FRAME_WIDTH pixels to the queue,
+//   * then emits the frame-end token and pulses download_done.
+//
+// The emitted token + pixel stream is identical to the previous (serial) design;
+// only the PSRAM-read/drain timing changes (reads of the next row overlap the
+// drain of the current one). External port list is unchanged: read_rq/read_addr/
+// mem_rd_en are now driven straight from the cache.
 
 module FrameDownloader
     #(
@@ -56,351 +66,158 @@ module FrameDownloader
         input [20:0] base_addr,
         input reg [31:0] read_data,
         input rd_data_valid,
-        
+
         output reg [16:0] queue_data_o,
         output reg wr_en,
-        output reg read_rq,
+        output read_rq,
         output [20:0] read_addr,
-        output reg mem_rd_en,
+        output mem_rd_en,
         output reg download_done
     );
 
     import FrameDownloaderTypes::*;
-    import PSRAM_Utilities::*;
-
-    localparam CACHE_SIZE = MEMORY_BURST / 2;
-    localparam BURST_CYCLES = burst_cycles(MEMORY_BURST);
-    localparam real ASPECT_RATIO = real'(ORIG_FRAME_WIDTH) / real'(ORIG_FRAME_HEIGHT);
-    localparam RESIZED_WIDTH = integer'(FRAME_HEIGHT * ASPECT_RATIO);
-    localparam BORDER_SIZE = (FRAME_WIDTH - RESIZED_WIDTH) / 2;
 
 // Logger initialization
 `ifdef __ICARUS__
     `INITIALIZE_LOGGER
 `endif
 
+    localparam [16:0] TOKEN_FRAME_START = 17'h10000;
+    localparam [16:0] TOKEN_ROW_START   = 17'h10001;
+    localparam [16:0] TOKEN_FRAME_END   = 17'h1FFFF;
+
     t_state state;
 
-    reg [20:0] frame_addr_counter;
-    reg [4:0] cache_addr;
-    reg [10:0] frame_addr_inc;
-    reg [4:0] cache_addr_next;
-    reg [4:0] read_counter;
-    reg [4:0] read_counter_next;
-    reg [5:0] cmd_cyc_counter;
-    //reg cache_in_en;
-    reg cache_out_en;
-    reg frame_download_cycle;
-    reg adder_ce;
+    reg [10:0] col_counter;   // pixels drained in the current row (0..FRAME_WIDTH)
+    reg [10:0] row_counter;   // output rows emitted (0..FRAME_HEIGHT)
 
-    reg [10:0] col_counter;
-    reg [10:0] row_counter;
-    reg [1:0] column_increment;
-    // Registered "last row reached" flag. row_counter only changes at row
-    // boundaries (many cycles before it is tested), so registering the
-    // FRAME_HEIGHT compare keeps it off the frame_addr_counter critical path.
-    reg row_at_height;
+    // ---- prefetch cache interface ----
+    reg        cache_start;   // 1-cycle pulse to (re)seed the cache for a frame
+    reg  [9:0] rd_pix_addr;   // pixel index requested from the front bank
+    reg        row_release;   // 1-cycle pulse: front bank fully drained
+    wire        row_avail;    // front bank holds a complete row
+    wire [15:0] rd_pix_data;  // pixel at rd_pix_addr (2-cycle latency)
 
-    reg [16:0] queue_data;
-
-    wire [31:0] mem_word;
-    wire [21:0] adder_out;
-    wire [15:0] cache_out;
-    wire [10:0] col_counter_next;
-
-    assign cache_addr_next = cache_addr + 1'b1;
-    assign read_addr = frame_addr_counter;
-    assign read_counter_next = read_counter + 1'b1;
-
-    assign mem_word = read_data;
-    assign col_counter_next = col_counter + 1'b1;
-
-    assign cache_out_en2 = col_counter >= BORDER_SIZE && col_counter < (RESIZED_WIDTH + BORDER_SIZE);
-
-    Gowin_ALU54 frame_addr_adder(
-        .dout(adder_out), //output [21:0] dout
-        .caso(), //output [54:0] caso
-        .a(frame_addr_counter), //input [20:0] a
-        .b(frame_addr_inc),
-        .ce(adder_ce), //input ce
-        .clk(clk), //input clk
-        .reset(~reset_n) //input reset
-    );
-
-    Gowin_SDPB_DN download_cache(
-        .dout(cache_out), 
-        .clka(clk), 
-        .cea(rd_data_valid), 
-        .reseta(~reset_n), 
-        .clkb(clk), 
-        .ceb(cache_out_en), 
-        .resetb(~reset_n), 
-        .oce(1'b1), 
-        .ada(read_counter[2:0]), 
-        .din(mem_word), 
-        .adb(cache_addr[3:0])
-    );
-
-    initial begin
-        read_rq <= `WRAP_SIM(#1) 1'b0;
-        mem_rd_en <= `WRAP_SIM(#1) 1'b0;
-        download_done <= `WRAP_SIM(#1) 1'b0;
-        wr_en <= `WRAP_SIM(#1) 1'b0;
-    end
-
-    initial begin
-        frame_addr_counter <= `WRAP_SIM(#1) 'd0;
-        queue_data <= `WRAP_SIM(#1) 'd0;
-
-        col_counter <= `WRAP_SIM(#1) 'd0;
-        row_counter <= `WRAP_SIM(#1) 'd0;
-    end
-
-    reg [1:0] row_inc;
-    wire [1:0] row_inc_o;
-
-    // Vertical resize only. Horizontal geometry (pillarbox borders / crop) is
-    // applied downstream by HorizontalResizer on the pixel stream, so no
-    // horizontal scaler is instantiated here.
-    //
-    // The vertical scaler is a stateful DDA kernel kept in lockstep with
-    // row_counter: clear when the frame restarts (row_counter <= 0), advance
-    // once per finished output row (the READ_ROW_CYC row-end, where row_counter
-    // increments and row_inc_o is latched). position_increment is combinational
-    // from its residual, so row_inc_o is valid for the current row.
-    wire vscale_clear   = (state == FRAME_PROCESSING_START_WAIT) && start;
-    wire vscale_advance = (state == READ_ROW_CYC) && (col_counter == FRAME_WIDTH);
-
-    PositionScaler_vert position_scaler_vert(
+    DownloadRowCache #(
+        .MEMORY_BURST(MEMORY_BURST),
+        .FRAME_WIDTH(FRAME_WIDTH),
+        .FRAME_HEIGHT(FRAME_HEIGHT),
+        .ORIG_FRAME_WIDTH(ORIG_FRAME_WIDTH),
+        .ENABLE_RESIZE(ENABLE_RESIZE)
+    ) row_cache (
         .clk(clk),
         .reset_n(reset_n),
-        .clear(vscale_clear),
-        .advance(vscale_advance),
-        .position_increment(row_inc_o)
+        .start(cache_start),
+        .base_addr(base_addr),
+        // PSRAM (driven straight onto FrameDownloader's external ports)
+        .read_rq(read_rq),
+        .read_addr(read_addr),
+        .read_ack(read_ack),
+        .mem_rd_en(mem_rd_en),
+        .read_data(read_data),
+        .rd_data_valid(rd_data_valid),
+        // drain
+        .row_avail(row_avail),
+        .rd_pix_addr(rd_pix_addr),
+        .rd_pix_data(rd_pix_data),
+        .row_release(row_release)
     );
 
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
-            cmd_cyc_counter <= `WRAP_SIM(#1) 'd0;
-            queue_data <= `WRAP_SIM(#1) 'd0;
-            read_rq <= `WRAP_SIM(#1) 1'b0;
-
-            col_counter <= `WRAP_SIM(#1) 'd0;
-            row_counter <= `WRAP_SIM(#1) 'd0;
-
-            state <= `WRAP_SIM(#1) FRAME_PROCESSING_START_WAIT;
-            adder_ce <= `WRAP_SIM(#1) 1'b0;
-            read_counter <= `WRAP_SIM(#1) 'd0;
-            cache_addr <= `WRAP_SIM(#1) 'd0;
-            frame_addr_inc <= `WRAP_SIM(#1) 'd0;
-            frame_download_cycle <= `WRAP_SIM(#1) 1'b0;
-
+            state         <= `WRAP_SIM(#1) S_START_WAIT;
+            col_counter   <= `WRAP_SIM(#1) 'd0;
+            row_counter   <= `WRAP_SIM(#1) 'd0;
+            queue_data_o  <= `WRAP_SIM(#1) 'd0;
+            wr_en         <= `WRAP_SIM(#1) 1'b0;
             download_done <= `WRAP_SIM(#1) 1'b0;
-            cache_out_en <= `WRAP_SIM(#1) 1'b0;
-            row_inc <= `WRAP_SIM(#1) 'd0;
-            row_at_height <= `WRAP_SIM(#1) 1'b0;
+            cache_start   <= `WRAP_SIM(#1) 1'b0;
+            rd_pix_addr   <= `WRAP_SIM(#1) 'd0;
+            row_release   <= `WRAP_SIM(#1) 1'b0;
         end else begin
-            // Registered last-row flag (1-cycle lag is harmless: row_counter
-            // is stable for many cycles before row_at_height is tested).
-            row_at_height <= `WRAP_SIM(#1) (row_counter === FRAME_HEIGHT);
+            // single-cycle defaults; states override as needed
+            wr_en       <= `WRAP_SIM(#1) 1'b0;
+            cache_start <= `WRAP_SIM(#1) 1'b0;
+            row_release <= `WRAP_SIM(#1) 1'b0;
 
-            // State Machine:
             case (state)
-                FRAME_PROCESSING_START_WAIT: begin
-                    frame_addr_counter <= `WRAP_SIM(#1) base_addr;
+                S_START_WAIT: begin
                     download_done <= `WRAP_SIM(#1) 1'b0;
-
-                    if (start == 1'b1) begin
+                    if (start) begin
 `ifdef __ICARUS__
                         string str_msg;
-`endif
-
-                        state <= `WRAP_SIM(#1) FRAME_PROCESSING_READ_CYC;
-                        frame_download_cycle <= `WRAP_SIM(#1) 1'b0;
-                        frame_addr_inc <= `WRAP_SIM(#1) 'd0;
-
-                        adder_ce <= `WRAP_SIM(#1) 1'b1;
-                        row_counter <= `WRAP_SIM(#1) 'd0;
-                        row_at_height <= `WRAP_SIM(#1) 1'b0;   // overrides the stale lagged update
-
-`ifdef __ICARUS__
                         $sformat(str_msg, "Start frame downloading at memory addr %0h", base_addr);
                         logger.info(module_name, str_msg);
 `endif
+                        cache_start <= `WRAP_SIM(#1) 1'b1;
+                        row_counter <= `WRAP_SIM(#1) 'd0;
+                        state       <= `WRAP_SIM(#1) S_FRAME_START;
                     end
                 end
-                FRAME_PROCESSING_READ_CYC: begin
-                    wr_en <= `WRAP_SIM(#1) 1'b0;
-                    adder_ce <= `WRAP_SIM(#1) 1'b0;
-
-                    if (row_at_height) begin
-`ifdef __ICARUS__
-                        string str_msg;
-`endif
-
-                        state <= `WRAP_SIM(#1) FRAME_PROCESSING_DONE;
-
-`ifdef __ICARUS__
-                        $sformat(str_msg, "Received %0d pixels for frame at address %0h", 
-                                 FRAME_HEIGHT * FRAME_WIDTH, base_addr);
-                        logger.debug(module_name, str_msg);
-`endif
-                    end else begin
-                        cache_addr <= `WRAP_SIM(#1) 'd0;
-                        state <= `WRAP_SIM(#1) CHECK_QUEUE;
-
-                        if (frame_download_cycle)
-                            frame_addr_counter <= `WRAP_SIM(#1) adder_out[20:0];
-                    end
-                end
-                CHECK_QUEUE: 
+                S_FRAME_START: begin
                     if (!queue_full) begin
-                        if (!frame_download_cycle) begin
-                            state <= `WRAP_SIM(#1) START_READ_CYC;
-                            queue_data_o <= `WRAP_SIM(#1) 17'h10000;
-                            wr_en <= `WRAP_SIM(#1) 1'b1;
-
-                            frame_download_cycle <= `WRAP_SIM(#1) 1'b1;
-                            col_counter <= `WRAP_SIM(#1) 'd0;
+                        queue_data_o <= `WRAP_SIM(#1) TOKEN_FRAME_START;
+                        wr_en        <= `WRAP_SIM(#1) 1'b1;
+                        state        <= `WRAP_SIM(#1) S_ROW_WAIT;
+                    end
+                end
+                S_ROW_WAIT: begin
+                    if (row_counter == FRAME_HEIGHT) begin
+                        state <= `WRAP_SIM(#1) S_FRAME_END;
+                    end else if (row_avail) begin
+                        state <= `WRAP_SIM(#1) S_ROW_START;
+                    end
+                end
+                S_ROW_START: begin
+                    if (!queue_full) begin
+                        queue_data_o <= `WRAP_SIM(#1) TOKEN_ROW_START;
+                        wr_en        <= `WRAP_SIM(#1) 1'b1;
+                        col_counter  <= `WRAP_SIM(#1) 'd0;
+                        rd_pix_addr  <= `WRAP_SIM(#1) 'd0;
+                        state        <= `WRAP_SIM(#1) S_DRAIN_W1;
+                    end
+                end
+                S_DRAIN_W1: state <= `WRAP_SIM(#1) S_DRAIN_W2;   // BRAM read latency
+                S_DRAIN_W2: state <= `WRAP_SIM(#1) S_DRAIN_PUSH; // (CACHE_DELAY = 2)
+                S_DRAIN_PUSH: begin
+                    if (!queue_full) begin
+                        queue_data_o <= `WRAP_SIM(#1) {1'b0, rd_pix_data};
+                        wr_en        <= `WRAP_SIM(#1) 1'b1;
+                        if (col_counter == FRAME_WIDTH - 1) begin
+                            state <= `WRAP_SIM(#1) S_ROW_END;
                         end else begin
+                            col_counter <= `WRAP_SIM(#1) col_counter + 1'b1;
+                            rd_pix_addr <= `WRAP_SIM(#1) col_counter + 1'b1;
+                            state       <= `WRAP_SIM(#1) S_DRAIN_W1;
+                        end
+                    end
+                    // else: back-pressure -- hold rd_pix_addr, retry next cycle
+                end
+                S_ROW_END: begin
+                    row_release <= `WRAP_SIM(#1) 1'b1;
+                    row_counter <= `WRAP_SIM(#1) row_counter + 1'b1;
+                    state       <= `WRAP_SIM(#1) S_ROW_GAP;
+                end
+                S_ROW_GAP: begin
+                    // let the cache's registered front-bank swap / bank_full clear
+                    // settle before S_ROW_WAIT re-samples row_avail
+                    state <= `WRAP_SIM(#1) S_ROW_WAIT;
+                end
+                S_FRAME_END: begin
+                    if (!queue_full) begin
 `ifdef __ICARUS__
-                            logger.critical(module_name, "Inconsisted state in CHECK_QUEUE");
+                        logger.info(module_name, "Finalized frame downloading");
 `endif
-                        end
-                    end
-                START_READ_CYC: begin
-                    adder_ce <= `WRAP_SIM(#1) 1'b0;
-                    wr_en <= `WRAP_SIM(#1) 1'b0;
-                    frame_addr_inc <= `WRAP_SIM(#1) 'd0;
-
-                    state <= `WRAP_SIM(#1) START_READ_ROW;
-                end
-                START_READ_ROW: begin
-                    if (row_at_height) begin
-                        if (!queue_full) begin
-`ifdef __ICARUS__
-                            logger.info(module_name, "Finalized frame downloading");
-`endif                        
-                            
-                            queue_data_o <= `WRAP_SIM(#1) 17'h1FFFF;
-                            wr_en <= `WRAP_SIM(#1) 1'b1;
-                            state <= `WRAP_SIM(#1) FRAME_PROCESSING_READ_CYC;
-                        end
-                    end else if (!queue_full) begin
-                        queue_data_o <= `WRAP_SIM(#1) 17'h10001;
-                        wr_en <= `WRAP_SIM(#1) 1'b1;
-                        col_counter <= `WRAP_SIM(#1) 'd0;
-                        //col_inc <= `WRAP_SIM(#1) 'd0;
-
-                        state <= `WRAP_SIM(#1) READ_ROW_CYC;
+                        queue_data_o <= `WRAP_SIM(#1) TOKEN_FRAME_END;
+                        wr_en        <= `WRAP_SIM(#1) 1'b1;
+                        state        <= `WRAP_SIM(#1) S_DONE;
                     end
                 end
-                READ_ROW_CYC: begin
-                    wr_en <= `WRAP_SIM(#1) 1'b0;
-                    if (col_counter !== FRAME_WIDTH) begin
-                        //col_inc <= `WRAP_SIM(#1) col_inc + col_inc_o;
-                        adder_ce <= `WRAP_SIM(#1) 1'b0;
-
-                        state <= `WRAP_SIM(#1) START_READ_FROM_MEMORY;
-                    end else begin
-                        row_inc <= `WRAP_SIM(#1) row_inc_o;
-                        row_counter <= `WRAP_SIM(#1) row_counter + 1'b1;
-                        if (/*ENABLE_RESIZE*/0)
-                            frame_addr_inc <= `WRAP_SIM(#1) 'd0;
-                        else
-                            frame_addr_inc <= `WRAP_SIM(#1) ORIG_FRAME_WIDTH - FRAME_WIDTH;
-                        adder_ce <= `WRAP_SIM(#1) 1'b1;
-                        state <= `WRAP_SIM(#1) ADJUST_ROW_ADDRESS;
-                    end
-                end
-                START_READ_FROM_MEMORY: begin
-                    read_rq <= `WRAP_SIM(#1) 1'b1;
-                    state <= `WRAP_SIM(#1) READ_MEMORY_WAIT;
-                end
-                READ_MEMORY_WAIT: begin
-                    if (read_ack) begin
-                        state <= `WRAP_SIM(#1) READ_FROM_MEMORY_CYC;
-                        mem_rd_en <= `WRAP_SIM(#1) 1'b1;
-                        read_counter <= `WRAP_SIM(#1) 'd0;
-                        frame_addr_counter <= `WRAP_SIM(#1) adder_out[20:0];
-                    end
-                end
-                READ_FROM_MEMORY_CYC: begin
-                    mem_rd_en <= `WRAP_SIM(#1) 1'b0;
-                    if (rd_data_valid && read_counter !== BURST_CYCLES)
-                        read_counter <= `WRAP_SIM(#1) read_counter_next;
-                    else if (read_counter === BURST_CYCLES) begin
-                        cache_addr <= `WRAP_SIM(#1) 'd0;
-                        cache_out_en <= `WRAP_SIM(#1) 1'b1;
-                        read_rq <= `WRAP_SIM(#1) 1'b0;
-                        //col_inc <= `WRAP_SIM(#1) col_inc + col_inc_o;
-
-                        state <= `WRAP_SIM(#1) QUEUE_UPLOAD_CYC;
-                    end
-                end
-                QUEUE_UPLOAD_CYC: begin
-                    if (queue_full) begin
-                        // stall on back-pressure (hold wr_en)
-                    end else if (col_counter !== FRAME_WIDTH && cache_addr !== CACHE_SIZE) begin
-                        wr_en <= `WRAP_SIM(#1) 1'b0;
-                        state <= `WRAP_SIM(#1) CACHE_COUNTER_INCREMENT;
-                    end else begin
-                        wr_en <= `WRAP_SIM(#1) 1'b0;
-                        state <= `WRAP_SIM(#1) QUEUE_UPLOAD_DONE;
-                    end
-                end
-                CACHE_COUNTER_INCREMENT: begin
-                    // Plain 1:1 row emit. Pillarbox borders/crop are applied
-                    // downstream by HorizontalResizer.
-                    cache_addr  <= `WRAP_SIM(#1) cache_addr + 1'b1;
-                    wr_en       <= `WRAP_SIM(#1) 1'b1;
-                    queue_data_o <= `WRAP_SIM(#1) { 1'b0, cache_out };
-                    col_counter <= `WRAP_SIM(#1) col_counter + 1'b1;
-
-                    state <= `WRAP_SIM(#1) QUEUE_UPLOAD_CYC;
-                end
-                QUEUE_UPLOAD_DONE: begin
-                    wr_en <= `WRAP_SIM(#1) 1'b0;
-                    cache_out_en <= `WRAP_SIM(#1) 1'b0;
-                    frame_addr_inc <= `WRAP_SIM(#1) cache_addr;
-                    adder_ce <= `WRAP_SIM(#1) 1'b1;
-
-                    state <= `WRAP_SIM(#1) READ_ROW_CYC;
-                end
-                ADJUST_ROW_ADDRESS: begin
-                    if (ENABLE_RESIZE) begin
-                        if (row_inc === 'd1) begin
-                            frame_addr_counter <= `WRAP_SIM(#1) adder_out[20:0];
-
-                            state <= `WRAP_SIM(#1) START_READ_CYC;
-                        end else if (row_inc === 'd0)
-                            state <= `WRAP_SIM(#1) START_READ_CYC;
-                        else begin
-                            frame_addr_counter <= `WRAP_SIM(#1) adder_out[20:0];
-
-                            state <= `WRAP_SIM(#1) SKIP_ROW;
-                        end
-                    end else begin
-                        frame_addr_counter <= `WRAP_SIM(#1) adder_out[20:0];
-
-                        state <= `WRAP_SIM(#1) START_READ_CYC;
-                    end
-                end
-                SKIP_ROW: begin
-                    if (row_inc === 'd1)
-                        state <= `WRAP_SIM(#1) START_READ_CYC;
-                    else begin
-                        logic [21:0] tmp;
-
-                        tmp = frame_addr_counter + ORIG_FRAME_WIDTH;
-                        frame_addr_counter <= `WRAP_SIM(#1) tmp[20:0];
-                        row_inc <= `WRAP_SIM(#1) row_inc - 1'b1;
-                    end
-                end
-                FRAME_PROCESSING_DONE: begin
+                S_DONE: begin
                     download_done <= `WRAP_SIM(#1) 1'b1;
-                    state <= `WRAP_SIM(#1) FRAME_PROCESSING_START_WAIT;
+                    state         <= `WRAP_SIM(#1) S_START_WAIT;
                 end
+                default: state <= `WRAP_SIM(#1) S_START_WAIT;
             endcase
         end
     end
