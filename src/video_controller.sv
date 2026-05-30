@@ -23,7 +23,11 @@ module VideoController
     parameter int OUTPUT_IMAGE_HEIGHT = 272,
     parameter MEMORY_INITIAL_DELAY = 'd152,
     parameter int ENABLE_OUTPUT_RESIZE = 0,
-    parameter int DEBUG_BUFFER_INDEX = -1
+    parameter int DEBUG_BUFFER_INDEX = -1,
+    // Source pixels read & emitted per row by FrameDownloader, i.e. the row size
+    // fed into HorizontalResizer. No default -- the instantiator must pick it
+    // (OUTPUT_IMAGE_WIDTH = leftmost crop; INPUT_IMAGE_WIDTH = full-row resize).
+    parameter int EMIT_ROW_SIZE
 )
 (
       input clk,
@@ -204,6 +208,7 @@ wire        fd_store_full;
 
 FrameDownloader #(
     .FRAME_WIDTH(OUTPUT_IMAGE_WIDTH),
+    .EMIT_ROW_SIZE(EMIT_ROW_SIZE),
     .FRAME_HEIGHT(OUTPUT_IMAGE_HEIGHT),
     .ORIG_FRAME_WIDTH(INPUT_IMAGE_WIDTH),
     .ORIG_FRAME_HEIGHT(INPUT_IMAGE_HEIGHT),
@@ -235,7 +240,8 @@ FrameDownloader #(
 HorizontalResizer #(
     .INPUT_WIDTH(OUTPUT_IMAGE_WIDTH),
     .ACTIVE_WIDTH(RESIZE_ACTIVE_WIDTH),
-    .ENABLE(ENABLE_OUTPUT_RESIZE)
+    .ENABLE(ENABLE_OUTPUT_RESIZE),
+    .EMIT_ROW_SIZE(EMIT_ROW_SIZE)
 ) horizontal_resizer(
     .clk(clk),
     .reset_n(rst_n),

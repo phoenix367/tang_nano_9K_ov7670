@@ -11,16 +11,18 @@
 //
 //     FrameDownloader -> HorizontalResizer -> q_cam_data_out FIFO -> LCD
 //
-// FrameDownloader emits INPUT_WIDTH (e.g. 480) source pixels per row. For each
-// row this block emits: row-start token, BORDER_SIZE black pixels, the row
-// horizontally downscaled to ACTIVE_WIDTH pixels, BORDER_SIZE black pixels.
-// Command tokens (bit 16 = 1) pass through untouched. OUTPUT_WIDTH = INPUT_WIDTH
-// (the LCD width); the active band is centred: BORDER_SIZE = (OUTPUT_WIDTH -
-// ACTIVE_WIDTH)/2.
+// FrameDownloader emits EMIT_ROW_SIZE source pixels per row. For each row this
+// block emits: row-start token, BORDER_SIZE black pixels, the row horizontally
+// downscaled to ACTIVE_WIDTH pixels, BORDER_SIZE black pixels. Command tokens
+// (bit 16 = 1) pass through untouched. OUTPUT_WIDTH = INPUT_WIDTH (the LCD line
+// width); the active band is centred: BORDER_SIZE = (OUTPUT_WIDTH - ACTIVE_WIDTH)/2.
+// EMIT_ROW_SIZE (the consumed input row) is decoupled from INPUT_WIDTH (the
+// emitted line), so e.g. a full 640-wide source row can be downscaled into a
+// 480-wide line; with EMIT_ROW_SIZE == INPUT_WIDTH it is the original behaviour.
 //
 // The downscale is done by the PositionScaler_horz DDA kernel: every input
 // column is streamed through it (one resize_en per consumed column) and kept
-// only when write_enable is high, so exactly ACTIVE_WIDTH of the INPUT_WIDTH
+// only when write_enable is high, so exactly ACTIVE_WIDTH of the EMIT_ROW_SIZE
 // columns reach the output. Because the kernel samples across the whole row,
 // there is no left/right crop -- it is a true resize, not a window.
 //
@@ -33,9 +35,13 @@
 
 module HorizontalResizer
 #(
-    parameter integer INPUT_WIDTH  = 480,   // source pixels per row from FrameDownloader
+    parameter integer INPUT_WIDTH  = 480,   // emitted (centred) output line width = LCD width
     parameter integer ACTIVE_WIDTH = 362,   // downscaled active width
-    parameter integer ENABLE       = 1
+    parameter integer ENABLE       = 1,
+    // Source pixels consumed per row (the row size coming from FrameDownloader).
+    // No default: every instantiation must choose it. EMIT_ROW_SIZE == INPUT_WIDTH
+    // reproduces the original behaviour.
+    parameter integer EMIT_ROW_SIZE
 )
 (
     input  wire        clk,
@@ -67,14 +73,14 @@ module HorizontalResizer
     reg [10:0] bc;   // border pixels emitted (left or right)
     reg [10:0] ic;   // input columns consumed in the active phase
 
-    // ---- horizontal downscale kernel: keeps ACTIVE_WIDTH of INPUT_WIDTH ----
+    // ---- horizontal downscale kernel: keeps ACTIVE_WIDTH of EMIT_ROW_SIZE ----
     wire krn_clear = (ENABLE != 0) && (state == S_PASS) &&
                      in_wr_en && !out_full && (in_data == TOKEN_ROW_START);
     reg  krn_resize_en;
     wire krn_keep;
 
     PositionScaler_horz #(
-        .SOURCE_PIXELS(INPUT_WIDTH),
+        .SOURCE_PIXELS(EMIT_ROW_SIZE),
         .TARGET_PIXELS(ACTIVE_WIDTH)
     ) kernel (
         .clk(clk),
@@ -137,7 +143,7 @@ module HorizontalResizer
                 S_ACTIVE:
                     if (krn_resize_en) begin             // one input column consumed
                         ic <= `WRAP_SIM(#1) ic + 1'b1;
-                        if (ic == INPUT_WIDTH - 1) begin
+                        if (ic == EMIT_ROW_SIZE - 1) begin
                             bc    <= `WRAP_SIM(#1) 'd0;
                             state <= `WRAP_SIM(#1) S_RIGHT;
                         end

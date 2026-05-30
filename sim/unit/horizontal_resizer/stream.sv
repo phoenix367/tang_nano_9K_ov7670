@@ -57,12 +57,12 @@ reg         out_full;
 string module_name;
 DataLogger #(.verbosity(LOG_LEVEL)) logger();
 
-HorizontalResizer #(.INPUT_WIDTH(INPUT_WIDTH), .ACTIVE_WIDTH(ACTIVE_WIDTH), .ENABLE(1))
+HorizontalResizer #(.INPUT_WIDTH(INPUT_WIDTH), .ACTIVE_WIDTH(ACTIVE_WIDTH), .ENABLE(1), .EMIT_ROW_SIZE(INPUT_WIDTH))
 dut (.clk(clk), .reset_n(reset_n),
      .in_wr_en(in_wr_en), .in_data(in_data), .in_full(in_full),
      .out_wr_en(out_wr_en), .out_data(out_data), .out_full(out_full));
 
-HorizontalResizer #(.INPUT_WIDTH(INPUT_WIDTH), .ACTIVE_WIDTH(ACTIVE_WIDTH), .ENABLE(0))
+HorizontalResizer #(.INPUT_WIDTH(INPUT_WIDTH), .ACTIVE_WIDTH(ACTIVE_WIDTH), .ENABLE(0), .EMIT_ROW_SIZE(INPUT_WIDTH))
 dut0 (.clk(clk), .reset_n(reset_n),
       .in_wr_en(in_wr_en), .in_data(in_data), .in_full(in_full0),
       .out_wr_en(out_wr_en0), .out_data(out_data0), .out_full(out_full));

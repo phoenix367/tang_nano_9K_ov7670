@@ -51,7 +51,14 @@ module FrameDownloader
 `endif
 
         parameter MEMORY_BURST = 32,
-        parameter FRAME_WIDTH = 480,
+        parameter FRAME_WIDTH = 480,    // nominal output frame width (kept for interface
+                                        // compatibility; the per-row read/emit size is
+                                        // now set by EMIT_ROW_SIZE below)
+        // Source pixels read from PSRAM and emitted per output row -- i.e. the
+        // row size fed into HorizontalResizer. Has NO default: every instantiation
+        // must choose it (e.g. OUTPUT_IMAGE_WIDTH for a leftmost crop, or
+        // ORIG_FRAME_WIDTH for a full-row true horizontal downscale).
+        parameter EMIT_ROW_SIZE,
         parameter FRAME_HEIGHT = 272,
         parameter ORIG_FRAME_WIDTH = 640,
         parameter ORIG_FRAME_HEIGHT = 480,
@@ -100,7 +107,7 @@ module FrameDownloader
 
     DownloadRowCache #(
         .MEMORY_BURST(MEMORY_BURST),
-        .FRAME_WIDTH(FRAME_WIDTH),
+        .FRAME_WIDTH(EMIT_ROW_SIZE),    // cache reads EMIT_ROW_SIZE pixels per row
         .FRAME_HEIGHT(FRAME_HEIGHT),
         .ORIG_FRAME_WIDTH(ORIG_FRAME_WIDTH),
         .ENABLE_RESIZE(ENABLE_RESIZE)
@@ -183,7 +190,7 @@ module FrameDownloader
                     if (!queue_full) begin
                         queue_data_o <= `WRAP_SIM(#1) {1'b0, rd_pix_data};
                         wr_en        <= `WRAP_SIM(#1) 1'b1;
-                        if (col_counter == FRAME_WIDTH - 1) begin
+                        if (col_counter == EMIT_ROW_SIZE - 1) begin
                             state <= `WRAP_SIM(#1) S_ROW_END;
                         end else begin
                             col_counter <= `WRAP_SIM(#1) col_counter + 1'b1;

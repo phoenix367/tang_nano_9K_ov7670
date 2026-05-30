@@ -153,7 +153,11 @@ module VGA_timing
 	
 VideoController #(
 .MEMORY_BURST(32),
-.ENABLE_OUTPUT_RESIZE(1)
+.ENABLE_OUTPUT_RESIZE(1),
+// Row size fed into HorizontalResizer. 480 == OUTPUT_IMAGE_WIDTH keeps the
+// current leftmost-480 crop; set to 640 (INPUT_IMAGE_WIDTH) for a full-row
+// horizontal downscale (costs ~33% more PSRAM read bandwidth -- see docs).
+.EMIT_ROW_SIZE(640 - 16)
 `ifdef __ICARUS__
 , .LOG_LEVEL(LOG_LEVEL)
 `endif
