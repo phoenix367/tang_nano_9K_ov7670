@@ -13,6 +13,7 @@ set(VIDEO_BUFFER_TEST_SOURCES
     "${SRC_FOLDER}/video_controller.sv"
     "${SRC_FOLDER}/fsms/FrameUploader.sv"
     "${SRC_FOLDER}/fsms/FrameDownloader.sv"
+    "${SRC_FOLDER}/DownloadRowCache.sv"
     "${SRC_FOLDER}/cam_pixel_processor.sv"
     "${SRC_FOLDER}/lcd_controller.sv"
     "${SRC_FOLDER}/debug_pattern_generator.sv"
@@ -20,6 +21,7 @@ set(VIDEO_BUFFER_TEST_SOURCES
     "${SRC_FOLDER}/BufferController.sv"
     "${SRC_FOLDER}/sdpb_1kx32/sdpb_1kx32.v"
     "${SRC_FOLDER}/PositionScaler_horz.sv"
+    "${SRC_FOLDER}/HorizontalResizer.sv"
     "${SRC_FOLDER}/PositionScaler_vert.sv"
     "${SRC_FOLDER}/device_delay.sv"
     "${FPGA_ELEMENTS_FOLDER}/Register.v"
@@ -51,9 +53,15 @@ set(UNIT_TESTS
     device_delay/countdown
     arbiter/round_robin
     cam_pixel_processor/frame_sequence
+    horizontal_resizer/stream
+    download_row_cache/prefetch
+    frame_downloader/stream
 )
 set(INTEGRATION_TESTS
     frame_roundtrip/read_23x17
+    pillarbox/borders
+    pillarbox/borders_full
+    pillarbox/borders_vmap
 )
 
 set(SIM_COMMON_FOLDER "${SIM_SRC_FOLDER}/common")

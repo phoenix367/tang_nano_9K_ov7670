@@ -21,8 +21,8 @@ module DebugPatternGenerator2
         parameter LOG_LEVEL = `SVL_VERBOSE_INFO,
 `endif
 
-    parameter integer FRAME_WIDTH = 640,
-    parameter integer FRAME_HEIGHT = 480
+    parameter integer FRAME_WIDTH,
+    parameter integer FRAME_HEIGHT
 )
 (
     input clk_cam,

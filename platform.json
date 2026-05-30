@@ -1,0 +1,7 @@
+{
+  "input_frame_width": 640,
+  "input_frame_height": 480,
+  "screen_width": 480,
+  "screen_height": 272,
+  "emit_row_size": 640
+}
