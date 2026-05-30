@@ -51,9 +51,17 @@ sim/
 └── integration/                     cross-module tests
     ├── frame_roundtrip/
     │   └── read_23x17.sv            PSRAM read → LCD queue round-trip
+    ├── i2c/
+    │   ├── register_write.sv        i2c_control_fsm + i2c_master_top + slave model: SCCB register writes
+    │   └── register_read.sv         i2c_master_top SCCB reads (WISHBONE BFM) vs seeded slave memory
     └── pillarbox/
         └── borders{,_full,_vmap}.sv vertical resize + pillarbox pixel mapping
 ```
+
+The I2C test passes per-test extra sources (the opencores I2C core + the
+behavioural `i2c_slave_model`) to `register_test` after the test path —
+`register_test` appends any extra arguments to the compile sources, so a test
+that needs RTL outside `VIDEO_BUFFER_TEST_SOURCES` can list it at registration.
 
 `unit/<dut>/<scenario>.sv` exercises a single RTL module in isolation
 (its dependencies are usually models from `common/` or trivial
