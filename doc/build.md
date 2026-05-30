@@ -246,7 +246,14 @@ input or place-and-route rejects the constraint (`CT1108`).
 **Modbus RTU slave** (address 7, 8 holding registers). A Modbus master can read
 and write the registers; holding register 0's low 3 bits drive the status LEDs,
 so e.g. writing register 0 = 5 lights LEDs 0 and 2. Point any Modbus-RTU master
-at `/dev/ttyGowin` (9600 8-E-1, slave id 7) to talk to it.
+at `/dev/ttyGowin` (9600 8-E-1, slave id 7) to talk to it, or use the bundled
+client [`scripts/modbus_test.py`](../scripts/modbus_test.py) (needs `pyserial`):
+
+```sh
+scripts/modbus_test.py --port /dev/ttyGowin        # self-test (read/write/exception + LED demo)
+scripts/modbus_test.py -p /dev/ttyGowin --read 0 8 # dump the 8 holding registers
+scripts/modbus_test.py -p /dev/ttyGowin --write 0 5  # reg0=5 -> status LEDs 0,2
+```
 
 ## Make-target cheat-sheet
 
