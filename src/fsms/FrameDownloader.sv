@@ -51,17 +51,17 @@ module FrameDownloader
 `endif
 
         parameter MEMORY_BURST = 32,
-        parameter FRAME_WIDTH = 480,    // nominal output frame width (kept for interface
-                                        // compatibility; the per-row read/emit size is
-                                        // now set by EMIT_ROW_SIZE below)
+        parameter FRAME_WIDTH,          // nominal output frame width, no default (kept for
+                                        // interface compatibility; the per-row read/emit
+                                        // size is set by EMIT_ROW_SIZE below)
         // Source pixels read from PSRAM and emitted per output row -- i.e. the
         // row size fed into HorizontalResizer. Has NO default: every instantiation
         // must choose it (e.g. OUTPUT_IMAGE_WIDTH for a leftmost crop, or
         // ORIG_FRAME_WIDTH for a full-row true horizontal downscale).
         parameter EMIT_ROW_SIZE,
-        parameter FRAME_HEIGHT = 272,
-        parameter ORIG_FRAME_WIDTH = 640,
-        parameter ORIG_FRAME_HEIGHT = 480,
+        parameter FRAME_HEIGHT,         // output rows per frame (no default)
+        parameter ORIG_FRAME_WIDTH,     // source row pitch, pixel units (no default)
+        parameter ORIG_FRAME_HEIGHT,    // source frame height (no default)
         parameter ENABLE_RESIZE = 0
     )
     (

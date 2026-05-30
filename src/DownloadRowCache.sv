@@ -42,9 +42,9 @@
 module DownloadRowCache
 #(
     parameter MEMORY_BURST     = 32,    // PSRAM burst, bytes (8 words, 16 px)
-    parameter FRAME_WIDTH      = 480,   // pixels read/drained per row
-    parameter FRAME_HEIGHT     = 272,   // output rows per frame (self-limit, no over-read)
-    parameter ORIG_FRAME_WIDTH = 640,   // source row pitch, pixel units
+    parameter FRAME_WIDTH,              // pixels read/drained per row (no default)
+    parameter FRAME_HEIGHT,             // output rows per frame, self-limit (no default)
+    parameter ORIG_FRAME_WIDTH,         // source row pitch, pixel units (no default)
     parameter ENABLE_RESIZE    = 0      // vertical DDA downscale on/off
 )
 (
