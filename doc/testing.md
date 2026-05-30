@@ -29,6 +29,12 @@ sim/
 │   │   └── read_write_2.sv          contention scenario 2
 │   ├── debug_pattern_generator/
 │   │   └── version2.sv              DebugPatternGenerator2 colour bars
+│   ├── download_row_cache/
+│   │   └── prefetch.sv              ping-pong prefetch: multi-frame, both-banks-full, watchdog
+│   ├── frame_downloader/
+│   │   └── stream.sv                token+pixel stream over the cache: multi-frame, back-pressure, watchdog
+│   ├── horizontal_resizer/
+│   │   └── stream.sv                pillarbox border stream vs reference, under back-pressure
 │   ├── lcd_controller/
 │   │   └── timing.sv                VSYNC / HSYNC counts for a 23x17 frame
 │   ├── position_scaler_vert/
@@ -43,8 +49,10 @@ sim/
 │       └── frame_sequence.sv        start / per-row / end command framing
 │
 └── integration/                     cross-module tests
-    └── frame_roundtrip/
-        └── read_23x17.sv            PSRAM read → LCD queue round-trip
+    ├── frame_roundtrip/
+    │   └── read_23x17.sv            PSRAM read → LCD queue round-trip
+    └── pillarbox/
+        └── borders{,_full,_vmap}.sv vertical resize + pillarbox pixel mapping
 ```
 
 `unit/<dut>/<scenario>.sv` exercises a single RTL module in isolation

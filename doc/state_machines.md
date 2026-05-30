@@ -8,8 +8,13 @@ port list before wiring tests):
   — camera → PSRAM. Drains the camera-side FIFO and **writes** a 640×480
   RGB565 frame into a free slot.
 - **`FrameDownloader`** ([`src/fsms/FrameDownloader.sv`](../src/fsms/FrameDownloader.sv))
-  — PSRAM → LCD. **Reads** a frame back out, applies vertical resize +
-  pillarbox borders, and pushes it toward the LCD FIFO.
+  — PSRAM → LCD. A thin **sequencer + drain**: it seeds the prefetch cache,
+  emits the frame/row/end tokens, and drains pixels toward the store FIFO.
+  The actual PSRAM reads, the two ping-pong row banks and the source-row
+  addressing (incl. **vertical resize**) live in its helper
+  **`DownloadRowCache`** ([`src/DownloadRowCache.sv`](../src/DownloadRowCache.sv)).
+  Horizontal **pillarbox borders** are applied further downstream by
+  `HorizontalResizer`, not here.
 
 Both run on `fb_clk` (67.5 MHz) inside
 [`video_controller.sv`](../src/video_controller.sv); see
@@ -99,79 +104,123 @@ stateDiagram-v2
 
 ## FrameDownloader
 
-Reads the frame back out one row at a time: request the bus, pull a 16-word
-burst into the row cache, then stream the cache into the store FIFO. It also
-performs the **vertical resize** (480 → 272) and the **pillarbox borders**.
+A thin **sequencer + drain**. On `start` it pulses `DownloadRowCache`'s `start`
+(seeding `base_addr`), emits the **frame-start** token, then for each of
+`FRAME_HEIGHT` output rows it waits for the cache to prefetch a row
+(`row_avail`), emits a **row-start** token, drains `FRAME_WIDTH` pixels into the
+store FIFO, and releases the bank — finally emitting the **frame-end** token and
+pulsing `download_done`. It owns no PSRAM logic; `read_rq`/`read_addr`/
+`mem_rd_en` are driven straight from the cache.
+
+Each drained pixel takes a fixed 3-state cadence (`S_DRAIN_W1` → `S_DRAIN_W2` →
+`S_DRAIN_PUSH`): the two wait states cover the `sdpb_1kx32` registered-output
+latency (`CACHE_DELAY = 2`). Because `rd_pix_addr` is held stable across them,
+the high/low 16-bit half-select on the cache read port is purely combinational.
 
 ```mermaid
 stateDiagram-v2
-    state "FRAME_PROCESSING_START_WAIT" as DWAIT
-    state "FRAME_PROCESSING_READ_CYC" as DRC
-    state "CHECK_QUEUE" as DCQ
-    state "START_READ_CYC" as DSRC
-    state "START_READ_ROW" as DSRR
-    state "READ_ROW_CYC" as DRR
-    state "START_READ_FROM_MEMORY" as DSRM
-    state "READ_MEMORY_WAIT" as DRMW
-    state "READ_FROM_MEMORY_CYC" as DRFM
-    state "QUEUE_UPLOAD_CYC" as DQU
-    state "CACHE_COUNTER_INCREMENT" as DCCI
-    state "QUEUE_UPLOAD_DONE" as DQD
-    state "ADJUST_ROW_ADDRESS" as DARA
-    state "SKIP_ROW" as DSKIP
-    state "FRAME_PROCESSING_DONE" as DDONE
+    state "S_START_WAIT" as DWAIT
+    state "S_FRAME_START" as DFS
+    state "S_ROW_WAIT" as DRW
+    state "S_ROW_START" as DRS
+    state "S_DRAIN_W1" as DW1
+    state "S_DRAIN_W2" as DW2
+    state "S_DRAIN_PUSH" as DPUSH
+    state "S_ROW_END" as DRE
+    state "S_ROW_GAP" as DRG
+    state "S_FRAME_END" as DFE
+    state "S_DONE" as DDONE
 
     [*] --> DWAIT
-    DWAIT --> DRC: start (latch base_addr)
-    DRC --> DDONE: row_counter == FRAME_HEIGHT
-    DRC --> DCQ: else
-    DCQ --> DSRC: !queue_full (emit frame-start 0x10000)
-    DSRC --> DSRR
-    DSRR --> DRC: row_counter == FRAME_HEIGHT (emit frame-end 0x1FFFF)
-    DSRR --> DRR: else (emit row-start 0x10001)
-    DRR --> DSRM: col_counter != FRAME_WIDTH
-    DRR --> DARA: col_counter == FRAME_WIDTH (latch row_inc)
-    DSRM --> DRMW: read_rq
-    DRMW --> DRFM: read_ack (bus granted)
-    DRFM --> DQU: burst cached (BURST_CYCLES)
-    DQU --> DCCI: !queue_full & col<width & cache not empty
-    DQU --> DQD: burst drained / row full / queue_full stall
-    DCCI --> DQU: emit one pixel (border-masked)
-    DQD --> DRR: next burst
-    DARA --> DSRC: row_inc <= 1
-    DARA --> DSKIP: row_inc >= 2
-    DSKIP --> DSRC: after skipping (row_inc - 1) source rows
-    DDONE --> DWAIT: download_done
+    DWAIT --> DFS: start (pulse cache.start, clear row_counter)
+    DFS --> DRW: !queue_full (emit frame-start 0x10000)
+    DRW --> DFE: row_counter == FRAME_HEIGHT
+    DRW --> DRS: row_avail (prefetched row ready)
+    DRS --> DW1: !queue_full (emit row-start 0x10001, rd_pix_addr <= 0)
+    DW1 --> DW2
+    DW2 --> DPUSH
+    DPUSH --> DPUSH: queue_full (stall, hold rd_pix_addr)
+    DPUSH --> DW1: !queue_full & col < FRAME_WIDTH-1 (push pixel, advance addr)
+    DPUSH --> DRE: !queue_full & col == FRAME_WIDTH-1 (push last pixel)
+    DRE --> DRG: pulse row_release, row_counter++
+    DRG --> DRW: settle the cache's registered bank swap
+    DFE --> DDONE: !queue_full (emit frame-end 0x1FFFF)
+    DDONE --> DWAIT: pulse download_done
 ```
 
 | State | Role |
 | --- | --- |
-| `FRAME_PROCESSING_START_WAIT` | Idle. On `start`, latch `base_addr` → `frame_addr_counter`, clear `row_counter`. |
-| `FRAME_PROCESSING_READ_CYC` | Per-row gate: if all rows done → `FRAME_PROCESSING_DONE`, else reset the cache and proceed. Folds the row-address adder result back into `frame_addr_counter`. |
-| `CHECK_QUEUE` | On the first pass, emit the **frame-start** token `0x10000` (when the FIFO has room). |
-| `START_READ_CYC` → `START_READ_ROW` | Per-row entry. `START_READ_ROW` emits the **row-start** token `0x10001`, or the **frame-end** token `0x1FFFF` after the last row. |
-| `READ_ROW_CYC` | Row loop. While `col_counter != FRAME_WIDTH`, fetch another burst (`START_READ_FROM_MEMORY`). When the row is complete, latch `row_inc = row_inc_o` (from `PositionScaler_vert`), bump `row_counter`, set the row address step, and go to `ADJUST_ROW_ADDRESS`. |
-| `START_READ_FROM_MEMORY` → `READ_MEMORY_WAIT` | Assert `read_rq`; advance on the arbiter `read_ack`, latching the read address. |
-| `READ_FROM_MEMORY_CYC` | Capture `BURST_CYCLES` words from `rd_data` into the row cache (`Gowin_SDPB_DN`). |
-| `QUEUE_UPLOAD_CYC` | Drain dispatcher. Stall while `queue_full`; otherwise step a pixel (`CACHE_COUNTER_INCREMENT`) until the burst is exhausted or the row is full, then `QUEUE_UPLOAD_DONE`. |
-| `CACHE_COUNTER_INCREMENT` | Emit one output pixel and advance `col_counter`/`cache_addr`. **Pillarbox masking** (resize only): columns outside `[BORDER_SIZE, RESIZED_WIDTH + BORDER_SIZE)` are written as black `0x00000`; inside, the cached pixel passes through 1:1. |
-| `QUEUE_UPLOAD_DONE` | Fold the consumed `cache_addr` back into the frame address; loop to `READ_ROW_CYC` for the next burst. |
-| `ADJUST_ROW_ADDRESS` / `SKIP_ROW` | **Vertical resize**: `PositionScaler_vert` returns `row_inc` ∈ {1, 2} per output row; `SKIP_ROW` advances `frame_addr_counter` by `ORIG_FRAME_WIDTH` for each extra source row to drop (480 → 272 downscale). |
-| `FRAME_PROCESSING_DONE` | Pulse `download_done`, return to idle. |
+| `S_START_WAIT` | Idle. On `start`, pulse `cache.start` (seeds `base_addr`), clear `row_counter`. |
+| `S_FRAME_START` | Emit the **frame-start** token `0x10000` once the FIFO has room. |
+| `S_ROW_WAIT` | Per-row gate: all rows done (`row_counter == FRAME_HEIGHT`) → `S_FRAME_END`; otherwise wait for the cache's `row_avail` (front bank holds a complete row). |
+| `S_ROW_START` | Emit the **row-start** token `0x10001`; reset `col_counter` and `rd_pix_addr`. |
+| `S_DRAIN_W1` / `S_DRAIN_W2` | Two wait cycles covering the `sdpb_1kx32` 2-cycle read latency for the addressed pixel. |
+| `S_DRAIN_PUSH` | Push `{1'b0, rd_pix_data}` to the FIFO. Stalls (holding `rd_pix_addr`) while `queue_full`. On the last column → `S_ROW_END`; otherwise advance `rd_pix_addr`/`col_counter` and loop to `S_DRAIN_W1`. |
+| `S_ROW_END` | Pulse `row_release` (free the drained bank), bump `row_counter`. |
+| `S_ROW_GAP` | One cycle so the cache's *registered* front-bank swap / `bank_full` clear settle before `S_ROW_WAIT` re-samples `row_avail`. |
+| `S_FRAME_END` | Emit the **frame-end** token `0x1FFFF`. |
+| `S_DONE` | Pulse `download_done`, return to idle. |
+
+---
+
+## DownloadRowCache
+
+The prefetch engine behind `FrameDownloader`. It owns the PSRAM read path and
+two `sdpb_1kx32` row banks used **ping-pong**: while one bank drains out the read
+port, the other is filled from PSRAM. Seeded by `start` + `base_addr`, it
+autonomously walks the frame — reading `FRAME_WIDTH` pixels per output row in
+`MEMORY_BURST` chunks (`BURSTS_PER_ROW` bursts) and auto-incrementing the
+source-row base — so the next row's read latency overlaps the current row's
+drain. This mirrors the upload-side `row_a`/`row_b` ping-pong in
+[`cam_pixel_processor.sv`](../src/cam_pixel_processor.sv) and does **not**
+increase total PSRAM read bandwidth.
+
+The drain side runs in parallel with the fill FSM, in the same `always` block
+(single-owner `bank_full` — no cross-process race): on each `row_release` it
+clears the front bank's full flag and flips `front_bank`.
+
+```mermaid
+stateDiagram-v2
+    state "F_IDLE" as FIDLE
+    state "F_REQ" as FREQ
+    state "F_WAIT" as FWAIT
+    state "F_DATA" as FDATA
+    state "F_DONE" as FDONE
+
+    [*] --> FIDLE
+    FIDLE --> FIDLE: !active (idle until start) / both banks full
+    FIDLE --> FDONE: active & rows_fetched == FRAME_HEIGHT (clear active)
+    FIDLE --> FREQ: active & fill bank free (latch row_base, reset counters)
+    FREQ --> FWAIT: assert read_rq
+    FWAIT --> FDATA: read_ack (pulse mem_rd_en; read_addr held = burst addr)
+    FDATA --> FREQ: burst done & not last (advance addr += PIX_PER_BURST)
+    FDATA --> FIDLE: last burst of row (publish bank, swap fill_bank, step row base by stride)
+    FDONE --> FIDLE: start (reseed for next frame)
+```
+
+| State | Role |
+| --- | --- |
+| `F_IDLE` | Idle unless `active`. Stays idle until `FrameDownloader` pulses `start` (sets `active`) — so **no PSRAM reads issue after reset, between frames, or during the PSRAM controller's power-on calibration**. When `active`: all rows fetched → `F_DONE` (clear `active`); fill bank free → start a row (latch `row_base`, clear `wr_word`/`burst_in_row`) → `F_REQ`; both banks full → stall here until a `row_release`. |
+| `F_REQ` | Assert `read_rq`. |
+| `F_WAIT` | Wait for the arbiter `read_ack`, then pulse `mem_rd_en` for one cycle. `read_addr` (= `cur_addr`) is held = this burst's address so the PSRAM command latches it correctly; the address advance happens *after* the burst. |
+| `F_DATA` | Capture `BURST_CYCLES` words from `read_data` into the fill bank (write-enable on `rd_data_valid`). On the last burst of a row: set `bank_full[fill_bank]`, flip `fill_bank`, bump `rows_fetched`, and step the source-row base by `stride_rows · ORIG_FRAME_WIDTH`. Otherwise advance `cur_addr += PIX_PER_BURST` and fetch the next burst. |
+| `F_DONE` | All rows fetched; idle until the next `start`. |
 
 ### Resize / pillarbox notes
 
-- **Vertical** downscale (480 → 272) is live, driven by `PositionScaler_vert`
-  + the `ADJUST_ROW_ADDRESS`/`SKIP_ROW` row skipping.
-- **Horizontal** is currently *borders only* (no downscale): the read path is
-  unchanged (full `FRAME_WIDTH` 1:1), and `CACHE_COUNTER_INCREMENT` blanks the
-  `BORDER_SIZE` columns on each side, giving a 362-wide active band centred on
-  screen (`RESIZED_WIDTH = ⌊FRAME_HEIGHT · 640/480⌋ = 362`, `BORDER_SIZE = 59`).
-  `PositionScaler_horz` is **not** instantiated (`if (0)` guard) so it isn't
-  synthesised as dead logic on the `fb_clk` critical path.
-- `WRITE_NEAREST_PIXEL` exists in the state enum but is unused (reserved for a
-  future horizontal-scaling mode).
+- **Vertical** downscale (480 → 272) lives in `DownloadRowCache`: a
+  `PositionScaler_vert` DDA returns `position_increment` ∈ {1, 2} per fetched
+  output row, and the cache steps the source-row base by
+  `stride_rows · ORIG_FRAME_WIDTH` (so it skips the dropped source rows). With
+  `ENABLE_RESIZE = 0` the stride is a constant `ORIG_FRAME_WIDTH` (one source
+  row per output row, leftmost-`FRAME_WIDTH` crop).
+- **Horizontal** pillarbox is applied **downstream by `HorizontalResizer`**, not
+  in `FrameDownloader`/`DownloadRowCache`: those emit a plain `FRAME_WIDTH`-wide
+  row, and `HorizontalResizer` adds the `BORDER_SIZE` black columns on each side
+  (362-wide active band centred on a 480-wide line). See
+  [`src/HorizontalResizer.sv`](../src/HorizontalResizer.sv).
 
 The structure and pixel mapping are covered by the
-`integration/pillarbox/*` and `integration/frame_roundtrip/*` testbenches —
-see [testing.md](testing.md).
+`integration/pillarbox/*` and `integration/frame_roundtrip/*` testbenches, and
+the FSMs themselves by the `unit/download_row_cache/*` and
+`unit/frame_downloader/*` testbenches — see [testing.md](testing.md).
