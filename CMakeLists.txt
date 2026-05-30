@@ -72,6 +72,39 @@ set(SRC_FOLDER "${CMAKE_CURRENT_SOURCE_DIR}/src")
 set(SIM_SRC_FOLDER "${CMAKE_CURRENT_SOURCE_DIR}/sim")
 set(FPGA_ELEMENTS_FOLDER "${CMAKE_CURRENT_SOURCE_DIR}/FPGADesignElements")
 
+# ---------------------------------------------------------------------------
+# Platform configuration: platform.json is the single source of truth for the
+# frame geometry, and CMake turns it into the SystemVerilog header
+# src/platform_config.vh (a set of `define macros) that VGA_timing.v includes
+# and feeds to VideoController. JSON is parsed with a regex (no string(JSON),
+# to keep cmake_minimum_required(3.8)). Editing platform.json re-runs cmake.
+# ---------------------------------------------------------------------------
+set(PLATFORM_JSON "${CMAKE_CURRENT_SOURCE_DIR}/platform.json")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${PLATFORM_JSON}")
+file(READ "${PLATFORM_JSON}" _PLATFORM_JSON_CONTENT)
+
+# Extract an integer-valued key from the (flat) JSON into a cmake variable.
+macro(platform_json_int key outvar)
+    if (_PLATFORM_JSON_CONTENT MATCHES "\"${key}\"[ \t\r\n]*:[ \t\r\n]*([0-9]+)")
+        set(${outvar} "${CMAKE_MATCH_1}")
+    else()
+        message(FATAL_ERROR "platform.json: key '${key}' is missing or not an integer")
+    endif()
+endmacro()
+
+platform_json_int("input_frame_width"  PLATFORM_INPUT_FRAME_WIDTH)
+platform_json_int("input_frame_height" PLATFORM_INPUT_FRAME_HEIGHT)
+platform_json_int("screen_width"       PLATFORM_SCREEN_WIDTH)
+platform_json_int("screen_height"      PLATFORM_SCREEN_HEIGHT)
+platform_json_int("emit_row_size"      PLATFORM_EMIT_ROW_SIZE)
+
+message(STATUS "Platform: ${PLATFORM_INPUT_FRAME_WIDTH}x${PLATFORM_INPUT_FRAME_HEIGHT} in, "
+               "${PLATFORM_SCREEN_WIDTH}x${PLATFORM_SCREEN_HEIGHT} screen, "
+               "emit_row_size=${PLATFORM_EMIT_ROW_SIZE}")
+
+configure_file("${SRC_FOLDER}/platform_config.vh.in"
+               "${SRC_FOLDER}/platform_config.vh" @ONLY)
+
 set(CTEST_OUTPUT_ON_FAILURE ON)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
