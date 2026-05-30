@@ -172,6 +172,12 @@ endforeach()
 # UART module test (src/uart.sv is not part of VIDEO_BUFFER_TEST_SOURCES).
 register_test(unit "uart/frame" "${SRC_FOLDER}/uart.sv")
 
+# Modbus RTU slave test (UART byte layer + the slave).
+register_test(integration "modbus/rtu_slave"
+    "${SRC_FOLDER}/uart.sv"
+    "${SRC_FOLDER}/modbus_rtu_slave.sv"
+)
+
 # The I2C controller test needs the opencores I2C master core, the control FSM
 # and the behavioural slave model -- none are in VIDEO_BUFFER_TEST_SOURCES, so
 # pass them as per-test extra sources.

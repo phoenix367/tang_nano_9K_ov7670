@@ -57,6 +57,8 @@ sim/
     │   ├── register_write.sv        i2c_control_fsm + i2c_master_top + slave model: SCCB register writes
     │   ├── register_read.sv         i2c_master_top SCCB reads (WISHBONE BFM) vs seeded slave memory
     │   └── fsm_read.sv              i2c_control_fsm recv_data read path: data_out vs seeded slave memory
+    ├── modbus/
+    │   └── rtu_slave.sv             Modbus RTU slave (FC03/06/16 + exceptions + bad-CRC) over 2 cross-wired UARTs
     └── pillarbox/
         └── borders{,_full,_vmap}.sv vertical resize + pillarbox pixel mapping
 ```
