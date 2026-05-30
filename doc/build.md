@@ -58,6 +58,41 @@ Optional configure-time variables:
 | `DUMP_SIM_VARIABLES` | `OFF`   | Emit `dump.vcd` per test for GtkWave                   |
 | `SimLogLevel`        | `Info`  | One of `Fatal Error Info Debug None`; sets `SVL_VERBOSE_*` in `test_config.sv` |
 
+## Platform configuration
+
+The frame geometry is defined once in [`platform.json`](../platform.json)
+at the repo root:
+
+```json
+{
+  "input_frame_width": 640,
+  "input_frame_height": 480,
+  "screen_width": 480,
+  "screen_height": 272,
+  "emit_row_size": 640
+}
+```
+
+At configure time CMake parses it and generates the SystemVerilog header
+`src/platform_config.vh` (a set of `` `define `` macros) that
+[`src/VGA_timing.v`](../src/VGA_timing.v) includes and feeds to
+`VideoController` (input/screen size and `EMIT_ROW_SIZE`). `emit_row_size`
+is the number of source columns read per row and fed to the horizontal
+resizer — `640` downscales the whole row (full field of view); a smaller
+value reads/crops fewer columns.
+
+Editing `platform.json` re-triggers CMake (it is a configure dependency),
+so just re-run the build:
+
+```sh
+cmake -S . -B build -D IVerilog_PATH=... -D Gowin_PATH=...   # regenerates the header
+```
+
+The generated `src/platform_config.vh` is committed and listed in the
+`.gprj` so the Gowin GUI flow and a fresh checkout resolve the include
+without a configure step; CMake overwrites it from the JSON on every
+configure. Edit `platform.json`, not the generated header.
+
 ## Build the bitstream
 
 The hardware targets shell out to Gowin's `gw_sh` Tcl console (no GUI
