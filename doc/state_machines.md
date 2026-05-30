@@ -213,12 +213,15 @@ stateDiagram-v2
   output row, and the cache steps the source-row base by
   `stride_rows · ORIG_FRAME_WIDTH` (so it skips the dropped source rows). With
   `ENABLE_RESIZE = 0` the stride is a constant `ORIG_FRAME_WIDTH` (one source
-  row per output row, leftmost-`FRAME_WIDTH` crop).
+  row per output row; if `EMIT_ROW_SIZE < ORIG_FRAME_WIDTH` that is a leftmost
+  crop).
+- The per-row read/emit width is `EMIT_ROW_SIZE` (640 = full row); it is
+  decoupled from `FRAME_WIDTH` (the nominal LCD output width).
 - **Horizontal** pillarbox is applied **downstream by `HorizontalResizer`**, not
-  in `FrameDownloader`/`DownloadRowCache`: those emit a plain `FRAME_WIDTH`-wide
-  row, and `HorizontalResizer` adds the `BORDER_SIZE` black columns on each side
-  (362-wide active band centred on a 480-wide line). See
-  [`src/HorizontalResizer.sv`](../src/HorizontalResizer.sv).
+  in `FrameDownloader`/`DownloadRowCache`: those emit a plain `EMIT_ROW_SIZE`-wide
+  row, and `HorizontalResizer` downscales it to the active band and adds the
+  `BORDER_SIZE` black columns on each side (362-wide active band centred on a
+  480-wide line). See [`src/HorizontalResizer.sv`](../src/HorizontalResizer.sv).
 
 The structure and pixel mapping are covered by the
 `integration/pillarbox/*` and `integration/frame_roundtrip/*` testbenches, and

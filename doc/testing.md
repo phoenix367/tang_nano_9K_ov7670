@@ -320,7 +320,8 @@ because:
   history is still in git if you want to look.
 - One test (`frame_buffer_test_read_frame_23x17_2`, renamed to
   `read_23x17_alt` during the move) depends on the horizontal
-  scaler, which only works on the `img_resize` branch.
+  scaler; the horizontal resize/pillarbox path now lives in the
+  baseline and is covered by the `integration/pillarbox/*` tests.
 - One (`frame_buffer_test_read_write_frame_23x17`) used the
   pre-refactor port list and would have needed a full rewrite to
   cover the same write+read scenario; deferred.
