@@ -1,4 +1,5 @@
 build/
 impl/
 *.user
+src/platform_config.vh
 
