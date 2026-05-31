@@ -45,6 +45,23 @@ The device node must be readable/writable by your user. The project's udev rule
 (`udev/99-gowin-ft2232h.rules`) makes `/dev/ttyGowin` world rw; otherwise run as
 a user in the `dialout` group or pick the right `/dev/ttyUSB*`.
 
+## Tests
+
+A pytest suite under `tests/` runs without hardware — a fake in-memory Modbus
+slave (`tests/fake_modbus.py`) stands in for the FPGA, so the real `ModbusRTU`
+client and the Flask routes are exercised end-to-end.
+
+```bash
+pip install -r webapp/requirements-dev.txt
+cd webapp && python -m pytest tests -q
+```
+
+Coverage: `test_modbus_client.py` (CRC, framing, FC03/06/10, exceptions,
+retries, the termios.error→OSError normalization), `test_ov7670.py` (register
+set, decode, gamma-curve math, color-matrix decode/transform), and
+`test_app.py` (every API route plus the not-connected / Modbus-exception /
+device-lost error paths).
+
 ## Layout
 
 | File | Purpose |
