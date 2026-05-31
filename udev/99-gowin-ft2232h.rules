@@ -3,10 +3,18 @@
 # Channel A (interface 0) = JTAG, used by the Gowin programmer (libftd2xx/D2XX).
 # Channel B (interface 1) = UART (the design's uart_tx/uart_rx on pins 17/18).
 #
+# Numbered 99 on purpose: the UART symlink rule keys on ENV props
+# (ID_VENDOR_ID / ID_MODEL_ID / ID_USB_INTERFACE_NUM) that the system's
+# 60-serial.rules sets on the tty device, so this file must run AFTER 60.
+# (ATTRS{} can't be used for that match: idVendor/idProduct live on the USB
+# device while bInterfaceNumber lives on the USB interface, and all ATTRS in one
+# rule must match the same parent -- so a single ATTRS rule never matches.)
+#
 # Install:
-#   sudo install -m 644 udev/51-gowin-ft2232h.rules /etc/udev/rules.d/
+#   sudo rm -f /etc/udev/rules.d/51-gowin-ft2232h.rules   # remove the old name
+#   sudo install -m 644 udev/99-gowin-ft2232h.rules /etc/udev/rules.d/
 #   sudo udevadm control --reload-rules
-#   # then replug the cable (a fresh "add" event applies the device-node MODE)
+#   # then replug the cable so a fresh "add" event applies the rules
 #
 # With this in place the programmer (channel A) and the UART (ftdi_sio channel
 # B, /dev/ttyGowin) work at the same time.
@@ -23,8 +31,7 @@ ACTION=="add", SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", \
 
 # Interface 1 (UART): keep ftdi_sio attached so it enumerates as /dev/ttyUSB*,
 # expose a stable /dev/ttyGowin symlink, and make it usable by any user without
-# sudo or dialout membership -- MODE=0666 (world rw) plus TAG+="uaccess" (grants
-# the logged-in desktop user an ACL on systemd-logind seats).
-SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6010", \
-    ATTRS{bInterfaceNumber}=="01", \
+# sudo or dialout membership -- MODE=0666 (world rw) plus TAG+="uaccess".
+SUBSYSTEM=="tty", ENV{ID_VENDOR_ID}=="0403", ENV{ID_MODEL_ID}=="6010", \
+    ENV{ID_USB_INTERFACE_NUM}=="01", \
     MODE="0666", GROUP="dialout", SYMLINK+="ttyGowin", TAG+="uaccess"

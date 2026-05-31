@@ -183,13 +183,16 @@ The chip exposes two channels:
 
 The vendor rules at `<Gowin>/Programmer/bin/50-programmer_usb.rules`
 only cover the single-channel FT232H (`0403:6014`). This repo ships a
-companion rule at [`udev/51-gowin-ft2232h.rules`](../udev/51-gowin-ft2232h.rules)
+companion rule at [`udev/99-gowin-ft2232h.rules`](../udev/99-gowin-ft2232h.rules)
 that makes the raw device node read/write (so the programmer can open the
-cable), detaches `ftdi_sio` from interface 0 (JTAG), and leaves interface 1
-bound as the UART. Install it:
+cable), detaches `ftdi_sio` from interface 0 (JTAG), and exposes interface 1
+as the `/dev/ttyGowin` UART. It is numbered 99 so it runs after the system's
+`60-serial.rules` (which sets the `ID_USB_INTERFACE_NUM` the UART rule keys on).
+Install it (and remove any earlier `51-` copy):
 
 ```sh
-sudo install -m 644 udev/51-gowin-ft2232h.rules /etc/udev/rules.d/
+sudo rm -f /etc/udev/rules.d/51-gowin-ft2232h.rules
+sudo install -m 644 udev/99-gowin-ft2232h.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules
 ```
 
