@@ -11,6 +11,15 @@ import struct
 
 import serial  # pyserial
 
+# pyserial's low-level POSIX calls (tcflush/tcdrain in reset_input_buffer etc.)
+# raise termios.error on a vanished port, which is NOT an OSError subclass and
+# would otherwise escape the disconnect handling. Normalize it to OSError.
+try:
+    import termios
+    _PORT_GONE = (termios.error,)
+except ImportError:        # non-POSIX backend
+    _PORT_GONE = ()
+
 
 def crc16(data: bytes) -> int:
     """CRC-16/Modbus (poly 0xA001, init 0xFFFF). Appended little-endian."""
@@ -94,6 +103,10 @@ class ModbusRTU:
                     self.ser.reset_input_buffer()
                 except Exception:
                     pass
+            except _PORT_GONE as e:
+                # the port vanished (unplug / re-enumerate); fail fast as OSError
+                # so the app classifies it as a disconnect (no point retrying).
+                raise OSError(f"serial port I/O error: {e}") from e
         raise last
 
     def _txn_once(self, func, payload):

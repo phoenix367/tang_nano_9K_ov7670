@@ -2,7 +2,9 @@
 
 const $ = (sel) => document.querySelector(sel);
 let CONTROLS = [];          // metadata from /api/state
-let connected = false;
+// connection lifecycle state machine -- single source of truth (see enterState)
+const ST = { DISCONNECTED: "disconnected", CONNECTED: "connected", RECONNECTING: "reconnecting" };
+let connState = ST.DISCONNECTED;
 let currentTab = "basic";
 
 // reset/disconnect handling
@@ -82,28 +84,50 @@ async function loadPorts() {
 }
 
 // --------------------------------------------------------------- connection
-function setConnected(state, info) {
-  connected = state;
-  $("#connect").disabled = state;
-  $("#disconnect").disabled = !state;
-  $("#port").disabled = state;
-  $("#baud").disabled = state;
-  $("#slave").disabled = state;
-  $("#tabs").hidden = !state;
-  if (state) {
+// The only place connection side-effects live: entering a state fully defines
+// the UI (buttons, inputs, tabs, banner, status line) and the background timers
+// (heartbeat, auto-reconnect). Callers just raise events by calling enterState,
+// so no path can leave a stale banner, an orphaned timer, or visible tabs.
+function enterState(next, info) {
+  connState = next;
+  const conn = (next === ST.CONNECTED);
+
+  // both timers off; the new state re-arms only what it needs
+  stopHeartbeat();
+  stopReconnect();
+
+  $("#connect").disabled    = conn;
+  $("#disconnect").disabled = (next === ST.DISCONNECTED);
+  $("#port").disabled  = conn;
+  $("#baud").disabled  = conn;
+  $("#slave").disabled = conn;
+
+  $("#tabs").hidden = !conn;
+  if (conn) {
     showTab(currentTab);
   } else {
     $("#tab-basic").hidden = true;
     $("#tab-color").hidden = true;
   }
-  const s = $("#conn-status");
-  if (state) {
-    s.textContent = `Connected to ${info.port} (slave ${info.slave}), PID ${hex(info.pid)}.`;
-    s.className = "status connected";
+
+  if (next === ST.RECONNECTING) {
+    showBanner("Device disconnected — waiting for it to come back…", "warn");
+    connStatus("Not connected.", "");
+    startReconnect();
+  } else if (conn) {
+    clearBanner();
+    connStatus(`Connected to ${info.port} (slave ${info.slave}), PID ${hex(info.pid)}.`, "connected");
+    startHeartbeat();
   } else {
-    s.textContent = "Not connected.";
-    s.className = "status";
+    clearBanner();
+    connStatus("Not connected.", "");
   }
+}
+
+function connStatus(msg, cls) {
+  const s = $("#conn-status");
+  s.textContent = msg;
+  s.className = "status" + (cls ? " " + cls : "");
 }
 
 function showTab(name) {
@@ -117,35 +141,26 @@ function showTab(name) {
 async function connect() {
   const port = $("#port").value;
   if (!port) { toast("Pick a serial port first", "error"); return; }
+  const cfg = { port, baud: Number($("#baud").value), slave: Number($("#slave").value) };
   try {
-    const info = await postJSON("/api/connect", {
-      port,
-      baud: Number($("#baud").value),
-      slave: Number($("#slave").value),
-    });
-    lastConn = { port, baud: Number($("#baud").value), slave: Number($("#slave").value) };
+    const info = await postJSON("/api/connect", cfg);
+    lastConn = cfg;
     lastUptime = null;
     statusUnsupportedNoted = false;
-    setConnected(true, info);
+    enterState(ST.CONNECTED, info);
     renderControls();
     await loadSettings();
-    clearBanner();
-    startHeartbeat();
     toast("Connected");
   } catch (e) {
-    $("#conn-status").textContent = e.message;
-    $("#conn-status").className = "status error";
+    connStatus(e.message, "error");
     toast(e.message, "error");
   }
 }
 
 async function disconnect() {
-  stopHeartbeat();
-  stopReconnect();
   lastConn = null;            // intentional disconnect: don't auto-reconnect
-  clearBanner();
   try { await postJSON("/api/disconnect", {}); } catch {}
-  setConnected(false);
+  enterState(ST.DISCONNECTED);
 }
 
 // ---------------------------------------------------- heartbeat & recovery
@@ -162,10 +177,12 @@ function stopHeartbeat() { if (heartbeatTimer) { clearInterval(heartbeatTimer); 
 
 async function heartbeat() {
   const { status, data } = await rawFetch("/api/health");
-  if (status === 0) return;                 // can't reach our own server; skip
-  if (status === 503) { handleDeviceLost(); return; }
+  if (status === 0) return;                  // can't reach our own server; skip
+  if (status === 503) {                      // device gone -> hand off to reconnect
+    if (connState === ST.CONNECTED) enterState(ST.RECONNECTING);
+    return;
+  }
   if (!data.ok) return;                      // transient (e.g. 400) — ignore tick
-  clearBanner();
   if (data.status_supported && typeof data.uptime === "number") {
     if (lastUptime !== null && data.uptime < lastUptime - 1) {
       toast("Device was reset — resyncing", "error");
@@ -179,19 +196,11 @@ async function heartbeat() {
   }
 }
 
-function handleDeviceLost() {
-  if (!connected) return;
-  stopHeartbeat();
-  setConnected(false);
-  showBanner("Device disconnected — waiting for it to come back…", "warn");
-  startReconnect();
-}
-
 function startReconnect() { stopReconnect(); reconnectTimer = setInterval(tryReconnect, 3000); }
 function stopReconnect() { if (reconnectTimer) { clearInterval(reconnectTimer); reconnectTimer = null; } }
 
 async function tryReconnect() {
-  if (!lastConn) { stopReconnect(); return; }
+  if (!lastConn) { enterState(ST.DISCONNECTED); return; }
   let avail = false;
   try {
     const { ports } = await api("/api/ports");
@@ -200,13 +209,10 @@ async function tryReconnect() {
   if (!avail) return;                        // port not back yet
   try {
     const info = await postJSON("/api/connect", lastConn);
-    stopReconnect();
     lastUptime = null;
-    setConnected(true, info);
+    enterState(ST.CONNECTED, info);
     renderControls();
-    clearBanner();
     await loadSettings();
-    startHeartbeat();
     toast("Reconnected");
   } catch { /* port present but not ready yet; keep trying */ }
 }
@@ -537,10 +543,9 @@ async function init() {
     if (st.connected) {
       lastConn = { port: st.port, baud: Number($("#baud").value), slave: st.slave };
       lastUptime = null;
-      setConnected(true, { port: st.port, slave: st.slave, pid: 0 });
+      enterState(ST.CONNECTED, { port: st.port, slave: st.slave, pid: 0 });
       renderControls();
       await loadSettings();
-      startHeartbeat();
     }
   } catch (e) { toast(e.message, "error"); }
 }

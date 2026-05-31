@@ -12,6 +12,10 @@
 
 * { box-sizing: border-box; }
 
+/* The `hidden` attribute must win over author `display:` rules (e.g. .tabs is
+   display:flex, which would otherwise override the UA [hidden]{display:none}). */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
