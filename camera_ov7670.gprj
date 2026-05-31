@@ -45,6 +45,8 @@
         <File path="src/camera_control.v" type="file.verilog" enable="1"/>
         <File path="src/camera_control_defs.vh" type="file.verilog" enable="1"/>
         <File path="src/color_utilities.vh" type="file.verilog" enable="1"/>
+        <File path="src/modbus_rtu_slave.sv" type="file.verilog" enable="1"/>
+        <File path="src/modbus_cam_backend.sv" type="file.verilog" enable="1"/>
         <File path="src/platform_config.vh" type="file.verilog" enable="1"/>
         <File path="src/debug_pattern_generator.sv" type="file.verilog" enable="1"/>
         <File path="src/debug_pattern_generator2.sv" type="file.verilog" enable="1"/>
@@ -70,6 +72,7 @@
         <File path="src/psram_utils.vh" type="file.verilog" enable="1"/>
         <File path="src/sdpb_1kx32/sdpb_1kx32.v" type="file.verilog" enable="1"/>
         <File path="src/timescale.v" type="file.verilog" enable="1"/>
+        <File path="src/uart.sv" type="file.verilog" enable="1"/>
         <File path="src/video_controller.sv" type="file.verilog" enable="1"/>
         <File path="src/camera_ov7670.cst" type="file.cst" enable="1"/>
         <File path="src/camera_control.sdc" type="file.sdc" enable="1"/>

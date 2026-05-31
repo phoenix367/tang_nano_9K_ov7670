@@ -121,6 +121,37 @@ At power-on, `i2c_control_fsm` walks the ROM and pushes each
 completion / errors. After initialization the camera streams pixels
 on its own clock domain (`video_clk_i`).
 
+## Runtime register access over Modbus (Direct 1:1)
+
+After the power-on load finishes, the same `i2c_control_fsm` is reused
+to let a host read and write **live OV7670 registers** over the
+FT2232H channel-B UART (9600 8-E-1). A Modbus RTU slave
+([`src/modbus_rtu_slave.sv`](../src/modbus_rtu_slave.sv), slave id 7)
+runs with `EXTERNAL_BACKEND=1`: instead of an internal register file,
+every holding-register access is handed to
+[`src/modbus_cam_backend.sv`](../src/modbus_cam_backend.sv) over a small
+request/ready handshake, and the bridge turns it into one SCCB
+transaction. The mapping is **Direct 1:1** — the Modbus holding-register
+address *is* the OV7670 register number (`0x00..0xC9`); a write uses the
+low byte of the value, a read returns `{8'h00, reg_byte}`.
+
+`camera_control.v` multiplexes the SCCB controller's command inputs by
+ownership: the init FSM owns it until the ROM load reaches
+`TRANSMIT_COMPLETE`, which latches `cam_init_complete`; from then on the
+bridge owns it. The bridge stays idle until `cam_init_complete`, so the
+default configuration is loaded undisturbed ("block until init done").
+The bridge also answers three reserved addresses directly (no SCCB):
+`0xF0` firmware magic `0xA5`, `0xF1`/`0xF2` a free-running 16-bit uptime
+so a host can detect a hard reset.
+
+FC03 read bursts are capped by the slave's `MAX_FRAME` (32 → ~13
+registers per request). The bridge runs entirely on the 27 MHz `sys_clk`
+domain. End-to-end coverage: `sim/integration/modbus/cam_bridge`.
+
+The full host-facing reference — register map, status registers, LEDs,
+the web app, and the CLI client — is in
+[host_control.md](host_control.md).
+
 ## Capture path
 
 The OV7670 produces two pixel-clocks per RGB565 pixel (high byte then
@@ -268,6 +299,7 @@ src/                  Synthesizable RTL
    DownloadRowCache.sv, HorizontalResizer.sv,
    PositionScaler_horz.sv, PositionScaler_vert.sv,
    ov7670_default.sv, ov7670_regs.vh, debug_pattern_generator{,2}.sv,
+   uart.sv, modbus_rtu_slave.sv, modbus_cam_backend.sv,
    camera_ov7670.cst, camera_control.sdc, …)
 
 sim/                  Icarus Verilog testbenches and behavioural models

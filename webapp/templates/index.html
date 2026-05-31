@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OV7670 Modbus Control</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header>
+    <h1>OV7670 Camera Control</h1>
+    <span class="subtitle">Tang Nano 9K &middot; Modbus RTU over UART</span>
+  </header>
+
+  <div id="banner" class="banner" hidden></div>
+
+  <section class="panel" id="connection">
+    <h2>Connection</h2>
+    <div class="row">
+      <label>Port
+        <select id="port"></select>
+      </label>
+      <button id="refresh-ports" class="ghost" title="Rescan serial ports">&#x21bb;</button>
+      <label>Baud
+        <input id="baud" type="number" value="9600" min="300" step="100">
+      </label>
+      <label>Slave&nbsp;id
+        <input id="slave" type="number" value="7" min="0" max="247">
+      </label>
+      <button id="connect" class="primary">Connect</button>
+      <button id="disconnect" class="danger" disabled>Disconnect</button>
+    </div>
+    <div id="conn-status" class="status">Not connected.</div>
+  </section>
+
+  <nav class="tabs" id="tabs" hidden>
+    <button class="tab active" data-tab="basic">Basic controls</button>
+    <button class="tab" data-tab="color">Color</button>
+  </nav>
+
+  <div class="tab-content" id="tab-basic" hidden>
+    <section class="panel" id="identity-panel">
+      <h2>Camera identity</h2>
+      <table id="identity"></table>
+    </section>
+
+    <section class="panel" id="controls-panel">
+      <div class="row between">
+        <h2>Controls</h2>
+        <button id="reload" class="ghost">Reload values</button>
+      </div>
+      <div id="controls"></div>
+    </section>
+
+    <section class="panel" id="raw-panel">
+      <h2>Raw register access</h2>
+      <div class="row">
+        <label>Address (hex)
+          <input id="raw-addr" type="text" value="0x0A" size="6">
+        </label>
+        <button id="raw-read" class="ghost">Read</button>
+        <label>Value (hex/dec)
+          <input id="raw-value" type="text" value="" size="6">
+        </label>
+        <button id="raw-write" class="ghost">Write</button>
+        <span id="raw-result" class="mono"></span>
+      </div>
+      <p class="hint">Address = OV7670 register number (0x00&ndash;0xC9). Only the
+        low byte of a write reaches the camera.</p>
+    </section>
+  </div>
+
+  <div class="tab-content" id="tab-color" hidden>
+    <div class="panel-row">
+    <section class="panel" id="gamma-panel">
+      <div class="row between">
+        <h2>Gamma curve</h2>
+        <span id="gamma-caption" class="hint"></span>
+      </div>
+      <div id="gamma-controls"></div>
+      <div class="gamma-body">
+        <div id="gamma-plot"></div>
+        <table id="gamma-regs" class="gamma-regs"></table>
+      </div>
+    </section>
+
+    <section class="panel" id="matrix-panel">
+      <div class="row between">
+        <h2>Color matrix</h2>
+        <label class="inline"><input type="checkbox" id="matrix-autocc"> auto contrast-center</label>
+      </div>
+      <div class="matrix-body">
+        <div id="matrix-grid"></div>
+        <div id="matrix-swatches"></div>
+      </div>
+      <p class="hint">Each output chroma row = a weighted sum of R,G,B (coefficient
+        ÷256, sign from MTXS). Swatches apply the matrix to reference colors
+        (BT.601 luma + the generated Cr/Cb) — approximate, exact at the default.</p>
+    </section>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

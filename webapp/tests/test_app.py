@@ -1,0 +1,182 @@
+"""Tests for the Flask API: routes, control/gamma/matrix endpoints, and the
+error-classification paths (not-connected, Modbus exception, disconnect)."""
+
+import pytest
+
+import app as flask_app
+
+
+def _connect(tc):
+    return tc.post("/api/connect", json={"port": "fake"}).get_json()
+
+
+# ------------------------------------------------------------------ basics
+def test_ports(client):
+    tc, _ = client
+    r = tc.get("/api/ports").get_json()
+    assert r["ok"] and isinstance(r["ports"], list)
+
+
+def test_state_disconnected(client):
+    tc, _ = client
+    r = tc.get("/api/state").get_json()
+    assert r["ok"] and r["connected"] is False
+    assert isinstance(r["controls"], list) and r["controls"]
+
+
+def test_connect_then_state(client):
+    tc, _ = client
+    assert _connect(tc)["pid"] == 0x76
+    r = tc.get("/api/state").get_json()
+    assert r["connected"] is True and r["port"] == "fake"
+
+
+def test_settings(client):
+    tc, _ = client
+    _connect(tc)
+    r = tc.get("/api/settings").get_json()
+    assert r["ok"]
+    ident = {row["addr"]: row for row in r["identity"]}
+    assert ident[0x0A]["ok"] and ident[0x0A]["value"] == 0x76
+    assert r["controls"]["agc"] is True
+    assert r["registers"]["0x0A"] == 0x76
+
+
+def test_control_byte(client):
+    tc, fake = client
+    _connect(tc)
+    r = tc.post("/api/control", json={"id": "brightness", "value": 200}).get_json()
+    assert r["ok"]
+    assert fake["slave"].regs[0x55] == 200
+
+
+def test_control_bit_rmw(client):
+    tc, fake = client
+    _connect(tc)
+    tc.post("/api/control", json={"id": "mirror", "value": True})
+    assert fake["slave"].regs[0x1E] & 0x20            # MVFP mirror bit set
+    tc.post("/api/control", json={"id": "mirror", "value": False})
+    assert not (fake["slave"].regs[0x1E] & 0x20)      # cleared, neighbours preserved
+
+
+def test_control_pattern(client):
+    tc, fake = client
+    _connect(tc)
+    tc.post("/api/control", json={"id": "pattern", "value": "colorbar"})
+    assert fake["slave"].regs[0x71] & 0x80
+    tc.post("/api/control", json={"id": "pattern", "value": "none"})
+    assert not (fake["slave"].regs[0x71] & 0x80)
+
+
+def test_control_unknown_id(client):
+    tc, _ = client
+    _connect(tc)
+    r = tc.post("/api/control", json={"id": "bogus", "value": 1})
+    assert r.status_code == 400 and r.get_json()["ok"] is False
+
+
+def test_control_gamma_writes_curve(client):
+    tc, fake = client
+    _connect(tc)
+    tc.post("/api/control", json={"id": "gamma", "value": 100})   # g=1.0 -> linear
+    assert fake["slave"].regs[0x7A] == 0x40                        # SLOP
+    assert fake["slave"].regs[0x7B] == 0x04                        # GAM1 == first breakpoint
+
+
+# ------------------------------------------------------------------ gamma
+def test_gamma_preview_no_device(client):
+    tc, _ = client                                   # not connected; preview is pure math
+    r = tc.get("/api/gamma?value=100").get_json()
+    assert r["ok"] and r["exponent"] == 1.0
+    assert "0x7A" in r["registers"] and len(r["points"]) == 17
+
+
+def test_gamma_device(client):
+    tc, _ = client
+    _connect(tc)
+    r = tc.get("/api/gamma/device").get_json()
+    assert r["ok"] and "0x89" in r["registers"] and len(r["points"]) == 17
+
+
+# ------------------------------------------------------------------ matrix
+def test_matrix_read(client):
+    tc, _ = client
+    _connect(tc)
+    r = tc.get("/api/matrix").get_json()
+    assert r["ok"] and len(r["coeffs"]) == 6 and r["auto_contrast"] is True
+    assert len(r["swatches"]) == len(__import__("ov7670").MATRIX_REF_COLORS)
+
+
+def test_matrix_coeff_sign_rmw(client):
+    tc, fake = client
+    _connect(tc)
+    r = tc.post("/api/matrix/coeff", json={"index": 1, "value": -64}).get_json()
+    assert r["ok"]
+    assert fake["slave"].regs[0x50] == 64             # magnitude
+    assert fake["slave"].regs[0x58] & 0x02            # MTXS sign bit for MTX2
+
+
+def test_matrix_contrast_center(client):
+    tc, fake = client
+    _connect(tc)
+    tc.post("/api/matrix/contrast_center", json={"on": False})
+    assert not (fake["slave"].regs[0x58] & 0x80)
+
+
+# ------------------------------------------------------------------ health
+def test_health_status_supported(client):
+    tc, _ = client
+    _connect(tc)
+    r = tc.get("/api/health").get_json()
+    assert r["ok"] and r["alive"] and r["status_supported"]
+    assert r["magic"] == 0xA5 and r["magic_ok"] and isinstance(r["uptime"], int)
+
+
+def test_health_old_bitstream_degrades(client):
+    tc, fake = client
+    _connect(tc)
+    fake["slave"].reg_count = 202                     # status regs now illegal addr
+    r = tc.get("/api/health").get_json()
+    assert r["ok"] and r["alive"] and r["status_supported"] is False
+
+
+# ------------------------------------------------------------------ raw
+def test_raw_read_write(client):
+    tc, fake = client
+    _connect(tc)
+    assert tc.get("/api/raw?addr=0x0A&count=1").get_json()["registers"]["0x0A"] == 0x76
+    tc.post("/api/raw", json={"addr": "0x55", "value": "0x12"})
+    assert fake["slave"].regs[0x55] == 0x12
+
+
+# ------------------------------------------------------------------ errors
+def test_not_connected_is_400(client):
+    tc, _ = client
+    r = tc.get("/api/settings")
+    assert r.status_code == 400 and r.get_json()["ok"] is False
+
+
+def test_disconnect(client):
+    tc, _ = client
+    _connect(tc)
+    assert tc.post("/api/disconnect").get_json()["ok"]
+    assert tc.get("/api/state").get_json()["connected"] is False
+
+
+def test_device_lost_returns_503_and_tears_down(client):
+    tc, fake = client
+    _connect(tc)
+    fake["slave"].fail_on_io = OSError("device unplugged")
+    r = tc.get("/api/health")
+    assert r.status_code == 503                       # classified as disconnect
+    assert tc.get("/api/state").get_json()["connected"] is False   # client torn down
+
+
+def test_termios_error_returns_503(client):
+    tc, fake = client
+    _connect(tc)
+    termios = pytest.importorskip("termios")
+    fake["slave"].fail_on_reset = termios.error(5, "Input/output error")
+    r = tc.get("/api/settings")
+    assert r.status_code == 503                       # not a 500 crash
+    assert tc.get("/api/state").get_json()["connected"] is False

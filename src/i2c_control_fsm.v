@@ -19,7 +19,12 @@ module i2c_control_fsm
         input [7:0] data_in,
         output reg device_rdy,
         output reg error_o,
-        
+
+        // Read result (valid one cycle after a `recv_data` transaction returns
+        // to WAIT_COMMAND; data_valid stays high until the next read starts).
+        output reg [7:0] data_out,
+        output reg data_valid,
+
         // Outputs to connect with Gowin I2C controller
         output reg tx_en,
         output reg rx_en,
@@ -61,7 +66,19 @@ module i2c_control_fsm
         WRITE_PRESCALE_HIGH = 15,
         WRITE_PRESCALE_LOW = 16,
         WAIT_WE_ACK = 17,
-        PRE_TRANSMIT_BYTE = 18;
+        PRE_TRANSMIT_BYTE = 18,
+        // ---- register read path (recv_data) ----
+        RD_CTRL    = 19,   // enable core
+        RD_A1_TXR  = 20,   // txr = slave addr + write
+        RD_A1_CMD  = 21,   // cmd = START | WR
+        RD_A2_TXR  = 22,   // txr = sub-address (register index)
+        RD_A2_CMD  = 23,   // cmd = WR | STOP   (pointer set)
+        RD_B1_TXR  = 24,   // txr = slave addr + read
+        RD_B1_CMD  = 25,   // cmd = START | WR
+        RD_B2_CMD  = 26,   // cmd = RD | NACK | STOP
+        RD_B3_RXR  = 27,   // read the received byte
+        TIPWAIT_EN = 28,   // arm the status poll
+        TIPWAIT    = 29;   // wait for TIP to assert then clear
 
     localparam
         I2C_PRESCALE_VALUE = (MAIN_CLOCK_FREQUENCY / (5 * I2C_CLOCK_FREQUENCY)) - 'd1,
@@ -86,6 +103,10 @@ module i2c_control_fsm
     reg [BUFFER_INDEX_WIDTH - 1:0] rd_index;
     reg [2:0] transmit_context;
     reg [BUFFER_INDEX_WIDTH - 1:0] buffer_ptr;
+
+    // read-path helpers
+    reg [4:0] tip_return;   // state to resume after a TIP wait
+    reg       tip_seen;     // TIP observed high during the current wait
     
     `ifdef __ICARUS__
     initial begin
@@ -106,6 +127,10 @@ module i2c_control_fsm
             init_done <= 1'b0;
             rd_addr <= 'd0;
             error_o <= 1'b0;
+            data_out <= 'd0;
+            data_valid <= 1'b0;
+            tip_seen <= 1'b0;
+            tip_return <= IDLE;
         end else begin
             // Global Actions before:
             // State Machine:
@@ -127,13 +152,14 @@ module i2c_control_fsm
                         state <= WAIT_WE_ACK;
                         error_o <= 1'b0;
                     end else if (recv_data == 1'b1) begin
-                        wr_data <= `WRAP_SIM(#1) 8'h80;
+                        // Read memory_buffer[0] (the register index stored via
+                        // store_data) from the slave; result lands in data_out.
+                        wr_data <= `WRAP_SIM(#1) CTRL_REG_CORE_EN;
                         wr_addr <= `WRAP_SIM(#1) Control_reg;
                         tx_en <= `WRAP_SIM(#1) 1'b1;
-                        transmit_context <= `WRAP_SIM(#1) 3'd4;
-
-                        state <= `WRAP_SIM(#1) START_RECV_DATA;
+                        data_valid <= `WRAP_SIM(#1) 1'b0;
                         error_o <= 1'b0;
+                        state <= `WRAP_SIM(#1) RD_CTRL;
                     end
                 end
                 STORE_DATA_STAGE: begin
@@ -300,6 +326,106 @@ module i2c_control_fsm
                     if (cmd_ack_i) begin
                         state <= `WRAP_SIM(#1) WAIT_COMMAND;
                         init_done <= `WRAP_SIM(#1) 1'b1;
+                    end
+                end
+
+                // ============ register read (recv_data) ============
+                // Standard SCCB read: a write transaction sets the slave's
+                // sub-address pointer (START, addr+W, sub, STOP), then a read
+                // transaction fetches the byte (START, addr+R, read, NACK, STOP).
+                // Each command write is followed by a TIP poll (TIPWAIT_EN/TIPWAIT)
+                // that resumes at `tip_return`.
+                RD_CTRL: begin                                   // core enable
+                    tx_en <= `WRAP_SIM(#1) 1'b1;
+                    rx_en <= `WRAP_SIM(#1) 1'b0;
+                    wr_addr <= `WRAP_SIM(#1) Control_reg;
+                    wr_data <= `WRAP_SIM(#1) CTRL_REG_CORE_EN;
+                    if (cmd_ack_i)
+                        state <= `WRAP_SIM(#1) RD_A1_TXR;
+                end
+                RD_A1_TXR: begin                                 // slave addr + W
+                    wr_addr <= `WRAP_SIM(#1) Transmit_reg;
+                    wr_data <= `WRAP_SIM(#1) {device_addr, 1'b0};
+                    if (cmd_ack_i)
+                        state <= `WRAP_SIM(#1) RD_A1_CMD;
+                end
+                RD_A1_CMD: begin                                 // START | WR
+                    wr_addr <= `WRAP_SIM(#1) Command_reg;
+                    wr_data <= `WRAP_SIM(#1) 8'h90;
+                    if (cmd_ack_i) begin
+                        tip_return <= `WRAP_SIM(#1) RD_A2_TXR;
+                        state <= `WRAP_SIM(#1) TIPWAIT_EN;
+                    end
+                end
+                RD_A2_TXR: begin                                 // sub-address byte
+                    tx_en <= `WRAP_SIM(#1) 1'b1;
+                    rx_en <= `WRAP_SIM(#1) 1'b0;
+                    wr_addr <= `WRAP_SIM(#1) Transmit_reg;
+                    wr_data <= `WRAP_SIM(#1) memory_buffer[0];
+                    if (cmd_ack_i)
+                        state <= `WRAP_SIM(#1) RD_A2_CMD;
+                end
+                RD_A2_CMD: begin                                 // WR | STOP
+                    wr_addr <= `WRAP_SIM(#1) Command_reg;
+                    wr_data <= `WRAP_SIM(#1) 8'h50;
+                    if (cmd_ack_i) begin
+                        tip_return <= `WRAP_SIM(#1) RD_B1_TXR;
+                        state <= `WRAP_SIM(#1) TIPWAIT_EN;
+                    end
+                end
+                RD_B1_TXR: begin                                 // slave addr + R
+                    tx_en <= `WRAP_SIM(#1) 1'b1;
+                    rx_en <= `WRAP_SIM(#1) 1'b0;
+                    wr_addr <= `WRAP_SIM(#1) Transmit_reg;
+                    wr_data <= `WRAP_SIM(#1) {device_addr, 1'b1};
+                    if (cmd_ack_i)
+                        state <= `WRAP_SIM(#1) RD_B1_CMD;
+                end
+                RD_B1_CMD: begin                                 // START | WR
+                    wr_addr <= `WRAP_SIM(#1) Command_reg;
+                    wr_data <= `WRAP_SIM(#1) 8'h90;
+                    if (cmd_ack_i) begin
+                        tip_return <= `WRAP_SIM(#1) RD_B2_CMD;
+                        state <= `WRAP_SIM(#1) TIPWAIT_EN;
+                    end
+                end
+                RD_B2_CMD: begin                                 // RD | NACK | STOP
+                    tx_en <= `WRAP_SIM(#1) 1'b1;
+                    rx_en <= `WRAP_SIM(#1) 1'b0;
+                    wr_addr <= `WRAP_SIM(#1) Command_reg;
+                    wr_data <= `WRAP_SIM(#1) 8'h68;
+                    if (cmd_ack_i) begin
+                        tip_return <= `WRAP_SIM(#1) RD_B3_RXR;
+                        state <= `WRAP_SIM(#1) TIPWAIT_EN;
+                    end
+                end
+                RD_B3_RXR: begin                                 // capture received byte
+                    tx_en <= `WRAP_SIM(#1) 1'b0;
+                    rx_en <= `WRAP_SIM(#1) 1'b1;
+                    rd_addr <= `WRAP_SIM(#1) Receive_reg;
+                    if (cmd_ack_i) begin
+                        data_out <= `WRAP_SIM(#1) rd_data;
+                        data_valid <= `WRAP_SIM(#1) 1'b1;
+                        rx_en <= `WRAP_SIM(#1) 1'b0;
+                        state <= `WRAP_SIM(#1) WAIT_COMMAND;
+                        `WRAP_SIM($display("t=%d, DEBUG i2c_control_fsm; Read byte %0h", $time, rd_data));
+                    end
+                end
+                TIPWAIT_EN: begin                                // arm status poll
+                    tx_en <= `WRAP_SIM(#1) 1'b0;
+                    rx_en <= `WRAP_SIM(#1) 1'b1;
+                    rd_addr <= `WRAP_SIM(#1) Status_reg;
+                    tip_seen <= `WRAP_SIM(#1) 1'b0;
+                    state <= `WRAP_SIM(#1) TIPWAIT;
+                end
+                TIPWAIT: begin                                   // wait TIP assert then clear
+                    if (cmd_ack_i) begin
+                        if (rd_data & STATUS_REG_TIP)
+                            tip_seen <= `WRAP_SIM(#1) 1'b1;
+                        else if (tip_seen) begin
+                            rx_en <= `WRAP_SIM(#1) 1'b0;
+                            state <= `WRAP_SIM(#1) tip_return;
+                        end
                     end
                 end
                 default:

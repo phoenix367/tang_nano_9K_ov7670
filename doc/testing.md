@@ -45,15 +45,28 @@ sim/
 │   │   └── countdown.sv             cycle count to delay_done + syn_rst restart
 │   ├── arbiter/
 │   │   └── round_robin.sv           grant / hold / mask / round-robin (width 2)
-│   └── cam_pixel_processor/
-│       └── frame_sequence.sv        start / per-row / end command framing
+│   ├── cam_pixel_processor/
+│   │   └── frame_sequence.sv        start / per-row / end command framing
+│   └── uart/
+│       └── frame.sv                 8-E-1 UART: loopback + parity/frame error paths
 │
 └── integration/                     cross-module tests
     ├── frame_roundtrip/
     │   └── read_23x17.sv            PSRAM read → LCD queue round-trip
+    ├── i2c/
+    │   ├── register_write.sv        i2c_control_fsm + i2c_master_top + slave model: SCCB register writes
+    │   ├── register_read.sv         i2c_master_top SCCB reads (WISHBONE BFM) vs seeded slave memory
+    │   └── fsm_read.sv              i2c_control_fsm recv_data read path: data_out vs seeded slave memory
+    ├── modbus/
+    │   └── rtu_slave.sv             Modbus RTU slave (FC03/06/16 + exceptions + bad-CRC) over 2 cross-wired UARTs
     └── pillarbox/
         └── borders{,_full,_vmap}.sv vertical resize + pillarbox pixel mapping
 ```
+
+The I2C test passes per-test extra sources (the opencores I2C core + the
+behavioural `i2c_slave_model`) to `register_test` after the test path —
+`register_test` appends any extra arguments to the compile sources, so a test
+that needs RTL outside `VIDEO_BUFFER_TEST_SOURCES` can list it at registration.
 
 `unit/<dut>/<scenario>.sv` exercises a single RTL module in isolation
 (its dependencies are usually models from `common/` or trivial

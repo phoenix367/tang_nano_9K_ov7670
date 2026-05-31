@@ -96,10 +96,14 @@ function(register_test SCOPE TEST_PATH)
     string(REGEX REPLACE "/.*$" "" DUT_LABEL "${TEST_PATH}")
     set(TEST_LABELS "${SCOPE};${DUT_LABEL}")
 
+    # Extra per-test RTL/behavioural sources can be passed after TEST_PATH
+    # (e.g. the I2C core + slave model for the i2c tests, which the common
+    # VIDEO_BUFFER_TEST_SOURCES list does not include).
     set(TEST_SOURCES
         "${TEST_SOURCE}"
         "${SIM_COMMON_FOLDER}/svlogger.sv"
         "${CMAKE_CURRENT_BINARY_DIR}/test_config.sv"
+        ${ARGN}
     )
 
     add_custom_command(OUTPUT ${TEST_OUTPUT_FILE}
@@ -164,3 +168,54 @@ endforeach()
 foreach (TEST_PATH IN LISTS INTEGRATION_TESTS)
     register_test(integration "${TEST_PATH}")
 endforeach()
+
+# UART module test (src/uart.sv is not part of VIDEO_BUFFER_TEST_SOURCES).
+register_test(unit "uart/frame" "${SRC_FOLDER}/uart.sv")
+
+# Modbus RTU slave test (UART byte layer + the slave).
+register_test(integration "modbus/rtu_slave"
+    "${SRC_FOLDER}/uart.sv"
+    "${SRC_FOLDER}/modbus_rtu_slave.sv"
+)
+
+# Modbus -> OV7670 register bridge: the slave (external backend) + the SCCB
+# bridge + the full i2c controller/master stack against the behavioural slave.
+register_test(integration "modbus/cam_bridge"
+    "${SRC_FOLDER}/uart.sv"
+    "${SRC_FOLDER}/modbus_rtu_slave.sv"
+    "${SRC_FOLDER}/modbus_cam_backend.sv"
+    "${SRC_FOLDER}/i2c_master.v"
+    "${SRC_FOLDER}/i2c_master_bit_ctrl.v"
+    "${SRC_FOLDER}/i2c_master_byte_ctrl.v"
+    "${SRC_FOLDER}/i2c_control_fsm.v"
+    "${SIM_COMMON_FOLDER}/i2c_slave_model.sv"
+)
+
+# The I2C controller test needs the opencores I2C master core, the control FSM
+# and the behavioural slave model -- none are in VIDEO_BUFFER_TEST_SOURCES, so
+# pass them as per-test extra sources.
+register_test(integration "i2c/register_write"
+    "${SRC_FOLDER}/i2c_master.v"
+    "${SRC_FOLDER}/i2c_master_bit_ctrl.v"
+    "${SRC_FOLDER}/i2c_master_byte_ctrl.v"
+    "${SRC_FOLDER}/i2c_control_fsm.v"
+    "${SIM_COMMON_FOLDER}/i2c_slave_model.sv"
+)
+
+# Register read exercises the i2c_master_top SCCB read path directly via a
+# WISHBONE BFM, so it does not need i2c_control_fsm.
+register_test(integration "i2c/register_read"
+    "${SRC_FOLDER}/i2c_master.v"
+    "${SRC_FOLDER}/i2c_master_bit_ctrl.v"
+    "${SRC_FOLDER}/i2c_master_byte_ctrl.v"
+    "${SIM_COMMON_FOLDER}/i2c_slave_model.sv"
+)
+
+# FSM read exercises the read path added to i2c_control_fsm end to end.
+register_test(integration "i2c/fsm_read"
+    "${SRC_FOLDER}/i2c_master.v"
+    "${SRC_FOLDER}/i2c_master_bit_ctrl.v"
+    "${SRC_FOLDER}/i2c_master_byte_ctrl.v"
+    "${SRC_FOLDER}/i2c_control_fsm.v"
+    "${SIM_COMMON_FOLDER}/i2c_slave_model.sv"
+)

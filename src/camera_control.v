@@ -9,7 +9,7 @@ module CameraControl_TOP (
     input sys_rst_n,        // reset input
     inout master_scl,
     inout master_sda,
-    output reg led_out,
+    output led_out,             // host-active indicator (driven below)
     output cam_reset,
     output cam_clk,
     output led_out1,
@@ -32,10 +32,135 @@ module CameraControl_TOP (
     output[1:0]           O_psram_reset_n,
     inout [15:0]           IO_psram_dq,
     output[1:0]           O_psram_cs_n,
-    output [2:0] status_leds
+    output [2:0] status_leds,
+    // UART (FT2232H channel B), 9600 8-E-1; see doc/build.md.
+    output uart_tx,         // FPGA -> host
+    input  uart_rx          // host -> FPGA
 );
 
-assign status_leds = 3'h7;
+// ---- UART (9600 8-E-1) + Modbus RTU slave on the FT2232H channel B ----
+// A Modbus master/PC reads and writes live OV7670 registers: the holding-
+// register address IS the OV7670 register number (0x00..0xC9, see
+// ov7670_regs.vh). The slave runs with EXTERNAL_BACKEND=1 and every register
+// access is serviced by modbus_cam_backend, which turns it into an SCCB
+// transaction on the shared i2c_control_fsm. The backend stays idle until the
+// power-on camera init has finished (cam_init_complete), so the default config
+// is loaded undisturbed.
+// OV7670 register space 0x00..0xC9 plus the bridge's reserved status registers
+// (0xF0 magic, 0xF1/0xF2 uptime) so the host can detect a hard reset.
+localparam integer MODBUS_REGS = 'hF3;
+
+wire [7:0] uart_rx_data;
+wire       uart_rx_valid, uart_rx_perr;
+wire [7:0] uart_tx_data;
+wire       uart_tx_start, uart_tx_busy;
+
+// register-backend handshake between the slave and the SCCB bridge
+wire        be_req, be_we, be_ready;
+wire [15:0] be_addr, be_wdata, be_rdata;
+// the bridge's drive of the i2c controller (muxed with the init FSM below)
+wire        be_store_data, be_send_data, be_recv_data;
+wire [7:0]  be_din;
+wire        be_busy;
+
+uart #(
+    .CLK_FREQ('d27_000_000),
+    .BAUD('d9600)
+) uart_inst (
+    .clk(sys_clk),
+    .reset_n(sys_rst_n),
+    .tx_data(uart_tx_data),
+    .tx_start(uart_tx_start),
+    .tx_busy(uart_tx_busy),
+    .tx(uart_tx),
+    .rx(uart_rx),
+    .rx_data(uart_rx_data),
+    .rx_valid(uart_rx_valid),
+    .rx_parity_error(uart_rx_perr),
+    .rx_frame_error()
+);
+
+modbus_rtu_slave #(
+    .CLK_FREQ('d27_000_000),
+    .BAUD('d9600),
+    .SLAVE_ADDR(8'd7),
+    .REG_COUNT(MODBUS_REGS),
+    .MAX_FRAME(32),         // caps a read burst at 13 regs; keeps the buffers small
+    .EXTERNAL_BACKEND(1)
+) modbus_inst (
+    .clk(sys_clk),
+    .reset_n(sys_rst_n),
+    .rx_data(uart_rx_data),
+    .rx_valid(uart_rx_valid),
+    .rx_parity_error(uart_rx_perr),
+    .tx_data(uart_tx_data),
+    .tx_start(uart_tx_start),
+    .tx_busy(uart_tx_busy),
+    .reg_o(),
+    .host_we(1'b0),
+    .host_addr(8'h00),
+    .host_wdata(16'h0000),
+    .be_req(be_req),
+    .be_we(be_we),
+    .be_addr(be_addr),
+    .be_wdata(be_wdata),
+    .be_ready(be_ready),
+    .be_rdata(be_rdata)
+);
+
+modbus_cam_backend cam_bridge (
+    .clk(sys_clk),
+    .reset_n(sys_rst_n),
+    .cam_init_complete(cam_init_complete),
+    .be_req(be_req),
+    .be_we(be_we),
+    .be_addr(be_addr),
+    .be_wdata(be_wdata),
+    .be_ready(be_ready),
+    .be_rdata(be_rdata),
+    .store_data(be_store_data),
+    .send_data(be_send_data),
+    .recv_data(be_recv_data),
+    .i2c_din(be_din),
+    .device_rdy(device_ready),
+    .data_valid(i2c_data_valid),
+    .i2c_dout(i2c_data_out),
+    .busy(be_busy)
+);
+
+// ---- UART activity blink + host-presence timeout ----
+// uart_*_blink stretch each byte event to ~50 ms so a 9600-baud transfer is
+// visible. host_active_cnt reloads on every received byte (a host request) and
+// counts down over ~6 s, so it stays asserted while a host keeps talking (the
+// web app heartbeats every ~4 s) and clears a few seconds after it stops.
+localparam [20:0] LED_BLINK    = 21'd1_350_000;     // ~50 ms at 27 MHz
+localparam [27:0] HOST_TIMEOUT = 28'd162_000_000;   // ~6 s  at 27 MHz
+reg [20:0] uart_rx_blink;
+reg [20:0] uart_tx_blink;
+reg [27:0] host_active_cnt;
+
+always @(posedge sys_clk or negedge sys_rst_n) begin
+    if (!sys_rst_n) begin
+        uart_rx_blink   <= `WRAP_SIM(#1) 21'd0;
+        uart_tx_blink   <= `WRAP_SIM(#1) 21'd0;
+        host_active_cnt <= `WRAP_SIM(#1) 28'd0;
+    end else begin
+        if (uart_rx_valid)            uart_rx_blink <= `WRAP_SIM(#1) LED_BLINK;
+        else if (uart_rx_blink != 0)  uart_rx_blink <= `WRAP_SIM(#1) uart_rx_blink - 1'b1;
+
+        if (uart_tx_start)            uart_tx_blink <= `WRAP_SIM(#1) LED_BLINK;
+        else if (uart_tx_blink != 0)  uart_tx_blink <= `WRAP_SIM(#1) uart_tx_blink - 1'b1;
+
+        if (uart_rx_valid)              host_active_cnt <= `WRAP_SIM(#1) HOST_TIMEOUT;
+        else if (host_active_cnt != 0)  host_active_cnt <= `WRAP_SIM(#1) host_active_cnt - 1'b1;
+    end
+end
+
+// LEDs are active-low (drive 0 to light):
+//   status_leds[0] = UART RX activity, [1] = UART TX activity, [2] = init done
+//   led_out        = host actively connected (recent Modbus traffic)
+assign status_leds = ~{cam_init_complete, (uart_tx_blink != 0), (uart_rx_blink != 0)};
+assign led_out     = ~(host_active_cnt != 0);
 
 typedef enum {
     WAIT_RDY, 
@@ -63,6 +188,21 @@ reg send_data;
 reg delay_reset;
 reg [7:0] rom_addr;
 CONTROL_STATES controller_state;
+
+// Latched high once the power-on register load reaches TRANSMIT_COMPLETE; hands
+// the SCCB controller over from the init FSM to the Modbus bridge.
+reg        cam_init_complete;
+
+// i2c_control_fsm read result (driven once the read path returns).
+wire [7:0] i2c_data_out;
+wire       i2c_data_valid;
+
+// SCCB controller inputs, owned by the init FSM during init and by the Modbus
+// bridge afterwards.
+wire       sccb_store_data = cam_init_complete ? be_store_data : store_data;
+wire       sccb_send_data  = cam_init_complete ? be_send_data  : send_data;
+wire       sccb_recv_data  = cam_init_complete ? be_recv_data  : 1'b0;
+wire [7:0] sccb_data_in    = cam_init_complete ? be_din        : data_buffer_out;
 
 wire tx_en;
 wire [7:0] wr_data;
@@ -160,20 +300,22 @@ i2c_control_fsm i2c_controller(
     .rst_n(sys_rst_n), 
     .device_addr(OV7670_ADDR), 
     .init_done(ctrl_done_wire), 
-    .data_in(data_buffer_out),
-    .store_data(store_data), 
-    .send_data(send_data),
-    .tx_en(tx_en), 
-    .rx_en(rx_en), 
+    .data_in(sccb_data_in),
+    .store_data(sccb_store_data),
+    .send_data(sccb_send_data),
+    .tx_en(tx_en),
+    .rx_en(rx_en),
     .wr_data(wr_data),
-    .wr_addr(wr_addr), 
-    .rd_data(rd_data), 
+    .wr_addr(wr_addr),
+    .rd_data(rd_data),
     .rd_addr(rd_addr),
-    .cmd_ack_i(cmd_ack), 
-    .device_rdy(device_ready), 
+    .cmd_ack_i(cmd_ack),
+    .device_rdy(device_ready),
     .error_o(transmit_error),
-    .load_data(1'b0), 
-    .recv_data(1'b0)
+    .data_out(i2c_data_out),
+    .data_valid(i2c_data_valid),
+    .load_data(1'b0),
+    .recv_data(sccb_recv_data)
 );
 
 ov7670_default settings_rom(
@@ -192,9 +334,9 @@ initial begin
     controller_state <= `WRAP_SIM(#1) WAIT_RDY;
     send_data <= `WRAP_SIM(#1) 1'b0;
     store_data <= `WRAP_SIM(#1) 1'b0;
-    led_out <= `WRAP_SIM(#1) 1'b1;
     delay_reset <= `WRAP_SIM(#1) 1'b0;
     rom_addr <= `WRAP_SIM(#1) 8'h00;
+    cam_init_complete <= `WRAP_SIM(#1) 1'b0;
 end
 
 always @(posedge sys_clk or negedge sys_rst_n)
@@ -203,9 +345,9 @@ begin
     begin
         controller_state <= `WRAP_SIM(#1) WAIT_RDY;
         send_data <= `WRAP_SIM(#1) 1'b0;
-        led_out <= 1'b1;
         delay_reset <= `WRAP_SIM(#1) 1'b0;
         rom_addr <= `WRAP_SIM(#1) 8'h00;
+        cam_init_complete <= `WRAP_SIM(#1) 1'b0;
     end else begin
         case (controller_state)
             WAIT_RDY:
@@ -275,7 +417,8 @@ begin
                     `WRAP_SIM($display("t=%d, DEBUG CameraControl_TOP; Loading next byte...", $time));
                 end
             end
-            TRANSMIT_COMPLETE: led_out <= `WRAP_SIM(#1) 1'b0;
+            TRANSMIT_COMPLETE:
+                cam_init_complete <= `WRAP_SIM(#1) 1'b1;   // hand SCCB to the Modbus bridge
         endcase
     end
 end

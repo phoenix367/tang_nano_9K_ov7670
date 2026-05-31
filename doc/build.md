@@ -182,27 +182,17 @@ The chip exposes two channels:
 | `1`                | UART (RX/TX)   | should stay on `ftdi_sio` so it appears as a `/dev/ttyUSB*` for `picocom`/`minicom`/etc. |
 
 The vendor rules at `<Gowin>/Programmer/bin/50-programmer_usb.rules`
-only cover the single-channel FT232H (`0403:6014`). Install a
-companion rule that selectively detaches `ftdi_sio` from interface 0
-while leaving interface 1 bound:
+only cover the single-channel FT232H (`0403:6014`). This repo ships a
+companion rule at [`udev/99-gowin-ft2232h.rules`](../udev/99-gowin-ft2232h.rules)
+that makes the raw device node read/write (so the programmer can open the
+cable), detaches `ftdi_sio` from interface 0 (JTAG), and exposes interface 1
+as the `/dev/ttyGowin` UART. It is numbered 99 so it runs after the system's
+`60-serial.rules` (which sets the `ID_USB_INTERFACE_NUM` the UART rule keys on).
+Install it (and remove any earlier `51-` copy):
 
 ```sh
-sudo tee /etc/udev/rules.d/51-gowin-ft2232h.rules <<'RULES'
-# Tang Nano 9K FT2232H — channel A (interface 0): JTAG, used by
-# Gowin programmer_cli. Unbind ftdi_sio so libftd2xx can claim it.
-ACTION=="add", SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", \
-    ATTRS{idProduct}=="6010", ATTR{bInterfaceNumber}=="00", \
-    MODE="0666", \
-    RUN+="/bin/sh -c 'echo -n %k > /sys/bus/usb/drivers/ftdi_sio/unbind 2>/dev/null; true'"
-
-# Channel B (interface 1): UART. Leave ftdi_sio attached so it
-# appears as /dev/ttyUSB*, add a stable symlink and group-write
-# access so users in `dialout` can open it without sudo.
-SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6010", \
-    ATTRS{bInterfaceNumber}=="01", \
-    MODE="0660", GROUP="dialout", SYMLINK+="ttyGowin"
-RULES
-
+sudo rm -f /etc/udev/rules.d/51-gowin-ft2232h.rules
+sudo install -m 644 udev/99-gowin-ft2232h.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules
 ```
 
@@ -224,35 +214,53 @@ After this:
 - `make hw_program` programs the SRAM in ~3 seconds.
 - `/dev/ttyGowin` is a stable symlink to the FPGA's UART (kernel-side
   name `/dev/ttyUSB0` or `/dev/ttyUSB1` depending on enumeration
-  order). Connect with `picocom -b 115200 /dev/ttyGowin` (or any
-  baud your design uses).
+  order). Connect with `picocom -b 9600 /dev/ttyGowin` (or any baud
+  your design uses).
 
-Add your user to `dialout` once if you haven't already, so the
-`/dev/ttyGowin` open permissions take effect without sudo:
-
-```sh
-sudo usermod -aG dialout "$USER"   # log out and back in afterwards
-```
+The rule sets the UART node `MODE=0666` (plus `TAG+="uaccess"`), so
+`/dev/ttyGowin` is usable by any user without sudo and without `dialout`
+membership. If `/dev/ttyGowin` doesn't appear after installing the rule,
+replug the cable (or `sudo udevadm trigger`) so a fresh `add` event applies
+the `SYMLINK`/`MODE`. If you prefer group-based access instead of `0666`,
+drop the `MODE=0666` from the rule and add yourself to `dialout`
+(`sudo usermod -aG dialout "$USER"`, then re-login).
 
 ### Wiring the UART into your design
 
 The FT2232H's channel B TXD/RXD pins are routed to two FPGA balls on
-the Tang Nano 9K — check the
+the Tang Nano 9K (commonly **17 = UART_TX**, FPGA → host, and
+**18 = UART_RX**, host → FPGA — check the
 [Sipeed Tang Nano 9K schematic](https://dl.sipeed.com/shareURL/TANG/Nano%209K/2_Schematic)
-for the exact pins on your board revision (commonly **17 = UART_TX**,
-FPGA → host, and **18 = UART_RX**, host → FPGA). They are not
-assigned in [`src/camera_ov7670.cst`](../src/camera_ov7670.cst) by
-default — add a pair of `IO_LOC` lines if you need them, e.g.:
+for your board revision). `CameraControl_TOP` already exposes
+`uart_tx` / `uart_rx` ports, constrained in
+[`src/camera_ov7670.cst`](../src/camera_ov7670.cst):
 
 ```
 IO_LOC "uart_tx" 17;
 IO_PORT "uart_tx" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8 BANK_VCCIO=3.3;
 IO_LOC "uart_rx" 18;
-IO_PORT "uart_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8 BANK_VCCIO=3.3;
+IO_PORT "uart_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP BANK_VCCIO=3.3;
 ```
 
-…then expose `uart_tx` / `uart_rx` ports on `CameraControl_TOP` and
-wire them to whatever UART core you're using.
+Note `DRIVE` is an output-only attribute — leave it off the `uart_rx`
+input or place-and-route rejects the constraint (`CT1108`).
+
+`CameraControl_TOP` instantiates [`src/uart.sv`](../src/uart.sv) (9600 baud,
+8-E-1) feeding a [`src/modbus_rtu_slave.sv`](../src/modbus_rtu_slave.sv)
+**Modbus RTU slave** (slave id 7). The slave maps **1:1 to the live OV7670
+registers** — the holding-register address is the camera register number
+(`0x00`–`0xC9`) — so a Modbus master reads/writes the camera over SCCB in real
+time. Point any RTU master at `/dev/ttyGowin` (9600 8-E-1, slave id 7), or use
+the bundled client [`scripts/modbus_test.py`](../scripts/modbus_test.py) (needs
+`pyserial`):
+
+```sh
+scripts/modbus_test.py --port /dev/ttyGowin --reg-count 202 --read 0x0A 2   # PID/VER -> 76 73
+scripts/modbus_test.py --port /dev/ttyGowin --reg-count 202 --write 0x55 0x60  # brightness
+```
+
+Full host-side reference — register map, status registers, LEDs, the web app,
+and the CLI — is in [host_control.md](host_control.md).
 
 ## Make-target cheat-sheet
 
