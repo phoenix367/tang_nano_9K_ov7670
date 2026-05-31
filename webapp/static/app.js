@@ -535,15 +535,32 @@ async function rawWrite() {
 }
 
 // ------------------------------------------------------------- frame capture
+function setGrabProgress(pct, label) {
+  $("#grab-progress-bar").style.width = pct + "%";
+  $("#grab-progress-text").textContent = label;
+}
+
+async function pollGrabProgress() {
+  const { data } = await rawFetch("/api/grab/status");
+  if (!data || !data.ok || !data.active || !data.total) return;
+  const pct = Math.min(100, Math.floor((100 * data.done) / data.total));
+  setGrabProgress(pct, `${pct}% — ${data.done.toLocaleString()} / ${data.total.toLocaleString()} px`);
+}
+
 async function grabFrame() {
   const btn = $("#grab"), status = $("#grab-status"), save = $("#grab-save");
+  const progress = $("#grab-progress");
   btn.disabled = true;
   save.hidden = true;
-  status.textContent = "Capturing & downloading… (~10 s, the bus is busy)";
+  status.textContent = "Capturing & downloading… (the bus is busy)";
   status.className = "status";
+  setGrabProgress(0, "0%");
+  progress.hidden = false;
   // the download holds the bus for ~10 s; pause the heartbeat so health probes
-  // don't pile up behind it on the server-side lock.
+  // don't pile up behind it on the server-side lock, and poll the grab's own
+  // progress endpoint (no bus access) to drive the bar.
   stopHeartbeat();
+  const poll = setInterval(pollGrabProgress, 200);
   const t0 = performance.now();
   try {
     const res = await fetch("/api/grab", { method: "POST" });
@@ -558,6 +575,7 @@ async function grabFrame() {
     const canvas = $("#grab-canvas");
     canvas.width = w; canvas.height = h;
     canvas.getContext("2d").putImageData(new ImageData(buf, w, h), 0, 0);
+    setGrabProgress(100, "100%");
     const secs = ((performance.now() - t0) / 1000).toFixed(1);
     status.textContent = `Captured ${w}×${h} in ${secs}s.`;
     status.className = "status connected";
@@ -569,6 +587,8 @@ async function grabFrame() {
     status.className = "status error";
     toast(e.message, "error");
   } finally {
+    clearInterval(poll);
+    setTimeout(() => { progress.hidden = true; }, 500);   // let the final state show briefly
     btn.disabled = false;
     if (connState === ST.CONNECTED) startHeartbeat();
   }

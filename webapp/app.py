@@ -32,6 +32,12 @@ app = Flask(__name__)
 _lock = threading.Lock()
 _client = None  # type: ModbusRTU | None
 
+# Frame-grab progress, updated by the (long-running) /api/grab request as it
+# streams pixels and read concurrently by /api/grab/status for the UI's progress
+# bar. Guarded by its own lock so a status poll never waits on the bus lock.
+_progress_lock = threading.Lock()
+_grab_progress = {"active": False, "done": 0, "total": FRAME_W * FRAME_H}
+
 
 # --------------------------------------------------------------------------- #
 # helpers
@@ -344,19 +350,39 @@ def api_grab():
     """Capture a frame into ch1 and stream it back as raw RGBA for a canvas draw.
 
     Holds the bus lock for the whole ~10 s download (single physical resource),
-    so the heartbeat just waits its turn. The body is FRAME_W*FRAME_H*4 bytes;
-    width/height ship in headers so the client sizes its ImageData."""
-    with _lock:
-        try:
+    so the heartbeat just waits its turn. As it streams, it updates the shared
+    progress counter that /api/grab/status reports for the UI's progress bar.
+    The body is FRAME_W*FRAME_H*4 bytes; width/height ship in headers so the
+    client sizes its ImageData."""
+    with _progress_lock:
+        _grab_progress.update(active=True, done=0, total=FRAME_W * FRAME_H)
+
+    def on_progress(done, total):
+        with _progress_lock:
+            _grab_progress["done"] = done
+            _grab_progress["total"] = total
+
+    try:
+        with _lock:
             client = _require_client()
-            pixels = client.grab_frame()
-        except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError) as e:
-            return _classify(e)
+            pixels = client.grab_frame(progress=on_progress)
+    except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError) as e:
+        return _classify(e)
+    finally:
+        with _progress_lock:
+            _grab_progress["active"] = False
     body = rgb565_to_rgba(pixels)
     resp = Response(body, mimetype="application/octet-stream")
     resp.headers["X-Frame-Width"] = str(FRAME_W)
     resp.headers["X-Frame-Height"] = str(FRAME_H)
     return resp
+
+
+@app.route("/api/grab/status")
+def api_grab_status():
+    """Frame-grab progress (no bus access — safe to poll during a download)."""
+    with _progress_lock:
+        return jsonify(ok=True, **_grab_progress)
 
 
 @app.route("/api/raw", methods=["GET", "POST"])

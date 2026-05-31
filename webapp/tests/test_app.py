@@ -197,3 +197,17 @@ def test_grab_route(client):
 def test_grab_route_not_connected(client):
     tc, _ = client
     assert tc.post("/api/grab").status_code == 400
+
+
+def test_grab_status_idle(client):
+    tc, _ = client
+    r = tc.get("/api/grab/status").get_json()
+    assert r["ok"] and r["active"] is False and r["total"] == 640 * 480
+
+
+def test_grab_status_after_grab(client):
+    tc, _ = client
+    _connect(tc)
+    tc.post("/api/grab")
+    r = tc.get("/api/grab/status").get_json()
+    assert r["active"] is False and r["done"] == r["total"] == 640 * 480
