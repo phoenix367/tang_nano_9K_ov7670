@@ -48,13 +48,13 @@ the FPGA. This document covers that interface end-to-end and a quick-start guide
 ## Modbus server
 
 A Modbus RTU **slave/server** ([`src/modbus_rtu_slave.sv`](../src/modbus_rtu_slave.sv))
-sits on the 9600 8-E-1 UART ([`src/uart.sv`](../src/uart.sv)) wired to the
+sits on the 1 Mbaud 8-E-1 UART ([`src/uart.sv`](../src/uart.sv)) wired to the
 FT2232H channel B.
 
 | Parameter        | Value                                            |
 | ---------------- | ------------------------------------------------ |
 | Serial port      | `/dev/ttyGowin` (FT2232H channel B)              |
-| Framing          | 9600 baud, 8 data, **even** parity, 1 stop (8-E-1) |
+| Framing          | 1,000,000 baud (1 Mbaud), 8 data, **even** parity, 1 stop (8-E-1) |
 | Transmission     | Modbus **RTU** (binary, CRC-16, t3.5 framing)    |
 | Slave / unit id  | **7**                                            |
 | Function codes   | `0x03` read holding, `0x06` write single, `0x10` write multiple |
@@ -140,7 +140,7 @@ The six on-board user LEDs are **active-low** (driven `0` = lit):
 | `status_leds[1]` | 15 | **UART TX** activity (blinks per transmitted byte)     |
 | `status_leds[2]` | 16 | Camera init done                                       |
 
-RX/TX activity is stretched to ~50 ms so an individual 9600-baud byte is visible.
+RX/TX activity is stretched to ~50 ms so an individual 1 Mbaud byte is visible.
 
 ## Web app
 

@@ -43,7 +43,16 @@ module VGA_timing
     inout [1:0]           IO_psram_rwds,
     output[1:0]           O_psram_reset_n,
     inout [15:0]           IO_psram_dq,
-    output[1:0]           O_psram_cs_n
+    output[1:0]           O_psram_cs_n,
+    // channel-1 PSRAM bring-up loopback (sys_clk domain)
+    input                  ch1_test_req,
+    output                 ch1_test_busy,
+    output [31:0]          ch1_test_rdata,
+    output                 ch1_test_match,
+    output                 ch1_test_done,
+    output                 ch1_test_timeout,
+    output [2:0]           ch1_test_state,
+    output                 ch1_test_calib
 );
 // Logger initialization
 `ifdef __ICARUS__
@@ -116,11 +125,30 @@ module VGA_timing
     wire queue_store_full;
     wire [16:0] video_data_queue_in;
 
-    assign addr1 = 21'h0;
-    assign wr_data1 = 32'h0;
-    assign cmd_1 = 1'b0;
-    assign cmd_en_1 = 1'b1;
-    assign data_mask_1 = 4'h0;
+    // Channel-1 PSRAM access engine — drives the ch1 IP pins directly (no
+    // arbiter; ch1 is exclusively this module's). Phase B: a loopback self-test.
+    psram_ch1 #(.MEMORY_BURST(32)) ch1_engine (
+        .fb_clk(clk_2),
+        .fb_rst_n(nRST),
+        .calib1(init_done_1),
+        .cmd1(cmd_1),
+        .cmd_en1(cmd_en_1),
+        .addr1(addr1),
+        .wr_data1(wr_data1),
+        .data_mask1(data_mask_1),
+        .rd_data1(rd_data1),
+        .rd_data_valid1(rd_data_valid_1),
+        .sclk(sys_clk),
+        .srst_n(nRST),
+        .test_req(ch1_test_req),
+        .test_busy(ch1_test_busy),
+        .test_rdata(ch1_test_rdata),
+        .test_match(ch1_test_match),
+        .test_done(ch1_test_done),
+        .test_timeout(ch1_test_timeout),
+        .test_state(ch1_test_state),
+        .test_calib(ch1_test_calib)
+    );
 
     Video_frame_buffer frame_buffer(
         .clk(sys_clk), 

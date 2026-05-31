@@ -168,7 +168,7 @@ def api_connect():
     port = data.get("port")
     if not port:
         return _error("no port specified")
-    baud = int(data.get("baud", 9600))
+    baud = int(data.get("baud", 1000000))
     slave = int(data.get("slave", 7))
     timeout = float(data.get("timeout", 1.0))
     with _lock:

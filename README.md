@@ -88,7 +88,7 @@ Here memory controller is a Gowin PSRAM IP instance.
 ## Host control (Modbus + web app)
 
 A **Modbus RTU server** built into the FPGA exposes the **live OV7670 registers**
-over the on-board USB-UART (`/dev/ttyGowin`, 9600 8-E-1, slave id 7). The
+over the on-board USB-UART (`/dev/ttyGowin`, 1 Mbaud 8-E-1, slave id 7). The
 holding-register address maps **1:1** to the camera register number
 (`0x00`–`0xC9`), so a host reads/writes the camera over SCCB in real time —
 adjust brightness, gain, white balance, gamma, the color matrix, mirror/flip,

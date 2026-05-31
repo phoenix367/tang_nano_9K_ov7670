@@ -70,6 +70,7 @@
         <File path="src/ov7670_regs.vh" type="file.verilog" enable="1"/>
         <File path="src/psram_memory_interface_hs_2ch/psram_memory_interface_hs_2ch.v" type="file.verilog" enable="1"/>
         <File path="src/psram_utils.vh" type="file.verilog" enable="1"/>
+        <File path="src/psram_ch1.sv" type="file.verilog" enable="1"/>
         <File path="src/sdpb_1kx32/sdpb_1kx32.v" type="file.verilog" enable="1"/>
         <File path="src/timescale.v" type="file.verilog" enable="1"/>
         <File path="src/uart.sv" type="file.verilog" enable="1"/>

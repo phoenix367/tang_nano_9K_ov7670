@@ -1,7 +1,7 @@
 # OV7670 Modbus control web app
 
 A small Flask web app to control the OV7670 camera on the Tang Nano 9K over the
-Modbus RTU bridge (FT2232H channel-B UART, 9600 8-E-1, slave id 7). It exposes
+Modbus RTU bridge (FT2232H channel-B UART, 1 Mbaud 8-E-1, slave id 7). It exposes
 the camera's registers through the FPGA's `modbus_rtu_slave` (Direct 1:1
 mapping: holding-register address = OV7670 register number), so every control
 change is a live SCCB write on the device.

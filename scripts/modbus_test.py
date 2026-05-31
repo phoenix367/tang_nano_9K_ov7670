@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Modbus RTU test client for the Tang Nano 9K modbus_rtu_slave.
 
-Talks to the FPGA's Modbus RTU slave over the UART (9600 8-E-1, slave id 7 by
+Talks to the FPGA's Modbus RTU slave over the UART (1 Mbaud 8-E-1, slave id 7 by
 default) and exercises the holding registers (FC03/06/16) plus the illegal-
 address exception. Holding register 0's low 3 bits drive the board's status
 LEDs, so the self-test ends by lighting a pattern you can see.
@@ -52,7 +52,7 @@ class ModbusError(Exception):
 
 
 class ModbusRTU:
-    def __init__(self, port, baud=9600, slave=7, timeout=1.0):
+    def __init__(self, port, baud=1000000, slave=7, timeout=1.0):
         if not (0 <= slave <= 247):
             raise ValueError(f"slave id {slave} out of range 0..247")
         self.slave = slave
@@ -175,7 +175,7 @@ def main():
     ap = argparse.ArgumentParser(description="Modbus RTU test client for the Tang Nano 9K slave")
     ap.add_argument("-p", "--port", default="/dev/ttyGowin",
                     help="serial port (default: /dev/ttyGowin)")
-    ap.add_argument("-b", "--baud", type=int, default=9600, help="baud rate (default 9600)")
+    ap.add_argument("-b", "--baud", type=int, default=1000000, help="baud rate (default 1000000)")
     ap.add_argument("-s", "--slave", type=int, default=7, help="slave/unit id (default 7)")
     ap.add_argument("--timeout", type=float, default=1.0, help="response timeout s (default 1.0)")
     ap.add_argument("--reg-count", type=int, default=8, help="holding registers on the slave (default 8)")

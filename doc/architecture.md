@@ -125,7 +125,7 @@ on its own clock domain (`video_clk_i`).
 
 After the power-on load finishes, the same `i2c_control_fsm` is reused
 to let a host read and write **live OV7670 registers** over the
-FT2232H channel-B UART (9600 8-E-1). A Modbus RTU slave
+FT2232H channel-B UART (1 Mbaud 8-E-1). A Modbus RTU slave
 ([`src/modbus_rtu_slave.sv`](../src/modbus_rtu_slave.sv), slave id 7)
 runs with `EXTERNAL_BACKEND=1`: instead of an internal register file,
 every holding-register access is handed to

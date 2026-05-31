@@ -59,7 +59,16 @@ module modbus_cam_backend
     input  wire        data_valid,
     input  wire [7:0]  i2c_dout,
 
-    output wire        busy
+    output wire        busy,
+
+    // channel-1 PSRAM bring-up loopback (to/from psram_ch1 via VGA_timing)
+    output reg         ch1_test_req,
+    input  wire        ch1_test_busy,
+    input  wire [31:0] ch1_test_rdata,
+    input  wire        ch1_test_match,
+    input  wire        ch1_test_calib,
+    input  wire        ch1_test_timeout,
+    input  wire [2:0]  ch1_test_state
 );
     localparam [4:0]
         IDLE         = 5'd0,
@@ -89,7 +98,11 @@ module modbus_cam_backend
     localparam [15:0] CAM_ADDR_MAX   = 16'h00C9,    // OV7670 registers 0x00..0xC9
                       ADDR_MAGIC      = 16'h00F0,
                       ADDR_UPTIME_HI  = 16'h00F1,
-                      ADDR_UPTIME_LO  = 16'h00F2;
+                      ADDR_UPTIME_LO  = 16'h00F2,
+                      ADDR_CH1_TEST   = 16'h00F3,    // write: run ch1 loopback; read: busy
+                      ADDR_CH1_RD_HI  = 16'h00F4,    // read: ch1 read-back word [31:16]
+                      ADDR_CH1_RD_LO  = 16'h00F5,    // read: ch1 read-back word [15:0]
+                      ADDR_CH1_MATCH  = 16'h00F6;    // read: 1 if loopback matched
 
     reg [15:0] uptime;          // free-running seconds-ish, 0 on reset
     reg [15:0] uptime_latch;    // captured on a high-byte read for a coherent pair
@@ -109,7 +122,9 @@ module modbus_cam_backend
             uptime       <= `WRAP_SIM(#1) 16'h0000;
             uptime_latch <= `WRAP_SIM(#1) 16'h0000;
             uptime_div   <= `WRAP_SIM(#1) 32'h0;
+            ch1_test_req <= `WRAP_SIM(#1) 1'b0;
         end else begin
+            ch1_test_req <= `WRAP_SIM(#1) 1'b0;     // 1-cycle pulse default
             // free-running uptime tick (independent of the SCCB FSM)
             if (uptime_div >= UPTIME_DIV - 1) begin
                 uptime_div <= `WRAP_SIM(#1) 32'h0;
@@ -142,6 +157,19 @@ module modbus_cam_backend
                                 end
                                 ADDR_UPTIME_LO:
                                     be_rdata <= `WRAP_SIM(#1) {8'h00, uptime_latch[7:0]};
+                                ADDR_CH1_TEST: begin
+                                    // [0]=busy [1]=calib [2]=timeout [3]=match [6:4]=FSM state
+                                    be_rdata <= `WRAP_SIM(#1) {9'd0, ch1_test_state,
+                                                ch1_test_match, ch1_test_timeout,
+                                                ch1_test_calib, ch1_test_busy};
+                                    if (be_we) ch1_test_req <= `WRAP_SIM(#1) 1'b1;
+                                end
+                                ADDR_CH1_RD_HI:
+                                    be_rdata <= `WRAP_SIM(#1) ch1_test_rdata[31:16];
+                                ADDR_CH1_RD_LO:
+                                    be_rdata <= `WRAP_SIM(#1) ch1_test_rdata[15:0];
+                                ADDR_CH1_MATCH:
+                                    be_rdata <= `WRAP_SIM(#1) {15'd0, ch1_test_match};
                                 default:
                                     be_rdata <= `WRAP_SIM(#1) 16'h0000;
                             endcase

@@ -1,6 +1,6 @@
 """Minimal Modbus RTU client for the Tang Nano 9K OV7670 bridge.
 
-Speaks Modbus RTU over the FT2232H channel-B UART (9600 8-E-1, slave id 7 by
+Speaks Modbus RTU over the FT2232H channel-B UART (1 Mbaud 8-E-1, slave id 7 by
 default). The FPGA's modbus_rtu_slave maps each holding-register address 1:1 to
 an OV7670 register (0x00..0xC9): a write uses the low byte of the value, a read
 returns {0x00, reg_byte}. The RTU framing and CRC-16 are the same as
@@ -55,7 +55,7 @@ class ModbusError(Exception):
 class ModbusRTU:
     """A thin RTU master over a pyserial port. One transaction at a time."""
 
-    def __init__(self, port, baud=9600, slave=7, timeout=1.0, retries=2):
+    def __init__(self, port, baud=1000000, slave=7, timeout=1.0, retries=2):
         if not (0 <= slave <= 247):
             raise ValueError(f"slave id {slave} out of range 0..247")
         self.port = port

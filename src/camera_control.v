@@ -48,7 +48,7 @@ module CameraControl_TOP (
 // is loaded undisturbed.
 // OV7670 register space 0x00..0xC9 plus the bridge's reserved status registers
 // (0xF0 magic, 0xF1/0xF2 uptime) so the host can detect a hard reset.
-localparam integer MODBUS_REGS = 'hF3;
+localparam integer MODBUS_REGS = 'h100;
 
 wire [7:0] uart_rx_data;
 wire       uart_rx_valid, uart_rx_perr;
@@ -63,9 +63,18 @@ wire        be_store_data, be_send_data, be_recv_data;
 wire [7:0]  be_din;
 wire        be_busy;
 
+// channel-1 PSRAM bring-up loopback (Modbus backend <-> VGA_timing/psram_ch1)
+wire        ch1_test_req;
+wire        ch1_test_busy;
+wire [31:0] ch1_test_rdata;
+wire        ch1_test_match;
+wire        ch1_test_timeout;
+wire [2:0]  ch1_test_state;
+wire        ch1_test_calib;
+
 uart #(
     .CLK_FREQ('d27_000_000),
-    .BAUD('d9600)
+    .BAUD('d1_000_000)          // exact divisor of 27 MHz (÷27); ~7-9 s for a full frame
 ) uart_inst (
     .clk(sys_clk),
     .reset_n(sys_rst_n),
@@ -82,7 +91,7 @@ uart #(
 
 modbus_rtu_slave #(
     .CLK_FREQ('d27_000_000),
-    .BAUD('d9600),
+    .BAUD('d1_000_000),
     .SLAVE_ADDR(8'd7),
     .REG_COUNT(MODBUS_REGS),
     .MAX_FRAME(32),         // caps a read burst at 13 regs; keeps the buffers small
@@ -125,7 +134,14 @@ modbus_cam_backend cam_bridge (
     .device_rdy(device_ready),
     .data_valid(i2c_data_valid),
     .i2c_dout(i2c_data_out),
-    .busy(be_busy)
+    .busy(be_busy),
+    .ch1_test_req(ch1_test_req),
+    .ch1_test_busy(ch1_test_busy),
+    .ch1_test_rdata(ch1_test_rdata),
+    .ch1_test_match(ch1_test_match),
+    .ch1_test_timeout(ch1_test_timeout),
+    .ch1_test_state(ch1_test_state),
+    .ch1_test_calib(ch1_test_calib)
 );
 
 // ---- UART activity blink + host-presence timeout ----
@@ -272,7 +288,15 @@ VGA_timing	VGA_timing_inst(
     .IO_psram_rwds(IO_psram_rwds),
     .O_psram_reset_n(O_psram_reset_n), 
     .IO_psram_dq(IO_psram_dq),
-    .O_psram_cs_n(O_psram_cs_n)
+    .O_psram_cs_n(O_psram_cs_n),
+    .ch1_test_req(ch1_test_req),
+    .ch1_test_busy(ch1_test_busy),
+    .ch1_test_rdata(ch1_test_rdata),
+    .ch1_test_match(ch1_test_match),
+    .ch1_test_done(),
+    .ch1_test_timeout(ch1_test_timeout),
+    .ch1_test_state(ch1_test_state),
+    .ch1_test_calib(ch1_test_calib)
 );
 
 i2c_master_top i2c_master(
