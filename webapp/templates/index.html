@@ -39,17 +39,10 @@
   </nav>
 
   <div class="tab-content" id="tab-basic" hidden>
+    <div class="panel-row">
     <section class="panel" id="identity-panel">
       <h2>Camera identity</h2>
       <table id="identity"></table>
-    </section>
-
-    <section class="panel" id="controls-panel">
-      <div class="row between">
-        <h2>Controls</h2>
-        <button id="reload" class="ghost">Reload values</button>
-      </div>
-      <div id="controls"></div>
     </section>
 
     <section class="panel" id="raw-panel">
@@ -67,6 +60,15 @@
       </div>
       <p class="hint">Address = OV7670 register number (0x00&ndash;0xC9). Only the
         low byte of a write reaches the camera.</p>
+    </section>
+    </div>
+
+    <section class="panel" id="controls-panel">
+      <div class="row between">
+        <h2>Controls</h2>
+        <button id="reload" class="ghost">Reload values</button>
+      </div>
+      <div id="controls"></div>
     </section>
   </div>
 
