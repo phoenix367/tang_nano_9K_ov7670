@@ -247,17 +247,20 @@ input or place-and-route rejects the constraint (`CT1108`).
 
 `CameraControl_TOP` instantiates [`src/uart.sv`](../src/uart.sv) (9600 baud,
 8-E-1) feeding a [`src/modbus_rtu_slave.sv`](../src/modbus_rtu_slave.sv)
-**Modbus RTU slave** (address 7, 8 holding registers). A Modbus master can read
-and write the registers; holding register 0's low 3 bits drive the status LEDs,
-so e.g. writing register 0 = 5 lights LEDs 0 and 2. Point any Modbus-RTU master
-at `/dev/ttyGowin` (9600 8-E-1, slave id 7) to talk to it, or use the bundled
-client [`scripts/modbus_test.py`](../scripts/modbus_test.py) (needs `pyserial`):
+**Modbus RTU slave** (slave id 7). The slave maps **1:1 to the live OV7670
+registers** — the holding-register address is the camera register number
+(`0x00`–`0xC9`) — so a Modbus master reads/writes the camera over SCCB in real
+time. Point any RTU master at `/dev/ttyGowin` (9600 8-E-1, slave id 7), or use
+the bundled client [`scripts/modbus_test.py`](../scripts/modbus_test.py) (needs
+`pyserial`):
 
 ```sh
-scripts/modbus_test.py --port /dev/ttyGowin        # self-test (read/write/exception + LED demo)
-scripts/modbus_test.py -p /dev/ttyGowin --read 0 8 # dump the 8 holding registers
-scripts/modbus_test.py -p /dev/ttyGowin --write 0 5  # reg0=5 -> status LEDs 0,2
+scripts/modbus_test.py --port /dev/ttyGowin --reg-count 202 --read 0x0A 2   # PID/VER -> 76 73
+scripts/modbus_test.py --port /dev/ttyGowin --reg-count 202 --write 0x55 0x60  # brightness
 ```
+
+Full host-side reference — register map, status registers, LEDs, the web app,
+and the CLI — is in [host_control.md](host_control.md).
 
 ## Make-target cheat-sheet
 

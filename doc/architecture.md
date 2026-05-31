@@ -140,13 +140,17 @@ ownership: the init FSM owns it until the ROM load reaches
 `TRANSMIT_COMPLETE`, which latches `cam_init_complete`; from then on the
 bridge owns it. The bridge stays idle until `cam_init_complete`, so the
 default configuration is loaded undisturbed ("block until init done").
-`status_leds` show `{cam_init_complete, bridge_busy, transmit_error}`.
+The bridge also answers three reserved addresses directly (no SCCB):
+`0xF0` firmware magic `0xA5`, `0xF1`/`0xF2` a free-running 16-bit uptime
+so a host can detect a hard reset.
 
-Use `scripts/modbus_test.py` (e.g. `--read 0x0a 1` reads the OV7670 PID
-`0x76`). FC03 read bursts are capped by the slave's `MAX_FRAME` (32 →
-~13 registers per request). The bridge runs entirely on the 27 MHz
-`sys_clk` domain. End-to-end coverage:
-`sim/integration/modbus/cam_bridge`.
+FC03 read bursts are capped by the slave's `MAX_FRAME` (32 → ~13
+registers per request). The bridge runs entirely on the 27 MHz `sys_clk`
+domain. End-to-end coverage: `sim/integration/modbus/cam_bridge`.
+
+The full host-facing reference — register map, status registers, LEDs,
+the web app, and the CLI client — is in
+[host_control.md](host_control.md).
 
 ## Capture path
 
