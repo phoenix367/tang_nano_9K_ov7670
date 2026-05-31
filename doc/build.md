@@ -211,15 +211,16 @@ After this:
 - `make hw_program` programs the SRAM in ~3 seconds.
 - `/dev/ttyGowin` is a stable symlink to the FPGA's UART (kernel-side
   name `/dev/ttyUSB0` or `/dev/ttyUSB1` depending on enumeration
-  order). Connect with `picocom -b 115200 /dev/ttyGowin` (or any
-  baud your design uses).
+  order). Connect with `picocom -b 9600 /dev/ttyGowin` (or any baud
+  your design uses).
 
-Add your user to `dialout` once if you haven't already, so the
-`/dev/ttyGowin` open permissions take effect without sudo:
-
-```sh
-sudo usermod -aG dialout "$USER"   # log out and back in afterwards
-```
+The rule sets the UART node `MODE=0666` (plus `TAG+="uaccess"`), so
+`/dev/ttyGowin` is usable by any user without sudo and without `dialout`
+membership. If `/dev/ttyGowin` doesn't appear after installing the rule,
+replug the cable (or `sudo udevadm trigger`) so a fresh `add` event applies
+the `SYMLINK`/`MODE`. If you prefer group-based access instead of `0666`,
+drop the `MODE=0666` from the rule and add yourself to `dialout`
+(`sudo usermod -aG dialout "$USER"`, then re-login).
 
 ### Wiring the UART into your design
 
