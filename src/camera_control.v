@@ -9,7 +9,7 @@ module CameraControl_TOP (
     input sys_rst_n,        // reset input
     inout master_scl,
     inout master_sda,
-    output reg led_out,
+    output led_out,             // host-active indicator (driven below)
     output cam_reset,
     output cam_clk,
     output led_out1,
@@ -128,8 +128,39 @@ modbus_cam_backend cam_bridge (
     .busy(be_busy)
 );
 
-// status LEDs: init done / bridge busy / SCCB transmit error
-assign status_leds = {cam_init_complete, be_busy, transmit_error};
+// ---- UART activity blink + host-presence timeout ----
+// uart_*_blink stretch each byte event to ~50 ms so a 9600-baud transfer is
+// visible. host_active_cnt reloads on every received byte (a host request) and
+// counts down over ~6 s, so it stays asserted while a host keeps talking (the
+// web app heartbeats every ~4 s) and clears a few seconds after it stops.
+localparam [20:0] LED_BLINK    = 21'd1_350_000;     // ~50 ms at 27 MHz
+localparam [27:0] HOST_TIMEOUT = 28'd162_000_000;   // ~6 s  at 27 MHz
+reg [20:0] uart_rx_blink;
+reg [20:0] uart_tx_blink;
+reg [27:0] host_active_cnt;
+
+always @(posedge sys_clk or negedge sys_rst_n) begin
+    if (!sys_rst_n) begin
+        uart_rx_blink   <= `WRAP_SIM(#1) 21'd0;
+        uart_tx_blink   <= `WRAP_SIM(#1) 21'd0;
+        host_active_cnt <= `WRAP_SIM(#1) 28'd0;
+    end else begin
+        if (uart_rx_valid)            uart_rx_blink <= `WRAP_SIM(#1) LED_BLINK;
+        else if (uart_rx_blink != 0)  uart_rx_blink <= `WRAP_SIM(#1) uart_rx_blink - 1'b1;
+
+        if (uart_tx_start)            uart_tx_blink <= `WRAP_SIM(#1) LED_BLINK;
+        else if (uart_tx_blink != 0)  uart_tx_blink <= `WRAP_SIM(#1) uart_tx_blink - 1'b1;
+
+        if (uart_rx_valid)              host_active_cnt <= `WRAP_SIM(#1) HOST_TIMEOUT;
+        else if (host_active_cnt != 0)  host_active_cnt <= `WRAP_SIM(#1) host_active_cnt - 1'b1;
+    end
+end
+
+// LEDs are active-low (drive 0 to light):
+//   status_leds[0] = UART RX activity, [1] = UART TX activity, [2] = init done
+//   led_out        = host actively connected (recent Modbus traffic)
+assign status_leds = ~{cam_init_complete, (uart_tx_blink != 0), (uart_rx_blink != 0)};
+assign led_out     = ~(host_active_cnt != 0);
 
 typedef enum {
     WAIT_RDY, 
@@ -303,7 +334,6 @@ initial begin
     controller_state <= `WRAP_SIM(#1) WAIT_RDY;
     send_data <= `WRAP_SIM(#1) 1'b0;
     store_data <= `WRAP_SIM(#1) 1'b0;
-    led_out <= `WRAP_SIM(#1) 1'b1;
     delay_reset <= `WRAP_SIM(#1) 1'b0;
     rom_addr <= `WRAP_SIM(#1) 8'h00;
     cam_init_complete <= `WRAP_SIM(#1) 1'b0;
@@ -315,7 +345,6 @@ begin
     begin
         controller_state <= `WRAP_SIM(#1) WAIT_RDY;
         send_data <= `WRAP_SIM(#1) 1'b0;
-        led_out <= 1'b1;
         delay_reset <= `WRAP_SIM(#1) 1'b0;
         rom_addr <= `WRAP_SIM(#1) 8'h00;
         cam_init_complete <= `WRAP_SIM(#1) 1'b0;
@@ -388,10 +417,8 @@ begin
                     `WRAP_SIM($display("t=%d, DEBUG CameraControl_TOP; Loading next byte...", $time));
                 end
             end
-            TRANSMIT_COMPLETE: begin
-                led_out <= `WRAP_SIM(#1) 1'b0;
+            TRANSMIT_COMPLETE:
                 cam_init_complete <= `WRAP_SIM(#1) 1'b1;   // hand SCCB to the Modbus bridge
-            end
         endcase
     end
 end
