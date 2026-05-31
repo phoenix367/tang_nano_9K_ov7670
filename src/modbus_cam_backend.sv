@@ -18,8 +18,24 @@
 // Init contention: the bridge stays idle until cam_init_complete is high, so the
 // power-on register load owns the SCCB bus undisturbed; only after init does the
 // bridge service Modbus accesses ("block until init done").
+//
+// Reserved status registers (above the OV7670 range, served directly without an
+// SCCB cycle and regardless of cam_init_complete, so the host can poll them even
+// during camera init):
+//   * 0xF0 -> firmware magic 0xA5 (identifies the bridge)
+//   * 0xF1 -> uptime high byte (latches the 16-bit counter for a coherent pair)
+//   * 0xF2 -> uptime low byte
+// The uptime counter is 0 at reset and free-runs, so a host that sees it jump
+// backward knows the device was hard-reset.
 
 module modbus_cam_backend
+#(
+    // Free-running uptime counter increments every UPTIME_DIV clk cycles
+    // (~1 Hz at 27 MHz). Exposed via a reserved status register so the host can
+    // detect a hard reset: on reset_n the counter restarts at 0, so the host
+    // sees it jump backward. Override small in simulation.
+    parameter integer UPTIME_DIV = 27_000_000
+)
 (
     input  wire        clk,
     input  wire        reset_n,
@@ -66,6 +82,21 @@ module modbus_cam_backend
 
     assign busy = (state != IDLE);
 
+    // ---- reserved status registers (served directly, no SCCB, even during
+    // camera init). They sit above the OV7670 register range so they never
+    // collide with a real camera register.
+    localparam [7:0]  STATUS_MAGIC   = 8'hA5;       // identifies the bridge firmware
+    localparam [15:0] CAM_ADDR_MAX   = 16'h00C9,    // OV7670 registers 0x00..0xC9
+                      ADDR_MAGIC      = 16'h00F0,
+                      ADDR_UPTIME_HI  = 16'h00F1,
+                      ADDR_UPTIME_LO  = 16'h00F2;
+
+    reg [15:0] uptime;          // free-running seconds-ish, 0 on reset
+    reg [15:0] uptime_latch;    // captured on a high-byte read for a coherent pair
+    reg [31:0] uptime_div;
+
+    wire is_camera = (be_addr <= CAM_ADDR_MAX);
+
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             state      <= `WRAP_SIM(#1) IDLE;
@@ -75,17 +106,48 @@ module modbus_cam_backend
             i2c_din    <= `WRAP_SIM(#1) 8'h00;
             be_ready   <= `WRAP_SIM(#1) 1'b0;
             be_rdata   <= `WRAP_SIM(#1) 16'h0000;
+            uptime       <= `WRAP_SIM(#1) 16'h0000;
+            uptime_latch <= `WRAP_SIM(#1) 16'h0000;
+            uptime_div   <= `WRAP_SIM(#1) 32'h0;
         end else begin
+            // free-running uptime tick (independent of the SCCB FSM)
+            if (uptime_div >= UPTIME_DIV - 1) begin
+                uptime_div <= `WRAP_SIM(#1) 32'h0;
+                uptime     <= `WRAP_SIM(#1) uptime + 1'b1;
+            end else
+                uptime_div <= `WRAP_SIM(#1) uptime_div + 1'b1;
+
             case (state)
-                // wait for a backend request, but only once the camera init has
-                // released the SCCB bus and the controller is idle (device_rdy).
+                // wait for a backend request. Camera registers wait for the init
+                // to release the SCCB bus (device_rdy); reserved status registers
+                // are served directly, no SCCB, even during init.
                 IDLE: begin
                     store_data <= `WRAP_SIM(#1) 1'b0;
                     send_data  <= `WRAP_SIM(#1) 1'b0;
                     recv_data  <= `WRAP_SIM(#1) 1'b0;
                     be_ready   <= `WRAP_SIM(#1) 1'b0;
-                    if (be_req && cam_init_complete && device_rdy)
-                        state <= `WRAP_SIM(#1) be_we ? W_STORE_ADDR : R_STORE_ADDR;
+                    if (be_req) begin
+                        if (is_camera) begin
+                            if (cam_init_complete && device_rdy)
+                                state <= `WRAP_SIM(#1) be_we ? W_STORE_ADDR : R_STORE_ADDR;
+                            // else: block until init done
+                        end else begin
+                            // reserved register: answer immediately (writes ignored)
+                            case (be_addr)
+                                ADDR_MAGIC:
+                                    be_rdata <= `WRAP_SIM(#1) {8'h00, STATUS_MAGIC};
+                                ADDR_UPTIME_HI: begin
+                                    be_rdata     <= `WRAP_SIM(#1) {8'h00, uptime[15:8]};
+                                    uptime_latch <= `WRAP_SIM(#1) uptime;
+                                end
+                                ADDR_UPTIME_LO:
+                                    be_rdata <= `WRAP_SIM(#1) {8'h00, uptime_latch[7:0]};
+                                default:
+                                    be_rdata <= `WRAP_SIM(#1) 16'h0000;
+                            endcase
+                            state <= `WRAP_SIM(#1) ACK;
+                        end
+                    end
                 end
 
                 // ---- write: two stores (index, value) then send ----

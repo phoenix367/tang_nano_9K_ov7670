@@ -90,6 +90,20 @@ def _error(msg, status=400):
     return jsonify(ok=False, error=str(msg)), status
 
 
+def _classify(e):
+    """Map a client-op exception to a response. If the serial port died
+    (SerialException subclasses OSError), tear down the connection so /api/state
+    reports disconnected and the UI can prompt a reconnect; transient
+    timeouts/CRC are already retried in the client and just surface as errors."""
+    global _client
+    if isinstance(e, OSError):
+        if _client is not None:
+            _client.close()
+            _client = None
+        return _error(f"device disconnected: {e}", status=503)
+    return _error(e)
+
+
 # --------------------------------------------------------------------------- #
 # routes
 # --------------------------------------------------------------------------- #
@@ -124,6 +138,27 @@ def api_state():
         slave=_client.slave if connected else None,
         controls=ov7670.CONTROLS,
     )
+
+
+@app.route("/api/health")
+def api_health():
+    """Cheap liveness probe for the heartbeat: firmware magic + uptime counter.
+    The uptime is 0 at reset and free-runs, so a value that jumps backward tells
+    the host the device was hard-reset (re-init wiped its register state)."""
+    with _lock:
+        try:
+            client = _require_client()
+            magic = client.read_reg(ov7670.STATUS_MAGIC_ADDR)
+            hi, lo = client.read_holding(ov7670.STATUS_UPTIME_ADDR, 2)
+            uptime = ((hi & 0xFF) << 8) | (lo & 0xFF)
+        except ModbusError as e:
+            # the device answered (so it's alive) but has no status registers --
+            # an older bitstream without the bridge's reserved 0xF0..0xF2 block.
+            return jsonify(ok=True, alive=True, status_supported=False, detail=str(e))
+        except (RuntimeError, ValueError, TimeoutError, OSError) as e:
+            return _classify(e)
+    return jsonify(ok=True, alive=True, status_supported=True, magic=magic,
+                   magic_ok=(magic == ov7670.STATUS_MAGIC), uptime=uptime)
 
 
 @app.route("/api/connect", methods=["POST"])
@@ -170,7 +205,7 @@ def api_settings():
             client = _require_client()
             snapshot = _read_snapshot(client)
         except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError) as e:
-            return _error(e)
+            return _classify(e)
     decoded = ov7670.decode_all(snapshot)
     return jsonify(ok=True, registers={f"0x{a:02X}": v for a, v in snapshot.items()},
                    **decoded)
@@ -190,7 +225,7 @@ def api_control():
             client = _require_client()
             affected = _apply_control(client, control, data["value"])
         except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError) as e:
-            return _error(e)
+            return _classify(e)
     return jsonify(ok=True, id=cid,
                    registers={f"0x{a:02X}": v for a, v in affected.items()})
 
@@ -225,7 +260,7 @@ def api_gamma_device():
             client = _require_client()
             regs = {a: client.read_reg(a) for a in ov7670.gamma_register_addrs()}
         except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError) as e:
-            return _error(e)
+            return _classify(e)
     return jsonify(
         ok=True,
         exponent=round(ov7670.estimate_gamma(regs) / ov7670.GAMMA_SCALE, 2),
@@ -258,7 +293,7 @@ def api_matrix():
             client = _require_client()
             payload = _matrix_payload(client)
         except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError) as e:
-            return _error(e)
+            return _classify(e)
     return jsonify(payload)
 
 
@@ -282,7 +317,7 @@ def api_matrix_coeff():
             client.write_reg(ov7670.MTXS_REG, mtxs)
             payload = _matrix_payload(client)
         except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError) as e:
-            return _error(e)
+            return _classify(e)
     return jsonify(payload)
 
 
@@ -299,7 +334,7 @@ def api_matrix_contrast_center():
             client.write_reg(ov7670.MTXS_REG, mtxs)
             payload = _matrix_payload(client)
         except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError) as e:
-            return _error(e)
+            return _classify(e)
     return jsonify(payload)
 
 
@@ -323,7 +358,7 @@ def api_raw():
             return jsonify(ok=True, registers={f"0x{addr:02X}": client.read_reg(addr)})
         except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError,
                 KeyError, TypeError) as e:
-            return _error(e)
+            return _classify(e)
 
 
 if __name__ == "__main__":

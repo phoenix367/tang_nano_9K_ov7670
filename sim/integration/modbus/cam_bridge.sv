@@ -26,10 +26,11 @@ localparam LOG_LEVEL = `DEFAULT_LOG_LEVEL;
 localparam integer CLK_FREQ = 160;       // UART/Modbus timing only (small => fast sim)
 localparam integer BAUD     = 10;        // CLKS_PER_BIT = 16
 localparam [7:0]   SLAVE    = 8'd7;
-localparam integer REG_COUNT = 202;      // 0x00..0xC9 OV7670 register space
+localparam integer REG_COUNT = 243;      // 0x00..0xC9 camera + 0xF0..0xF2 status
 localparam [6:0]   DEV_ADDR = 7'h21;     // OV7670 SCCB address
 
 reg clk, reset_n;
+reg cam_init;                            // backend gate (1 = post-init)
 
 // ---- master UART (driven by the TB) <-> slave UART (modbus) ----
 reg  [7:0] m_tx_data; reg m_tx_start; wire m_tx_busy; wire m_tx;
@@ -98,9 +99,9 @@ modbus_rtu_slave #(
     .be_ready(be_ready), .be_rdata(be_rdata)
 );
 
-modbus_cam_backend cam_bridge(
+modbus_cam_backend #(.UPTIME_DIV(64)) cam_bridge(   // fast uptime tick for sim
     .clk(clk), .reset_n(reset_n),
-    .cam_init_complete(1'b1),               // post-init path
+    .cam_init_complete(cam_init),
     .be_req(be_req), .be_we(be_we), .be_addr(be_addr), .be_wdata(be_wdata),
     .be_ready(be_ready), .be_rdata(be_rdata),
     .store_data(be_store_data), .send_data(be_send_data), .recv_data(be_recv_data),
@@ -223,10 +224,12 @@ task automatic check(input string label, input integer rn, input integer explen)
 endtask
 
 integer rn;
+reg [15:0] u1, u2;
 
 initial begin
     errors = 0;
     m_tx_data = 0; m_tx_start = 0;
+    cam_init = 1;
     clk = 0; reset_n = 1;
 `ifdef ENABLE_DUMPVARS
     $dumpvars(0, main);
@@ -280,12 +283,52 @@ initial begin
                    resp[7]!==8'h00 || resp[8]!==8'h33)) begin
         logger.error(module_name, "FC03 multi read-back mismatch"); errors=errors+1; end
 
-    // 5) illegal data address (reg 202 of 202) -> 0x83 0x02
-    req[0]=SLAVE; req[1]=8'h03; req[2]=8'h00; req[3]=8'hCA; req[4]=8'h00; req[5]=8'h01;
+    // 5) illegal data address (reg 243, past 0x00..0xF2) -> 0x83 0x02
+    req[0]=SLAVE; req[1]=8'h03; req[2]=8'h00; req[3]=8'hF3; req[4]=8'h00; req[5]=8'h01;
     txn(6, rn);
     check("FC03 illegal addr", rn, 5);
     if (rn==5 && (resp[1]!==8'h83 || resp[2]!==8'h02)) begin
         logger.error(module_name, "exception (addr) mismatch"); errors=errors+1; end
+
+    // 6) status magic 0xF0 -> 0x00A5 (served directly, no SCCB)
+    req[0]=SLAVE; req[1]=8'h03; req[2]=8'h00; req[3]=8'hF0; req[4]=8'h00; req[5]=8'h01;
+    txn(6, rn);
+    check("FC03 read magic", rn, 7);
+    if (rn==7 && (resp[3]!==8'h00 || resp[4]!==8'hA5)) begin
+        logger.error(module_name, "status magic mismatch (expected 0x00A5)"); errors=errors+1; end
+
+    // 7) uptime 0xF1..0xF2 increments (free-running) -> reset detector
+    req[0]=SLAVE; req[1]=8'h03; req[2]=8'h00; req[3]=8'hF1; req[4]=8'h00; req[5]=8'h02;
+    txn(6, rn);
+    check("FC03 read uptime #1", rn, 9);
+    u1 = {resp[4], resp[6]};
+    req[0]=SLAVE; req[1]=8'h03; req[2]=8'h00; req[3]=8'hF1; req[4]=8'h00; req[5]=8'h02;
+    txn(6, rn);
+    u2 = {resp[4], resp[6]};
+    if (!(u2 > u1)) begin
+        $sformat(str, "uptime did not advance: #1=%0d #2=%0d", u1, u2);
+        logger.error(module_name, str); errors=errors+1;
+    end else begin
+        $sformat(str, "uptime advanced %0d -> %0d", u1, u2);
+        logger.info(module_name, str);
+    end
+
+    // 8) reserved gap (0xCA, above camera, below status) -> reads 0, not an exception
+    req[0]=SLAVE; req[1]=8'h03; req[2]=8'h00; req[3]=8'hCA; req[4]=8'h00; req[5]=8'h01;
+    txn(6, rn);
+    check("FC03 reserved 0xCA", rn, 7);
+    if (rn==7 && (resp[1]!==8'h03 || resp[3]!==8'h00 || resp[4]!==8'h00)) begin
+        logger.error(module_name, "reserved 0xCA should read 0x0000"); errors=errors+1; end
+
+    // 9) status is served even while camera init blocks camera registers
+    cam_init = 1'b0;
+    repeat (4) @(posedge clk);
+    req[0]=SLAVE; req[1]=8'h03; req[2]=8'h00; req[3]=8'hF0; req[4]=8'h00; req[5]=8'h01;
+    txn(6, rn);
+    check("FC03 magic during init", rn, 7);
+    if (rn==7 && (resp[3]!==8'h00 || resp[4]!==8'hA5)) begin
+        logger.error(module_name, "status not served during init"); errors=errors+1; end
+    cam_init = 1'b1;
 
     if (errors == 0) begin
         logger.info(module_name, "Modbus <-> OV7670 bridge: all scenarios passed");

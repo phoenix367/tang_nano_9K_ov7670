@@ -46,7 +46,9 @@ module CameraControl_TOP (
 // transaction on the shared i2c_control_fsm. The backend stays idle until the
 // power-on camera init has finished (cam_init_complete), so the default config
 // is loaded undisturbed.
-localparam integer MODBUS_REGS = 'hCA;   // 202 = OV7670 register space 0x00..0xC9
+// OV7670 register space 0x00..0xC9 plus the bridge's reserved status registers
+// (0xF0 magic, 0xF1/0xF2 uptime) so the host can detect a hard reset.
+localparam integer MODBUS_REGS = 'hF3;
 
 wire [7:0] uart_rx_data;
 wire       uart_rx_valid, uart_rx_perr;

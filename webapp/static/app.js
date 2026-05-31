@@ -5,6 +5,13 @@ let CONTROLS = [];          // metadata from /api/state
 let connected = false;
 let currentTab = "basic";
 
+// reset/disconnect handling
+let lastConn = null;        // {port, baud, slave} for auto-reconnect
+let lastUptime = null;      // device uptime counter; a backward jump => reset
+let heartbeatTimer = null;
+let reconnectTimer = null;
+let statusUnsupportedNoted = false;
+
 // --------------------------------------------------------------------- utils
 async function api(path, opts) {
   const res = await fetch(path, opts);
@@ -20,6 +27,19 @@ function postJSON(path, body) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+// like api() but never throws — returns the HTTP status so the heartbeat can
+// tell a dead port (503) from a transient error (4xx) without try/catch noise.
+async function rawFetch(path, opts) {
+  try {
+    const res = await fetch(path, opts);
+    let data = {};
+    try { data = await res.json(); } catch { /* non-JSON */ }
+    return { status: res.status, ok: res.ok, data };
+  } catch {
+    return { status: 0, ok: false, data: {} };   // network error to our server
+  }
 }
 
 let toastTimer = null;
@@ -103,9 +123,14 @@ async function connect() {
       baud: Number($("#baud").value),
       slave: Number($("#slave").value),
     });
+    lastConn = { port, baud: Number($("#baud").value), slave: Number($("#slave").value) };
+    lastUptime = null;
+    statusUnsupportedNoted = false;
     setConnected(true, info);
     renderControls();
     await loadSettings();
+    clearBanner();
+    startHeartbeat();
     toast("Connected");
   } catch (e) {
     $("#conn-status").textContent = e.message;
@@ -115,8 +140,75 @@ async function connect() {
 }
 
 async function disconnect() {
+  stopHeartbeat();
+  stopReconnect();
+  lastConn = null;            // intentional disconnect: don't auto-reconnect
+  clearBanner();
   try { await postJSON("/api/disconnect", {}); } catch {}
   setConnected(false);
+}
+
+// ---------------------------------------------------- heartbeat & recovery
+function showBanner(msg, kind) {
+  const b = $("#banner");
+  b.textContent = msg;
+  b.className = "banner" + (kind ? " " + kind : "");
+  b.hidden = false;
+}
+function clearBanner() { $("#banner").hidden = true; }
+
+function startHeartbeat() { stopHeartbeat(); heartbeatTimer = setInterval(heartbeat, 4000); heartbeat(); }
+function stopHeartbeat() { if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; } }
+
+async function heartbeat() {
+  const { status, data } = await rawFetch("/api/health");
+  if (status === 0) return;                 // can't reach our own server; skip
+  if (status === 503) { handleDeviceLost(); return; }
+  if (!data.ok) return;                      // transient (e.g. 400) — ignore tick
+  clearBanner();
+  if (data.status_supported && typeof data.uptime === "number") {
+    if (lastUptime !== null && data.uptime < lastUptime - 1) {
+      toast("Device was reset — resyncing", "error");
+      loadSettings();                        // re-pull the reverted register state
+    }
+    lastUptime = data.uptime;
+    if (data.magic_ok === false) toast("Unexpected firmware magic", "error");
+  } else if (!statusUnsupportedNoted) {
+    statusUnsupportedNoted = true;
+    toast("Reset detection unavailable (older bitstream)");
+  }
+}
+
+function handleDeviceLost() {
+  if (!connected) return;
+  stopHeartbeat();
+  setConnected(false);
+  showBanner("Device disconnected — waiting for it to come back…", "warn");
+  startReconnect();
+}
+
+function startReconnect() { stopReconnect(); reconnectTimer = setInterval(tryReconnect, 3000); }
+function stopReconnect() { if (reconnectTimer) { clearInterval(reconnectTimer); reconnectTimer = null; } }
+
+async function tryReconnect() {
+  if (!lastConn) { stopReconnect(); return; }
+  let avail = false;
+  try {
+    const { ports } = await api("/api/ports");
+    avail = ports.some((p) => p.device === lastConn.port);
+  } catch { /* keep waiting */ }
+  if (!avail) return;                        // port not back yet
+  try {
+    const info = await postJSON("/api/connect", lastConn);
+    stopReconnect();
+    lastUptime = null;
+    setConnected(true, info);
+    renderControls();
+    clearBanner();
+    await loadSettings();
+    startHeartbeat();
+    toast("Reconnected");
+  } catch { /* port present but not ready yet; keep trying */ }
 }
 
 // ----------------------------------------------------------------- controls
@@ -443,9 +535,12 @@ async function init() {
     const st = await api("/api/state");
     CONTROLS = st.controls;
     if (st.connected) {
+      lastConn = { port: st.port, baud: Number($("#baud").value), slave: st.slave };
+      lastUptime = null;
       setConnected(true, { port: st.port, slave: st.slave, pid: 0 });
       renderControls();
       await loadSettings();
+      startHeartbeat();
     }
   } catch (e) { toast(e.message, "error"); }
 }

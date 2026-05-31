@@ -25,6 +25,13 @@ Features:
   heatmap grid with per-cell sliders, an auto-contrast toggle, and before→after
   reference color swatches.
 - **Raw register access** — read/write any OV7670 register by address.
+- **Reset resilience** — a heartbeat (`/api/health`) polls the bridge's status
+  registers (`0xF0` magic, `0xF1/0xF2` uptime). If the board is hard-reset the
+  uptime jumps backward → the UI resyncs to the (re-initialised) register state.
+  If the serial port drops (power-cycle / re-flash) the app shows a banner and
+  auto-reconnects when it returns. Transient timeouts (e.g. the post-reset
+  re-init window) are retried in the client. Falls back gracefully on an older
+  bitstream without the status registers (liveness only, no reset detection).
 
 ## Run
 

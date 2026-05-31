@@ -22,6 +22,10 @@ def crc16(data: bytes) -> int:
     return crc
 
 
+class CRCError(ValueError):
+    """A response with a bad CRC (transient — worth retrying)."""
+
+
 class ModbusError(Exception):
     """A Modbus exception response (function code | 0x80)."""
 
@@ -42,11 +46,12 @@ class ModbusError(Exception):
 class ModbusRTU:
     """A thin RTU master over a pyserial port. One transaction at a time."""
 
-    def __init__(self, port, baud=9600, slave=7, timeout=1.0):
+    def __init__(self, port, baud=9600, slave=7, timeout=1.0, retries=2):
         if not (0 <= slave <= 247):
             raise ValueError(f"slave id {slave} out of range 0..247")
         self.port = port
         self.slave = slave
+        self.retries = retries
         self.ser = serial.Serial(
             port=port,
             baudrate=baud,
@@ -72,9 +77,26 @@ class ModbusRTU:
     @staticmethod
     def _check_crc(frame):
         if crc16(frame) != 0:
-            raise ValueError("response CRC mismatch")
+            raise CRCError("response CRC mismatch")
 
     def _txn(self, func, payload):
+        # Retry only transient faults (timeout / bad CRC) — e.g. a request that
+        # lands during the camera's post-reset re-init window, or a byte dropped
+        # mid-frame. A ModbusError is a valid response and is never retried;
+        # serial/OS errors (port gone) propagate immediately.
+        last = None
+        for _ in range(self.retries + 1):
+            try:
+                return self._txn_once(func, payload)
+            except (TimeoutError, CRCError) as e:
+                last = e
+                try:
+                    self.ser.reset_input_buffer()
+                except Exception:
+                    pass
+        raise last
+
+    def _txn_once(self, func, payload):
         req = bytes([self.slave, func]) + payload
         req += struct.pack("<H", crc16(req))
         self.ser.reset_input_buffer()

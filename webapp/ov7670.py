@@ -105,6 +105,11 @@ def estimate_gamma(snapshot):
 # that generates the two chroma channels from RGB (row 0 ~ Cr/R-Y, row 1 ~
 # Cb/B-Y), scaled by 1/256 -- the canonical default (80 80 00 22 5E 80 / 9E)
 # matches the BT.601 chroma generators, so it reproduces colors faithfully.
+# Bridge status registers (served by modbus_cam_backend, not the camera).
+STATUS_MAGIC_ADDR = 0xF0     # reads firmware magic 0xA5
+STATUS_MAGIC = 0xA5
+STATUS_UPTIME_ADDR = 0xF1    # 0xF1 = uptime hi, 0xF2 = uptime lo (16-bit, 0 on reset)
+
 MTX_REGS = [0x4F, 0x50, 0x51, 0x52, 0x53, 0x54]
 MTXS_REG = 0x58
 MTX_SCALE = 256
