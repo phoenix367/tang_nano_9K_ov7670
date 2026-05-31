@@ -141,11 +141,11 @@ td { padding: 5px 10px; border-bottom: 1px solid var(--border); }
 
 /* gamma visualization */
 #gamma-controls { margin-bottom: 14px; }
-/* plot and register table are equal height; the SVG scales to fill */
-.gamma-body { display: flex; flex-wrap: wrap; gap: 24px; align-items: stretch; }
-#gamma-plot { flex: 0 0 auto; display: flex; min-height: 240px; }
+.gamma-body { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+#gamma-plot { flex: 0 0 auto; }
+/* sized by the SVG's width/height attrs; shrinks (keeping square) on narrow */
 #gamma-plot svg {
-  height: 100%; width: auto; display: block;
+  display: block; max-width: 100%; height: auto;
   background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
 }
 .gamma-axis { stroke: var(--border); stroke-width: 1; }

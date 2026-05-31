@@ -136,6 +136,7 @@ function showTab(name) {
   document.querySelectorAll(".tab").forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === name);
   });
+  if (name === "color") resizeGammaPlot();   // table height is known once visible
 }
 
 async function connect() {
@@ -368,7 +369,7 @@ const GAMMA_REG_NAME = (addr) => (addr === 0x7a ? "SLOP" : "GAM" + (addr - 0x7b 
 function renderGammaCurve(points, registers, caption) {
   $("#gamma-caption").textContent = caption || "";
 
-  const S = 240, pad = 30, plot = S - 2 * pad;
+  const S = 320, pad = 36, plot = S - 2 * pad;   // bigger plot, ~matches the table height
   const sx = (x) => pad + (x / 255) * plot;
   const sy = (y) => pad + plot - (y / 255) * plot;
   const poly = points.map((p) => `${sx(p[0]).toFixed(1)},${sy(p[1]).toFixed(1)}`).join(" ");
@@ -378,17 +379,18 @@ function renderGammaCurve(points, registers, caption) {
     .join("");
 
   $("#gamma-plot").innerHTML = `
-    <svg viewBox="0 0 ${S} ${S}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="gamma curve">
+    <svg viewBox="0 0 ${S} ${S}" width="${S}" height="${S}" role="img" aria-label="gamma curve">
       <line class="gamma-axis" x1="${pad}" y1="${pad}" x2="${pad}" y2="${pad + plot}"/>
       <line class="gamma-axis" x1="${pad}" y1="${pad + plot}" x2="${pad + plot}" y2="${pad + plot}"/>
       <line class="gamma-ref" x1="${sx(0)}" y1="${sy(0)}" x2="${sx(255)}" y2="${sy(255)}"/>
       <polyline class="gamma-line" points="${poly}"/>
       ${knees}
-      <text class="gamma-label" x="${pad - 4}" y="${pad}" text-anchor="end">255</text>
+      <text class="gamma-label" x="${pad - 4}" y="${pad + 3}" text-anchor="end">255</text>
       <text class="gamma-label" x="${pad - 4}" y="${pad + plot}" text-anchor="end">0</text>
       <text class="gamma-label" x="${pad + plot}" y="${pad + plot + 14}" text-anchor="end">in 255</text>
       <text class="gamma-label" x="${pad}" y="${pad + plot + 14}" text-anchor="middle">0</text>
-      <text class="gamma-label" x="6" y="${pad + 6}">out</text>
+      <text class="gamma-label" x="11" y="${pad + plot / 2}" text-anchor="middle"
+            transform="rotate(-90 11 ${pad + plot / 2})">out</text>
     </svg>`;
 
   const tbl = $("#gamma-regs");
@@ -400,6 +402,18 @@ function renderGammaCurve(points, registers, caption) {
       `<td class="addr">${k.toUpperCase()}</td>` +
       `<td class="val">${hex(v)} (${v})</td>`;
     tbl.appendChild(tr);
+  }
+  resizeGammaPlot();   // size the plot square to the (now-rendered) table height
+}
+
+// Match the gamma plot's size to the register table. The table has zero height
+// while the Color tab is hidden, so this is also re-run when the tab is shown.
+function resizeGammaPlot() {
+  const svg = document.querySelector("#gamma-plot svg");
+  const h = $("#gamma-regs").offsetHeight;
+  if (svg && h > 0) {
+    svg.setAttribute("width", h);
+    svg.setAttribute("height", h);
   }
 }
 
