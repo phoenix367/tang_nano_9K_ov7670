@@ -97,6 +97,10 @@ module FrameDownloader
 
     reg [10:0] col_counter;   // pixels drained in the current row (0..FRAME_WIDTH)
     reg [10:0] row_counter;   // output rows emitted (0..FRAME_HEIGHT)
+    // Registered "col_counter == EMIT_ROW_SIZE-1" so the per-pixel push decision
+    // in S_DRAIN_PUSH doesn't put an 11-bit comparator in the fb_clk
+    // queue_full -> col_counter critical path. Updated alongside col_counter.
+    reg        last_col;
 
     // ---- prefetch cache interface ----
     reg        cache_start;   // 1-cycle pulse to (re)seed the cache for a frame
@@ -135,6 +139,7 @@ module FrameDownloader
             state         <= `WRAP_SIM(#1) S_START_WAIT;
             col_counter   <= `WRAP_SIM(#1) 'd0;
             row_counter   <= `WRAP_SIM(#1) 'd0;
+            last_col      <= `WRAP_SIM(#1) 1'b0;
             queue_data_o  <= `WRAP_SIM(#1) 'd0;
             wr_en         <= `WRAP_SIM(#1) 1'b0;
             download_done <= `WRAP_SIM(#1) 1'b0;
@@ -180,6 +185,7 @@ module FrameDownloader
                         queue_data_o <= `WRAP_SIM(#1) TOKEN_ROW_START;
                         wr_en        <= `WRAP_SIM(#1) 1'b1;
                         col_counter  <= `WRAP_SIM(#1) 'd0;
+                        last_col     <= `WRAP_SIM(#1) (EMIT_ROW_SIZE == 1);
                         rd_pix_addr  <= `WRAP_SIM(#1) 'd0;
                         state        <= `WRAP_SIM(#1) S_DRAIN_W1;
                     end
@@ -190,11 +196,12 @@ module FrameDownloader
                     if (!queue_full) begin
                         queue_data_o <= `WRAP_SIM(#1) {1'b0, rd_pix_data};
                         wr_en        <= `WRAP_SIM(#1) 1'b1;
-                        if (col_counter == EMIT_ROW_SIZE - 1) begin
+                        if (last_col) begin     // registered (col_counter == EMIT_ROW_SIZE-1)
                             state <= `WRAP_SIM(#1) S_ROW_END;
                         end else begin
                             col_counter <= `WRAP_SIM(#1) col_counter + 1'b1;
                             rd_pix_addr <= `WRAP_SIM(#1) col_counter + 1'b1;
+                            last_col    <= `WRAP_SIM(#1) ((col_counter + 1'b1) == EMIT_ROW_SIZE - 1);
                             state       <= `WRAP_SIM(#1) S_DRAIN_W1;
                         end
                     end

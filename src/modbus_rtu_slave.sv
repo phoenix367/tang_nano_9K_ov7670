@@ -90,7 +90,8 @@ module modbus_rtu_slave
                      S_TX_LOAD = 4'd6,
                      S_TX_PEND = 4'd7,
                      S_TX_WAIT = 4'd8,
-                     S_DONE    = 4'd9;
+                     S_DONE    = 4'd9,
+                     S_DECIDE  = 4'd10;  // 2nd decode stage: shallow select from flags
 
     reg [3:0]  state;
     reg [7:0]  frame [0:MAX_FRAME-1];
@@ -105,6 +106,13 @@ module modbus_rtu_slave
     reg [7:0]  bidx;        // data-loop index (registers)
     reg        is_bcast;
     reg        wr_multi;    // S_WR_* loop: 0 = single (FC06), 1 = multiple (FC10)
+
+    // S_CHECK latches the request fields and the (registered) bounds/validity
+    // flags; S_DECIDE then only does a shallow select. This keeps the 27 MHz
+    // decode path short -- it previously did all the arithmetic + the function
+    // decode combinationally into `state` in a single cycle.
+    reg [7:0]  f_dev, f_func, qlast;
+    reg        v_bad, v_qty0, v_addr_oor, v_saddr_oor, v_oversize, v_bc_bad;
 
     // ---------------- backend: internal RAM (default) or external port -------
     wire        eff_be_ready;
@@ -196,96 +204,106 @@ module modbus_rtu_slave
                     end
                 end
 
-                // ---------------- validate + decode ----------------
+                // -------- stage 1: latch fields + compute bounds/validity --------
+                // All the heavy arithmetic (16-bit adds, the >REG_COUNT /
+                // MAX_FRAME compares, the validity OR) lands in registers here, so
+                // the next-state logic in S_DECIDE is a shallow mux on flags.
                 S_CHECK: begin
+                    f_dev    <= `WRAP_SIM(#1) frame[0];
+                    f_func   <= `WRAP_SIM(#1) frame[1];
                     saddr    <= `WRAP_SIM(#1) {frame[2], frame[3]};
                     qty      <= `WRAP_SIM(#1) {frame[4], frame[5]};
                     cur      <= `WRAP_SIM(#1) {frame[2], frame[3]};
                     wval     <= `WRAP_SIM(#1) {frame[4], frame[5]};
+                    qlast    <= `WRAP_SIM(#1) {frame[4], frame[5]} - 16'd1;  // loop terminal (qty-1)
                     bidx     <= `WRAP_SIM(#1) 'd0;
                     tidx     <= `WRAP_SIM(#1) 'd0;
                     tx_crc   <= `WRAP_SIM(#1) 16'hFFFF;
                     is_bcast <= `WRAP_SIM(#1) (frame[0] == 8'h00);
 
-                    if (frame_ovf || frame_perr || flen < 4 || crc_acc != 16'h0000 ||
-                        (frame[0] != SLAVE_ADDR && frame[0] != 8'h00)) begin
-                        state <= `WRAP_SIM(#1) S_DONE;            // drop, no reply
+                    v_bad       <= `WRAP_SIM(#1) frame_ovf || frame_perr || flen < 4 ||
+                                       crc_acc != 16'h0000 ||
+                                       (frame[0] != SLAVE_ADDR && frame[0] != 8'h00);
+                    v_qty0      <= `WRAP_SIM(#1) ({frame[4],frame[5]} == 16'd0);
+                    v_addr_oor  <= `WRAP_SIM(#1) (({frame[2],frame[3]} + {frame[4],frame[5]}) > REG_COUNT);
+                    v_saddr_oor <= `WRAP_SIM(#1) ({frame[2],frame[3]} >= REG_COUNT);
+                    v_oversize  <= `WRAP_SIM(#1) (({frame[4],frame[5]} << 1) + 16'd3 > MAX_FRAME);
+                    v_bc_bad    <= `WRAP_SIM(#1) (frame[6] != ({frame[4],frame[5]} << 1));
+
+                    state    <= `WRAP_SIM(#1) S_DECIDE;
+                end
+
+                // -------- stage 2: select response/next-state from the flags --------
+                // No frame[] reads, no bound arithmetic here -- just a mux on the
+                // registered flags/fields, so the path into `state` stays short.
+                S_DECIDE: begin
+                    if (v_bad) begin
+                        state <= `WRAP_SIM(#1) S_DONE;           // drop, no reply
                     end else begin
-                        case (frame[1])
+                        case (f_func)
                             8'h03: begin // read holding registers
-                                // illegal value: qty 0, or response would not fit MAX_FRAME
-                                // (rlen = 3 + 2*qty must be <= MAX_FRAME); illegal addr:
-                                // window past REG_COUNT.
-                                if ({frame[4],frame[5]} == 16'd0 ||
-                                    ({frame[4],frame[5]} << 1) + 16'd3 > MAX_FRAME) begin
-                                    resp[0] <= `WRAP_SIM(#1) frame[0];
+                                resp[0] <= `WRAP_SIM(#1) f_dev;
+                                if (v_qty0 || v_oversize) begin
                                     resp[1] <= `WRAP_SIM(#1) 8'h83;
                                     resp[2] <= `WRAP_SIM(#1) EXC_ILLEGAL_VAL;
                                     rlen    <= `WRAP_SIM(#1) 'd3;
-                                    state   <= `WRAP_SIM(#1) (frame[0]==8'h00) ? S_DONE : S_TX_LOAD;
-                                end else if (({frame[2],frame[3]} + {frame[4],frame[5]}) > REG_COUNT) begin
-                                    resp[0] <= `WRAP_SIM(#1) frame[0];
+                                    state   <= `WRAP_SIM(#1) is_bcast ? S_DONE : S_TX_LOAD;
+                                end else if (v_addr_oor) begin
                                     resp[1] <= `WRAP_SIM(#1) 8'h83;
                                     resp[2] <= `WRAP_SIM(#1) EXC_ILLEGAL_ADDR;
                                     rlen    <= `WRAP_SIM(#1) 'd3;
-                                    state   <= `WRAP_SIM(#1) (frame[0]==8'h00) ? S_DONE : S_TX_LOAD;
-                                end else if (frame[0] == 8'h00) begin
-                                    state <= `WRAP_SIM(#1) S_DONE;     // no read on broadcast
+                                    state   <= `WRAP_SIM(#1) is_bcast ? S_DONE : S_TX_LOAD;
+                                end else if (is_bcast) begin
+                                    state <= `WRAP_SIM(#1) S_DONE;   // no read on broadcast
                                 end else begin
-                                    resp[0] <= `WRAP_SIM(#1) frame[0];
                                     resp[1] <= `WRAP_SIM(#1) 8'h03;
-                                    resp[2] <= `WRAP_SIM(#1) ({frame[4],frame[5]} << 1);
-                                    rlen    <= `WRAP_SIM(#1) 'd3 + ({frame[4],frame[5]} << 1);
+                                    resp[2] <= `WRAP_SIM(#1) (qty << 1);
+                                    rlen    <= `WRAP_SIM(#1) 'd3 + (qty << 1);
                                     state   <= `WRAP_SIM(#1) S_RD_REQ;
                                 end
                             end
                             8'h06: begin // write single register
-                                if ({frame[2],frame[3]} >= REG_COUNT) begin
-                                    resp[0] <= `WRAP_SIM(#1) frame[0];
+                                resp[0] <= `WRAP_SIM(#1) f_dev;
+                                if (v_saddr_oor) begin
                                     resp[1] <= `WRAP_SIM(#1) 8'h86;
                                     resp[2] <= `WRAP_SIM(#1) EXC_ILLEGAL_ADDR;
                                     rlen    <= `WRAP_SIM(#1) 'd3;
-                                    state   <= `WRAP_SIM(#1) (frame[0]==8'h00) ? S_DONE : S_TX_LOAD;
+                                    state   <= `WRAP_SIM(#1) is_bcast ? S_DONE : S_TX_LOAD;
                                 end else begin
-                                    resp[0] <= `WRAP_SIM(#1) frame[0];
-                                    resp[1] <= `WRAP_SIM(#1) frame[1];
-                                    resp[2] <= `WRAP_SIM(#1) frame[2];
-                                    resp[3] <= `WRAP_SIM(#1) frame[3];
-                                    resp[4] <= `WRAP_SIM(#1) frame[4];
-                                    resp[5] <= `WRAP_SIM(#1) frame[5];
+                                    resp[1] <= `WRAP_SIM(#1) f_func;
+                                    resp[2] <= `WRAP_SIM(#1) saddr[15:8];
+                                    resp[3] <= `WRAP_SIM(#1) saddr[7:0];
+                                    resp[4] <= `WRAP_SIM(#1) wval[15:8];
+                                    resp[5] <= `WRAP_SIM(#1) wval[7:0];
                                     rlen    <= `WRAP_SIM(#1) 'd6;
                                     wr_multi <= `WRAP_SIM(#1) 1'b0;
-                                    state   <= `WRAP_SIM(#1) S_WR_REQ;  // write then reply/drop
+                                    state   <= `WRAP_SIM(#1) S_WR_REQ;
                                 end
                             end
                             8'h10: begin // write multiple registers
-                                if ({frame[4],frame[5]} == 16'd0 ||
-                                    ({frame[2],frame[3]} + {frame[4],frame[5]}) > REG_COUNT ||
-                                    frame[6] != ({frame[4],frame[5]} << 1)) begin
-                                    resp[0] <= `WRAP_SIM(#1) frame[0];
+                                resp[0] <= `WRAP_SIM(#1) f_dev;
+                                if (v_qty0 || v_addr_oor || v_bc_bad) begin
                                     resp[1] <= `WRAP_SIM(#1) 8'h90;
-                                    resp[2] <= `WRAP_SIM(#1) ({frame[4],frame[5]} == 16'd0)
-                                                              ? EXC_ILLEGAL_VAL : EXC_ILLEGAL_ADDR;
+                                    resp[2] <= `WRAP_SIM(#1) v_qty0 ? EXC_ILLEGAL_VAL : EXC_ILLEGAL_ADDR;
                                     rlen    <= `WRAP_SIM(#1) 'd3;
-                                    state   <= `WRAP_SIM(#1) (frame[0]==8'h00) ? S_DONE : S_TX_LOAD;
+                                    state   <= `WRAP_SIM(#1) is_bcast ? S_DONE : S_TX_LOAD;
                                 end else begin
-                                    resp[0] <= `WRAP_SIM(#1) frame[0];
                                     resp[1] <= `WRAP_SIM(#1) 8'h10;
-                                    resp[2] <= `WRAP_SIM(#1) frame[2];
-                                    resp[3] <= `WRAP_SIM(#1) frame[3];
-                                    resp[4] <= `WRAP_SIM(#1) frame[4];
-                                    resp[5] <= `WRAP_SIM(#1) frame[5];
+                                    resp[2] <= `WRAP_SIM(#1) saddr[15:8];
+                                    resp[3] <= `WRAP_SIM(#1) saddr[7:0];
+                                    resp[4] <= `WRAP_SIM(#1) wval[15:8];
+                                    resp[5] <= `WRAP_SIM(#1) wval[7:0];
                                     rlen    <= `WRAP_SIM(#1) 'd6;
                                     wr_multi <= `WRAP_SIM(#1) 1'b1;
                                     state   <= `WRAP_SIM(#1) S_WR_REQ;
                                 end
                             end
                             default: begin // illegal function
-                                resp[0] <= `WRAP_SIM(#1) frame[0];
-                                resp[1] <= `WRAP_SIM(#1) frame[1] | 8'h80;
+                                resp[0] <= `WRAP_SIM(#1) f_dev;
+                                resp[1] <= `WRAP_SIM(#1) f_func | 8'h80;
                                 resp[2] <= `WRAP_SIM(#1) EXC_ILLEGAL_FUNC;
                                 rlen    <= `WRAP_SIM(#1) 'd3;
-                                state   <= `WRAP_SIM(#1) (frame[0]==8'h00) ? S_DONE : S_TX_LOAD;
+                                state   <= `WRAP_SIM(#1) is_bcast ? S_DONE : S_TX_LOAD;
                             end
                         endcase
                     end
@@ -303,7 +321,7 @@ module modbus_rtu_slave
                         be_req <= `WRAP_SIM(#1) 1'b0;
                         resp[3 + (bidx << 1)]     <= `WRAP_SIM(#1) eff_be_rdata[15:8];
                         resp[3 + (bidx << 1) + 1] <= `WRAP_SIM(#1) eff_be_rdata[7:0];
-                        if (bidx == qty[7:0] - 1) begin
+                        if (bidx == qlast) begin
                             state <= `WRAP_SIM(#1) S_TX_LOAD;
                         end else begin
                             bidx  <= `WRAP_SIM(#1) bidx + 1'b1;
@@ -329,7 +347,7 @@ module modbus_rtu_slave
                         be_we  <= `WRAP_SIM(#1) 1'b0;
                         if (!wr_multi) begin
                             state <= `WRAP_SIM(#1) is_bcast ? S_DONE : S_TX_LOAD;
-                        end else if (bidx == qty[7:0] - 1) begin
+                        end else if (bidx == qlast) begin
                             state <= `WRAP_SIM(#1) is_bcast ? S_DONE : S_TX_LOAD;
                         end else begin
                             bidx  <= `WRAP_SIM(#1) bidx + 1'b1;
