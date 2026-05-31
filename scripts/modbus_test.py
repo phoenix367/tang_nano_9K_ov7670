@@ -36,6 +36,13 @@ def crc16(data: bytes) -> int:
     return crc
 
 
+def _u16(name, v):
+    """Validate a 16-bit Modbus quantity (address or register value)."""
+    if not isinstance(v, int) or not (0 <= v <= 0xFFFF):
+        raise ValueError(f"{name} {v!r} out of range 0..65535 (0x0000..0xFFFF)")
+    return v
+
+
 class ModbusError(Exception):
     def __init__(self, code):
         self.code = code
@@ -46,6 +53,8 @@ class ModbusError(Exception):
 
 class ModbusRTU:
     def __init__(self, port, baud=9600, slave=7, timeout=1.0):
+        if not (0 <= slave <= 247):
+            raise ValueError(f"slave id {slave} out of range 0..247")
         self.slave = slave
         self.ser = serial.Serial(
             port=port, baudrate=baud, bytesize=serial.EIGHTBITS,
@@ -92,17 +101,33 @@ class ModbusRTU:
             raise ValueError("response CRC mismatch")
 
     def read_holding(self, addr, count):
+        _u16("address", addr)
+        if not (1 <= count <= 125):
+            raise ValueError(f"read count {count} out of range 1..125")
+        if addr + count > 0x10000:
+            raise ValueError(f"address+count {addr + count} exceeds 0x10000")
         rest = self._txn(0x03, struct.pack(">HH", addr, count))
         bc = rest[0]
+        if bc != 2 * count:
+            raise ValueError(f"byte count {bc} != expected {2 * count}")
         data = rest[1:1 + bc]
         return list(struct.unpack(">" + "H" * count, data))
 
     def write_single(self, addr, value):
-        self._txn(0x06, struct.pack(">HH", addr, value & 0xFFFF))
+        _u16("address", addr)
+        _u16("value", value)
+        self._txn(0x06, struct.pack(">HH", addr, value))
 
     def write_multiple(self, addr, values):
+        _u16("address", addr)
+        if not (1 <= len(values) <= 123):
+            raise ValueError(f"register count {len(values)} out of range 1..123")
+        if addr + len(values) > 0x10000:
+            raise ValueError(f"address+count {addr + len(values)} exceeds 0x10000")
+        for i, v in enumerate(values):
+            _u16(f"value[{i}]", v)
         payload = struct.pack(">HHB", addr, len(values), 2 * len(values))
-        payload += b"".join(struct.pack(">H", v & 0xFFFF) for v in values)
+        payload += b"".join(struct.pack(">H", v) for v in values)
         self._txn(0x10, payload)
 
 
