@@ -178,6 +178,19 @@ register_test(integration "modbus/rtu_slave"
     "${SRC_FOLDER}/modbus_rtu_slave.sv"
 )
 
+# Modbus -> OV7670 register bridge: the slave (external backend) + the SCCB
+# bridge + the full i2c controller/master stack against the behavioural slave.
+register_test(integration "modbus/cam_bridge"
+    "${SRC_FOLDER}/uart.sv"
+    "${SRC_FOLDER}/modbus_rtu_slave.sv"
+    "${SRC_FOLDER}/modbus_cam_backend.sv"
+    "${SRC_FOLDER}/i2c_master.v"
+    "${SRC_FOLDER}/i2c_master_bit_ctrl.v"
+    "${SRC_FOLDER}/i2c_master_byte_ctrl.v"
+    "${SRC_FOLDER}/i2c_control_fsm.v"
+    "${SIM_COMMON_FOLDER}/i2c_slave_model.sv"
+)
+
 # The I2C controller test needs the opencores I2C master core, the control FSM
 # and the behavioural slave model -- none are in VIDEO_BUFFER_TEST_SOURCES, so
 # pass them as per-test extra sources.

@@ -46,6 +46,7 @@
         <File path="src/camera_control_defs.vh" type="file.verilog" enable="1"/>
         <File path="src/color_utilities.vh" type="file.verilog" enable="1"/>
         <File path="src/modbus_rtu_slave.sv" type="file.verilog" enable="1"/>
+        <File path="src/modbus_cam_backend.sv" type="file.verilog" enable="1"/>
         <File path="src/platform_config.vh" type="file.verilog" enable="1"/>
         <File path="src/debug_pattern_generator.sv" type="file.verilog" enable="1"/>
         <File path="src/debug_pattern_generator2.sv" type="file.verilog" enable="1"/>
