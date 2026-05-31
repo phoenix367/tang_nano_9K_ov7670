@@ -378,7 +378,7 @@ function renderGammaCurve(points, registers, caption) {
     .join("");
 
   $("#gamma-plot").innerHTML = `
-    <svg viewBox="0 0 ${S} ${S}" width="${S}" height="${S}" role="img" aria-label="gamma curve">
+    <svg viewBox="0 0 ${S} ${S}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="gamma curve">
       <line class="gamma-axis" x1="${pad}" y1="${pad}" x2="${pad}" y2="${pad + plot}"/>
       <line class="gamma-axis" x1="${pad}" y1="${pad + plot}" x2="${pad + plot}" y2="${pad + plot}"/>
       <line class="gamma-ref" x1="${sx(0)}" y1="${sy(0)}" x2="${sx(255)}" y2="${sy(255)}"/>
