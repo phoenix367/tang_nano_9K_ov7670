@@ -17,8 +17,8 @@ import threading
 from flask import Flask, Response, jsonify, render_template, request
 
 import ov7670
-from modbus_client import (FRAME_H, FRAME_W, ModbusError, ModbusRTU,
-                           rgb565_to_rgba)
+from modbus_client import (FRAME_H, FRAME_W, GrabCancelled, ModbusError,
+                           ModbusRTU, rgb565_to_rgba)
 
 try:
     from serial.tools import list_ports
@@ -36,7 +36,8 @@ _client = None  # type: ModbusRTU | None
 # streams pixels and read concurrently by /api/grab/status for the UI's progress
 # bar. Guarded by its own lock so a status poll never waits on the bus lock.
 _progress_lock = threading.Lock()
-_grab_progress = {"active": False, "done": 0, "total": FRAME_W * FRAME_H}
+_grab_progress = {"active": False, "done": 0, "total": FRAME_W * FRAME_H,
+                  "cancel": False}
 
 
 # --------------------------------------------------------------------------- #
@@ -355,17 +356,24 @@ def api_grab():
     The body is FRAME_W*FRAME_H*4 bytes; width/height ship in headers so the
     client sizes its ImageData."""
     with _progress_lock:
-        _grab_progress.update(active=True, done=0, total=FRAME_W * FRAME_H)
+        _grab_progress.update(active=True, done=0, total=FRAME_W * FRAME_H,
+                              cancel=False)
 
     def on_progress(done, total):
         with _progress_lock:
             _grab_progress["done"] = done
             _grab_progress["total"] = total
 
+    def should_cancel():
+        with _progress_lock:
+            return _grab_progress["cancel"]
+
     try:
         with _lock:
             client = _require_client()
-            pixels = client.grab_frame(progress=on_progress)
+            pixels = client.grab_frame(progress=on_progress, should_cancel=should_cancel)
+    except GrabCancelled:
+        return jsonify(ok=False, cancelled=True), 409
     except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError) as e:
         return _classify(e)
     finally:
@@ -383,6 +391,15 @@ def api_grab_status():
     """Frame-grab progress (no bus access — safe to poll during a download)."""
     with _progress_lock:
         return jsonify(ok=True, **_grab_progress)
+
+
+@app.route("/api/grab/cancel", methods=["POST"])
+def api_grab_cancel():
+    """Signal an in-flight grab to abort. The grab loop checks this between
+    chunks and returns promptly (no bus access here, so it never blocks)."""
+    with _progress_lock:
+        _grab_progress["cancel"] = True
+    return jsonify(ok=True)
 
 
 @app.route("/api/raw", methods=["GET", "POST"])

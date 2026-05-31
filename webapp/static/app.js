@@ -547,15 +547,24 @@ async function pollGrabProgress() {
   setGrabProgress(pct, `${pct}% — ${data.done.toLocaleString()} / ${data.total.toLocaleString()} px`);
 }
 
+async function cancelGrab() {
+  const c = $("#grab-cancel");
+  c.disabled = true;
+  c.textContent = "Cancelling…";
+  try { await fetch("/api/grab/cancel", { method: "POST" }); } catch { /* best effort */ }
+}
+
 async function grabFrame() {
   const btn = $("#grab"), status = $("#grab-status"), save = $("#grab-save");
-  const progress = $("#grab-progress");
+  const modal = $("#grab-modal"), cancelBtn = $("#grab-cancel");
   btn.disabled = true;
   save.hidden = true;
-  status.textContent = "Capturing & downloading… (the bus is busy)";
+  status.textContent = "Capturing & downloading…";
   status.className = "status";
   setGrabProgress(0, "0%");
-  progress.hidden = false;
+  cancelBtn.disabled = false;
+  cancelBtn.textContent = "Cancel";
+  modal.hidden = false;
   // the download holds the bus for ~10 s; pause the heartbeat so health probes
   // don't pile up behind it on the server-side lock, and poll the grab's own
   // progress endpoint (no bus access) to drive the bar.
@@ -565,9 +574,15 @@ async function grabFrame() {
   try {
     const res = await fetch("/api/grab", { method: "POST" });
     if (!res.ok) {
-      let msg = `HTTP ${res.status}`;
-      try { const j = await res.json(); if (j.error) msg = j.error; } catch { /* binary/none */ }
-      throw new Error(msg);
+      let body = {};
+      try { body = await res.json(); } catch { /* binary/none */ }
+      if (body.cancelled) {
+        status.textContent = "Grab cancelled.";
+        status.className = "status";
+        toast("Grab cancelled");
+        return;
+      }
+      throw new Error(body.error || `HTTP ${res.status}`);
     }
     const w = Number(res.headers.get("X-Frame-Width")) || 640;
     const h = Number(res.headers.get("X-Frame-Height")) || 480;
@@ -588,7 +603,7 @@ async function grabFrame() {
     toast(e.message, "error");
   } finally {
     clearInterval(poll);
-    setTimeout(() => { progress.hidden = true; }, 500);   // let the final state show briefly
+    modal.hidden = true;
     btn.disabled = false;
     if (connState === ST.CONNECTED) startHeartbeat();
   }
@@ -606,6 +621,7 @@ async function init() {
   $("#raw-read").addEventListener("click", rawRead);
   $("#raw-write").addEventListener("click", rawWrite);
   $("#grab").addEventListener("click", grabFrame);
+  $("#grab-cancel").addEventListener("click", cancelGrab);
   $("#matrix-autocc").addEventListener("change", async (e) => {
     try { renderMatrix(await postJSON("/api/matrix/contrast_center", { on: e.target.checked })); }
     catch (err) { toast(err.message, "error"); loadMatrix(); }

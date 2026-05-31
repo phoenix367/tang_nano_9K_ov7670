@@ -118,3 +118,9 @@ def test_rgb565_to_rgba_primaries():
 
 def test_rgb565_to_rgb888_length():
     assert len(modbus_client.rgb565_to_rgb888([0, 1, 2])) == 9
+
+
+def test_grab_frame_cancel_raises(rtu):
+    c, _ = rtu
+    with pytest.raises(modbus_client.GrabCancelled):
+        c.grab_frame(should_cancel=lambda: True)

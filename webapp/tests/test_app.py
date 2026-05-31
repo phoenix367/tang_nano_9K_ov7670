@@ -211,3 +211,8 @@ def test_grab_status_after_grab(client):
     tc.post("/api/grab")
     r = tc.get("/api/grab/status").get_json()
     assert r["active"] is False and r["done"] == r["total"] == 640 * 480
+
+
+def test_grab_cancel_endpoint(client):
+    tc, _ = client
+    assert tc.post("/api/grab/cancel").get_json()["ok"] is True

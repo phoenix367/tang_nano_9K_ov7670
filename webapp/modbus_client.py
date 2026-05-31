@@ -45,6 +45,10 @@ class CRCError(ValueError):
     """A response with a bad CRC (transient — worth retrying)."""
 
 
+class GrabCancelled(Exception):
+    """A frame grab was aborted via its should_cancel callback."""
+
+
 class ModbusError(Exception):
     """A Modbus exception response (function code | 0x80)."""
 
@@ -170,17 +174,24 @@ class ModbusRTU:
         """True while a grab is still capturing into ch1."""
         return bool(self.read_holding(REG_GRAB, 1)[0] & 0x01)
 
-    def grab_frame(self, progress=None, timeout=3.0):
+    def grab_frame(self, progress=None, timeout=3.0, should_cancel=None):
         """Capture a fresh camera frame into ch1 and stream it to the host.
 
         Arms the grab, waits for it to finish, rewinds the stream pointer, then
         pulls all FRAME_PIXELS pixels with back-to-back 125-register FC03 reads.
         Returns a list of FRAME_PIXELS RGB565 ints in raster order. `progress`,
         if given, is called as progress(done, total) after each chunk.
+        `should_cancel`, if given, is polled before each step; when it returns
+        true the grab raises GrabCancelled (the partial read is discarded).
         """
+        def cancelled():
+            return should_cancel is not None and should_cancel()
+
         self.write_single(REG_GRAB, 1)              # arm
         deadline = time.monotonic() + timeout
         while self.grab_busy():
+            if cancelled():
+                raise GrabCancelled()
             if time.monotonic() > deadline:
                 raise TimeoutError("frame grab did not complete")
             time.sleep(0.002)
@@ -188,6 +199,8 @@ class ModbusRTU:
         self.write_single(REG_STREAM, 1)            # rewind to pixel 0
         pix = []
         while len(pix) < FRAME_PIXELS:
+            if cancelled():
+                raise GrabCancelled()
             n = min(125, FRAME_PIXELS - len(pix))
             pix.extend(self.read_holding(STREAM_BASE, n))
             if progress:

@@ -113,10 +113,6 @@
         </div>
       </div>
       <div id="grab-status" class="status">Grab a 640&times;480 frame from PSRAM channel&nbsp;1.</div>
-      <div id="grab-progress" class="progress" hidden>
-        <div id="grab-progress-bar" class="progress-bar"></div>
-        <span id="grab-progress-text" class="progress-text"></span>
-      </div>
       <div class="capture-body">
         <canvas id="grab-canvas" width="640" height="480"></canvas>
       </div>
@@ -124,6 +120,19 @@
         then streams all 640&times;480 RGB565 pixels back over Modbus FC03
         (~10&nbsp;s at 1&nbsp;Mbaud). The bus is busy for the whole download.</p>
     </section>
+  </div>
+
+  <div id="grab-modal" class="modal" hidden>
+    <div class="modal-card">
+      <div class="modal-title">Downloading frame…</div>
+      <div class="progress">
+        <div id="grab-progress-bar" class="progress-bar"></div>
+        <span id="grab-progress-text" class="progress-text"></span>
+      </div>
+      <div class="modal-actions">
+        <button id="grab-cancel" class="danger">Cancel</button>
+      </div>
+    </div>
   </div>
 
   <div id="toast" class="toast" hidden></div>
