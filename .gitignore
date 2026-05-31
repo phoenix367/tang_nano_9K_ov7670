@@ -3,4 +3,6 @@ impl/
 *.user
 src/platform_config.vh
 sim/Testing/
+.venv/
+__pycache__/
 

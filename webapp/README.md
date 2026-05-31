@@ -1,0 +1,57 @@
+# OV7670 Modbus control web app
+
+A small Flask web app to control the OV7670 camera on the Tang Nano 9K over the
+Modbus RTU bridge (FT2232H channel-B UART, 9600 8-E-1, slave id 7). It exposes
+the camera's registers through the FPGA's `modbus_rtu_slave` (Direct 1:1
+mapping: holding-register address = OV7670 register number), so every control
+change is a live SCCB write on the device.
+
+Features:
+
+- **Pick a serial port** (auto-detected, plus the project's `/dev/ttyGowin`
+  symlink) and connect; the connect step sanity-reads the Product ID.
+- **Tabbed UI** once connected: a **Basic controls** tab (identity, controls,
+  raw register access) and a **Color** tab (gamma curve + color matrix).
+- **Read camera settings** — identity registers (PID/VER/MIDH/MIDL) and the
+  decoded value of every control.
+- **Change specific controls** — brightness, contrast, gain, exposure, the
+  AGC/AWB/AEC auto modes, mirror/flip, negative, night mode, gamma correction
+  (on/off + a gamma-curve slider that generates SLOP + GAM1..GAM15 from one
+  exponent), and the test pattern selector. Bit-field controls are applied
+  read-modify-write.
+- **Gamma curve block** — enable toggle + a gamma-exponent slider, an SVG plot
+  of the live curve, and the SLOP/GAM register values.
+- **Color matrix block** — the 2×3 chroma matrix (MTX1..6 + MTXS) as a signed
+  heatmap grid with per-cell sliders, an auto-contrast toggle, and before→after
+  reference color swatches.
+- **Raw register access** — read/write any OV7670 register by address.
+
+## Run
+
+```bash
+pip install -r webapp/requirements.txt
+python webapp/app.py
+# open http://127.0.0.1:5000
+```
+
+The device node must be readable/writable by your user. The project's udev rule
+(`udev/99-gowin-ft2232h.rules`) makes `/dev/ttyGowin` world rw; otherwise run as
+a user in the `dialout` group or pick the right `/dev/ttyUSB*`.
+
+## Layout
+
+| File | Purpose |
+|------|---------|
+| `app.py` | Flask app + REST API (`/api/ports`, `/api/connect`, `/api/settings`, `/api/control`, `/api/raw`). |
+| `modbus_client.py` | Modbus RTU master over pyserial (CRC-16 + FC03/FC06). |
+| `ov7670.py` | Register map + declarative control model (matches `src/ov7670_regs.vh`). |
+| `templates/index.html`, `static/` | Single-page UI (vanilla JS). |
+
+## Notes
+
+- The bridge is single-master: the app keeps one serial connection, serialized
+  with a lock. Run a single instance.
+- An FC03 read burst is capped at ~13 registers by the slave's `MAX_FRAME`; the
+  app reads the settings registers individually, well under that.
+- Writing COM7 (`0x12`) with the reset bit set will reset the camera; the curated
+  controls avoid it, but the raw panel does not guard against it.
