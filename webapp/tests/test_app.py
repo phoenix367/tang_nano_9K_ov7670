@@ -180,3 +180,20 @@ def test_termios_error_returns_503(client):
     r = tc.get("/api/settings")
     assert r.status_code == 503                       # not a 500 crash
     assert tc.get("/api/state").get_json()["connected"] is False
+
+
+# ----------------------------------------------------------------- frame grab
+def test_grab_route(client):
+    tc, _ = client
+    _connect(tc)
+    r = tc.post("/api/grab")
+    assert r.status_code == 200
+    assert r.headers["X-Frame-Width"] == "640"
+    assert r.headers["X-Frame-Height"] == "480"
+    assert len(r.data) == 640 * 480 * 4          # RGBA
+    assert r.data[0:4] == bytes([0, 0, 0, 255])  # fake pixel 0 = 0x0000 -> black
+
+
+def test_grab_route_not_connected(client):
+    tc, _ = client
+    assert tc.post("/api/grab").status_code == 400

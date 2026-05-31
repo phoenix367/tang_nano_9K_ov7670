@@ -191,3 +191,13 @@ label.inline { flex-direction: row; align-items: center; gap: 6px; color: var(--
 }
 .toast.ok { border-color: var(--ok); }
 .toast.error { border-color: var(--bad); color: var(--bad); }
+
+/* ---- frame capture ---- */
+.capture-body { margin-top: 12px; display: flex; justify-content: center; }
+#grab-canvas {
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-2);
+  image-rendering: pixelated;
+}

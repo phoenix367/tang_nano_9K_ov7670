@@ -8,8 +8,18 @@ scripts/modbus_test.py; only pyserial is required.
 """
 
 import struct
+import time
 
 import serial  # pyserial
+
+# Reserved bridge registers above the OV7670 0x00..0xC9 range (see
+# src/modbus_cam_backend.sv). The frame-grab feature captures a camera frame
+# into PSRAM channel 1 and streams it back over FC03.
+REG_GRAB    = 0x00F3   # write 1 = arm a grab; read bit0 = busy, bit1 = ch1 calibrated
+REG_STREAM  = 0x00F8   # write = rewind the download stream to pixel 0
+STREAM_BASE = 0x1000   # any FC03 read >= here returns the next frame pixel(s)
+FRAME_W, FRAME_H = 640, 480
+FRAME_PIXELS = FRAME_W * FRAME_H
 
 # pyserial's low-level POSIX calls (tcflush/tcdrain in reset_input_buffer etc.)
 # raise termios.error on a vanished port, which is NOT an OSError subclass and
@@ -154,3 +164,67 @@ class ModbusRTU:
     def write_reg(self, addr, value):
         """Write a single OV7670 register (low byte is what reaches SCCB)."""
         self.write_single(addr, value & 0xFF)
+
+    # ---- frame grab (capture into PSRAM ch1, then stream over FC03) ----------
+    def grab_busy(self):
+        """True while a grab is still capturing into ch1."""
+        return bool(self.read_holding(REG_GRAB, 1)[0] & 0x01)
+
+    def grab_frame(self, progress=None, timeout=3.0):
+        """Capture a fresh camera frame into ch1 and stream it to the host.
+
+        Arms the grab, waits for it to finish, rewinds the stream pointer, then
+        pulls all FRAME_PIXELS pixels with back-to-back 125-register FC03 reads.
+        Returns a list of FRAME_PIXELS RGB565 ints in raster order. `progress`,
+        if given, is called as progress(done, total) after each chunk.
+        """
+        self.write_single(REG_GRAB, 1)              # arm
+        deadline = time.monotonic() + timeout
+        while self.grab_busy():
+            if time.monotonic() > deadline:
+                raise TimeoutError("frame grab did not complete")
+            time.sleep(0.002)
+
+        self.write_single(REG_STREAM, 1)            # rewind to pixel 0
+        pix = []
+        while len(pix) < FRAME_PIXELS:
+            n = min(125, FRAME_PIXELS - len(pix))
+            pix.extend(self.read_holding(STREAM_BASE, n))
+            if progress:
+                progress(len(pix), FRAME_PIXELS)
+        return pix
+
+
+def rgb565_to_rgb888(pixels):
+    """Convert an iterable of RGB565 ints to a flat bytes() of RGB888 triples."""
+    out = bytearray(len(pixels) * 3)
+    for i, p in enumerate(pixels):
+        r = (p >> 11) & 0x1F
+        g = (p >> 5) & 0x3F
+        b = p & 0x1F
+        out[3 * i]     = (r * 527 + 23) >> 6     # 5-bit -> 8-bit
+        out[3 * i + 1] = (g * 259 + 33) >> 6     # 6-bit -> 8-bit
+        out[3 * i + 2] = (b * 527 + 23) >> 6
+    return bytes(out)
+
+
+def rgb565_to_rgba(pixels):
+    """Convert RGB565 ints to a flat bytes() of RGBA quads (alpha = 255), ready
+    for a browser ImageData/putImageData draw."""
+    out = bytearray(len(pixels) * 4)
+    for i, p in enumerate(pixels):
+        r = (p >> 11) & 0x1F
+        g = (p >> 5) & 0x3F
+        b = p & 0x1F
+        out[4 * i]     = (r * 527 + 23) >> 6
+        out[4 * i + 1] = (g * 259 + 33) >> 6
+        out[4 * i + 2] = (b * 527 + 23) >> 6
+        out[4 * i + 3] = 0xFF
+    return bytes(out)
+
+
+def write_ppm(path, pixels, width=FRAME_W, height=FRAME_H):
+    """Write RGB565 `pixels` to a binary PPM (P6) file."""
+    with open(path, "wb") as f:
+        f.write(b"P6\n%d %d\n255\n" % (width, height))
+        f.write(rgb565_to_rgb888(pixels[:width * height]))

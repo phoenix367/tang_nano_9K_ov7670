@@ -42,6 +42,11 @@ module VideoController
       output reg [3:0] data_mask,
       output error,
 
+      // High while a camera frame is being written to PSRAM (start..done of one
+      // FrameUploader pass) — lets a ch1 grab tee the ch0 write stream for one
+      // complete frame.
+      output grab_active,
+
       // Load queue interface
       output load_clk_o,
       output load_read_rdy,
@@ -149,6 +154,16 @@ reg buffer_write_finalize = 1'b0;
 
 assign shared_req = {data_read_req, data_write_req, consumer_req, producer_req};
 assign store_clk_o = clk;
+
+// frame-upload-in-progress flag for the ch1 grab (set at upload start, cleared
+// when the FrameUploader signals the frame is done)
+reg up_active;
+always @(posedge clk or negedge rst_n) begin
+    if (!rst_n)                  up_active <= `WRAP_SIM(#1) 1'b0;
+    else if (uploading_finished) up_active <= `WRAP_SIM(#1) 1'b0;
+    else if (start_uploading)    up_active <= `WRAP_SIM(#1) 1'b1;
+end
+assign grab_active = up_active;
 
 assign cmd = (mem_wr_en) ? 1'b1 : 1'b0;
 assign cmd_en = (mem_wr_en | mem_rd_en) ? 1'b1 : 1'b0;

@@ -45,7 +45,7 @@ def test_write_takes_low_byte_only(rtu):
 def test_illegal_address_raises_modbus_exception(rtu):
     c, _ = rtu
     with pytest.raises(ModbusError) as ei:
-        c.read_holding(0xF3, 1)                 # 243, past reg_count
+        c.read_holding(0x1100, 1)               # past REG_COUNT (above the stream band)
     assert ei.value.code == 0x02
 
 
@@ -91,3 +91,30 @@ def test_serial_oserror_propagates(rtu):
     slave.fail_on_io = OSError("device gone")
     with pytest.raises(OSError):
         c.read_reg(0x0A)
+
+
+# ----------------------------------------------------- frame grab + conversion
+def test_grab_frame_pattern(rtu):
+    c, _ = rtu
+    pix = c.grab_frame()
+    assert len(pix) == modbus_client.FRAME_PIXELS
+    # the fake serves pixel i = i & 0xFFFF, in raster order
+    assert pix[0] == 0 and pix[1] == 1 and pix[125] == 125
+    assert pix[-1] == (modbus_client.FRAME_PIXELS - 1) & 0xFFFF
+
+
+def test_grab_frame_rewinds_each_time(rtu):
+    c, _ = rtu
+    assert c.grab_frame() == c.grab_frame()      # 0xF8 rewind -> identical frames
+
+
+def test_rgb565_to_rgba_primaries():
+    assert modbus_client.rgb565_to_rgba([0xFFFF]) == bytes([255, 255, 255, 255])
+    assert modbus_client.rgb565_to_rgba([0x0000]) == bytes([0, 0, 0, 255])
+    assert modbus_client.rgb565_to_rgba([0xF800]) == bytes([255, 0, 0, 255])
+    assert modbus_client.rgb565_to_rgba([0x07E0]) == bytes([0, 255, 0, 255])
+    assert modbus_client.rgb565_to_rgba([0x001F]) == bytes([0, 0, 255, 255])
+
+
+def test_rgb565_to_rgb888_length():
+    assert len(modbus_client.rgb565_to_rgb888([0, 1, 2])) == 9

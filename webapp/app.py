@@ -14,10 +14,11 @@ Run:
 import os
 import threading
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template, request
 
 import ov7670
-from modbus_client import ModbusError, ModbusRTU
+from modbus_client import (FRAME_H, FRAME_W, ModbusError, ModbusRTU,
+                           rgb565_to_rgba)
 
 try:
     from serial.tools import list_ports
@@ -336,6 +337,26 @@ def api_matrix_contrast_center():
         except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError) as e:
             return _classify(e)
     return jsonify(payload)
+
+
+@app.route("/api/grab", methods=["POST"])
+def api_grab():
+    """Capture a frame into ch1 and stream it back as raw RGBA for a canvas draw.
+
+    Holds the bus lock for the whole ~10 s download (single physical resource),
+    so the heartbeat just waits its turn. The body is FRAME_W*FRAME_H*4 bytes;
+    width/height ship in headers so the client sizes its ImageData."""
+    with _lock:
+        try:
+            client = _require_client()
+            pixels = client.grab_frame()
+        except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError) as e:
+            return _classify(e)
+    body = rgb565_to_rgba(pixels)
+    resp = Response(body, mimetype="application/octet-stream")
+    resp.headers["X-Frame-Width"] = str(FRAME_W)
+    resp.headers["X-Frame-Height"] = str(FRAME_H)
+    return resp
 
 
 @app.route("/api/raw", methods=["GET", "POST"])

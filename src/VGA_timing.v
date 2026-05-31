@@ -44,15 +44,13 @@ module VGA_timing
     output[1:0]           O_psram_reset_n,
     inout [15:0]           IO_psram_dq,
     output[1:0]           O_psram_cs_n,
-    // channel-1 PSRAM bring-up loopback (sys_clk domain)
-    input                  ch1_test_req,
-    output                 ch1_test_busy,
-    output [31:0]          ch1_test_rdata,
-    output                 ch1_test_match,
-    output                 ch1_test_done,
-    output                 ch1_test_timeout,
-    output [2:0]           ch1_test_state,
-    output                 ch1_test_calib
+    // channel-1 frame grab / readout (sys_clk domain)
+    input                  grab_arm,
+    input                  grab_rd_req,
+    input  [20:0]          grab_rd_addr,
+    output                 grab_busy,
+    output [255:0]         grab_rd_data,
+    output                 grab_calib
 );
 // Logger initialization
 `ifdef __ICARUS__
@@ -127,6 +125,8 @@ module VGA_timing
 
     // Channel-1 PSRAM access engine — drives the ch1 IP pins directly (no
     // arbiter; ch1 is exclusively this module's). Phase B: a loopback self-test.
+    wire grab_active;   // a camera frame is being written to ch0 (from VideoController)
+
     psram_ch1 #(.MEMORY_BURST(32)) ch1_engine (
         .fb_clk(clk_2),
         .fb_rst_n(nRST),
@@ -138,16 +138,18 @@ module VGA_timing
         .data_mask1(data_mask_1),
         .rd_data1(rd_data1),
         .rd_data_valid1(rd_data_valid_1),
+        // tee the (pipelined) ch0 write stream for the grab-mirror
+        .tap_wr_cmd(cmd_en_0_p & cmd_0_p),
+        .tap_wr_data(wr_data0_p),
+        .grab_active(grab_active),
         .sclk(sys_clk),
         .srst_n(nRST),
-        .test_req(ch1_test_req),
-        .test_busy(ch1_test_busy),
-        .test_rdata(ch1_test_rdata),
-        .test_match(ch1_test_match),
-        .test_done(ch1_test_done),
-        .test_timeout(ch1_test_timeout),
-        .test_state(ch1_test_state),
-        .test_calib(ch1_test_calib)
+        .grab_arm(grab_arm),
+        .rd_req(grab_rd_req),
+        .rd_addr(grab_rd_addr),
+        .busy(grab_busy),
+        .rd_data_o(grab_rd_data),
+        .ch1_calib(grab_calib)
     );
 
     Video_frame_buffer frame_buffer(
@@ -204,6 +206,7 @@ VideoController #(
     .rd_data_valid(rd_data_valid_0),
     .error(error0),
     .data_mask(data_mask_0),
+    .grab_active(grab_active),
 
     .load_clk_o(mem_load_clk),
     .load_read_rdy(load_read_rdy),

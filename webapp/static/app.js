@@ -108,6 +108,7 @@ function enterState(next, info) {
   } else {
     $("#tab-basic").hidden = true;
     $("#tab-color").hidden = true;
+    $("#tab-capture").hidden = true;
   }
 
   if (next === ST.RECONNECTING) {
@@ -132,7 +133,7 @@ function connStatus(msg, cls) {
 
 function showTab(name) {
   currentTab = name;
-  for (const t of ["basic", "color"]) $("#tab-" + t).hidden = (t !== name);
+  for (const t of ["basic", "color", "capture"]) $("#tab-" + t).hidden = (t !== name);
   document.querySelectorAll(".tab").forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === name);
   });
@@ -533,6 +534,46 @@ async function rawWrite() {
   } catch (e) { toast(e.message, "error"); }
 }
 
+// ------------------------------------------------------------- frame capture
+async function grabFrame() {
+  const btn = $("#grab"), status = $("#grab-status"), save = $("#grab-save");
+  btn.disabled = true;
+  save.hidden = true;
+  status.textContent = "Capturing & downloading… (~10 s, the bus is busy)";
+  status.className = "status";
+  // the download holds the bus for ~10 s; pause the heartbeat so health probes
+  // don't pile up behind it on the server-side lock.
+  stopHeartbeat();
+  const t0 = performance.now();
+  try {
+    const res = await fetch("/api/grab", { method: "POST" });
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try { const j = await res.json(); if (j.error) msg = j.error; } catch { /* binary/none */ }
+      throw new Error(msg);
+    }
+    const w = Number(res.headers.get("X-Frame-Width")) || 640;
+    const h = Number(res.headers.get("X-Frame-Height")) || 480;
+    const buf = new Uint8ClampedArray(await res.arrayBuffer());
+    const canvas = $("#grab-canvas");
+    canvas.width = w; canvas.height = h;
+    canvas.getContext("2d").putImageData(new ImageData(buf, w, h), 0, 0);
+    const secs = ((performance.now() - t0) / 1000).toFixed(1);
+    status.textContent = `Captured ${w}×${h} in ${secs}s.`;
+    status.className = "status connected";
+    save.href = canvas.toDataURL("image/png");
+    save.hidden = false;
+    toast("Frame captured");
+  } catch (e) {
+    status.textContent = "Grab failed: " + e.message;
+    status.className = "status error";
+    toast(e.message, "error");
+  } finally {
+    btn.disabled = false;
+    if (connState === ST.CONNECTED) startHeartbeat();
+  }
+}
+
 // -------------------------------------------------------------------- init
 async function init() {
   $("#connect").addEventListener("click", connect);
@@ -544,6 +585,7 @@ async function init() {
   });
   $("#raw-read").addEventListener("click", rawRead);
   $("#raw-write").addEventListener("click", rawWrite);
+  $("#grab").addEventListener("click", grabFrame);
   $("#matrix-autocc").addEventListener("change", async (e) => {
     try { renderMatrix(await postJSON("/api/matrix/contrast_center", { on: e.target.checked })); }
     catch (err) { toast(err.message, "error"); loadMatrix(); }

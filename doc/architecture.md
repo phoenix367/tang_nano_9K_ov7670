@@ -278,7 +278,11 @@ shape of the connections.
 PSRAM (`O_psram_*` / `IO_psram_*`) is routed to the GW1NR-9C's
 on-package HyperRAM through the Gowin
 `psram_memory_interface_hs_2ch` IP — its pin assignments come from
-the IP, not the user `.cst`.
+the IP, not the user `.cst`. Channel 0 is the live video frame buffer;
+**channel 1** is owned by `src/psram_ch1.sv`, which on request *tees* the camera
+write stream into ch1 to capture a full frame and serves it back as 8-word burst
+reads. `modbus_cam_backend.sv` streams that frame to the host over Modbus FC03
+(stream band `≥ 0x1000`) — see [host_control.md](host_control.md#frame-grab-and-download).
 
 ## Source-tree organization
 

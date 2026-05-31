@@ -36,6 +36,7 @@
   <nav class="tabs" id="tabs" hidden>
     <button class="tab active" data-tab="basic">Basic controls</button>
     <button class="tab" data-tab="color">Color</button>
+    <button class="tab" data-tab="capture">Capture</button>
   </nav>
 
   <div class="tab-content" id="tab-basic" hidden>
@@ -100,6 +101,25 @@
         (BT.601 luma + the generated Cr/Cb) — approximate, exact at the default.</p>
     </section>
     </div>
+  </div>
+
+  <div class="tab-content" id="tab-capture" hidden>
+    <section class="panel" id="capture-panel">
+      <div class="row between">
+        <h2>Frame capture</h2>
+        <div class="row">
+          <button id="grab" class="primary">Grab frame</button>
+          <a id="grab-save" class="ghost" download="frame.png" hidden>Save PNG</a>
+        </div>
+      </div>
+      <div id="grab-status" class="status">Grab a 640&times;480 frame from PSRAM channel&nbsp;1.</div>
+      <div class="capture-body">
+        <canvas id="grab-canvas" width="640" height="480"></canvas>
+      </div>
+      <p class="hint">The FPGA captures a fresh camera frame into PSRAM channel&nbsp;1,
+        then streams all 640&times;480 RGB565 pixels back over Modbus FC03
+        (~10&nbsp;s at 1&nbsp;Mbaud). The bus is busy for the whole download.</p>
+    </section>
   </div>
 
   <div id="toast" class="toast" hidden></div>

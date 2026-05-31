@@ -203,6 +203,17 @@ initial begin
                    resp[7]!==8'h33 || resp[8]!==8'h33)) begin
         logger.error(module_name, "FC10 read-back mismatch"); errors=errors+1; end
 
+    // 3c) read regs 0..5 (qty 6) -> exercises the BSRAM payload walk past the
+    //     written regs (0..2 = 1111/2222/3333), the zero gap (3,4), and reg5=BEEF.
+    req[0]=SLAVE; req[1]=8'h03; req[2]=8'h00; req[3]=8'h00; req[4]=8'h00; req[5]=8'h06;
+    txn(6, rn);
+    check("FC03 read regs0-5", rn, 17);   // addr,func,bc=12,12 data,2 crc
+    if (rn==17 && (resp[3]!==8'h11  || resp[4]!==8'h11  ||
+                   resp[7]!==8'h33  || resp[8]!==8'h33  ||
+                   resp[9]!==8'h00  || resp[10]!==8'h00 ||
+                   resp[13]!==8'hBE || resp[14]!==8'hEF)) begin
+        logger.error(module_name, "FC03 6-reg payload mismatch"); errors=errors+1; end
+
     // 4) illegal data address (reg 20 of 16) -> 0x83 0x02
     req[0]=SLAVE; req[1]=8'h03; req[2]=8'h00; req[3]=8'h14; req[4]=8'h00; req[5]=8'h01;
     txn(6, rn);

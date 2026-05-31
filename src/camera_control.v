@@ -48,7 +48,11 @@ module CameraControl_TOP (
 // is loaded undisturbed.
 // OV7670 register space 0x00..0xC9 plus the bridge's reserved status registers
 // (0xF0 magic, 0xF1/0xF2 uptime) so the host can detect a hard reset.
-localparam integer MODBUS_REGS = 'h100;
+// Register-address span the slave range-checks against. Covers the OV7670 map
+// (0x00..0xC9), the reserved status/grab registers (0xF0..0xF8), and the frame
+// download stream band (>= 0x1000, served by modbus_cam_backend), so an FC03 of
+// up to 127 pixels starting at 0x1000 passes the bounds check.
+localparam integer MODBUS_REGS = 'h1100;
 
 wire [7:0] uart_rx_data;
 wire       uart_rx_valid, uart_rx_perr;
@@ -64,13 +68,12 @@ wire [7:0]  be_din;
 wire        be_busy;
 
 // channel-1 PSRAM bring-up loopback (Modbus backend <-> VGA_timing/psram_ch1)
-wire        ch1_test_req;
-wire        ch1_test_busy;
-wire [31:0] ch1_test_rdata;
-wire        ch1_test_match;
-wire        ch1_test_timeout;
-wire [2:0]  ch1_test_state;
-wire        ch1_test_calib;
+wire        grab_arm;
+wire        grab_rd_req;
+wire [20:0] grab_rd_addr;
+wire        grab_busy;
+wire [255:0] grab_rd_data;
+wire        grab_calib;
 
 uart #(
     .CLK_FREQ('d27_000_000),
@@ -94,7 +97,8 @@ modbus_rtu_slave #(
     .BAUD('d1_000_000),
     .SLAVE_ADDR(8'd7),
     .REG_COUNT(MODBUS_REGS),
-    .MAX_FRAME(32),         // caps a read burst at 13 regs; keeps the buffers small
+    .MAX_FRAME(32),         // request buffer: FC10 camera writes stay small
+    .MAX_QTY(127),          // FC03 download burst: protocol max, payload in BSRAM
     .EXTERNAL_BACKEND(1)
 ) modbus_inst (
     .clk(sys_clk),
@@ -135,13 +139,12 @@ modbus_cam_backend cam_bridge (
     .data_valid(i2c_data_valid),
     .i2c_dout(i2c_data_out),
     .busy(be_busy),
-    .ch1_test_req(ch1_test_req),
-    .ch1_test_busy(ch1_test_busy),
-    .ch1_test_rdata(ch1_test_rdata),
-    .ch1_test_match(ch1_test_match),
-    .ch1_test_timeout(ch1_test_timeout),
-    .ch1_test_state(ch1_test_state),
-    .ch1_test_calib(ch1_test_calib)
+    .grab_arm(grab_arm),
+    .grab_rd_req(grab_rd_req),
+    .grab_rd_addr(grab_rd_addr),
+    .grab_busy(grab_busy),
+    .grab_rd_data(grab_rd_data),
+    .grab_calib(grab_calib)
 );
 
 // ---- UART activity blink + host-presence timeout ----
@@ -289,14 +292,12 @@ VGA_timing	VGA_timing_inst(
     .O_psram_reset_n(O_psram_reset_n), 
     .IO_psram_dq(IO_psram_dq),
     .O_psram_cs_n(O_psram_cs_n),
-    .ch1_test_req(ch1_test_req),
-    .ch1_test_busy(ch1_test_busy),
-    .ch1_test_rdata(ch1_test_rdata),
-    .ch1_test_match(ch1_test_match),
-    .ch1_test_done(),
-    .ch1_test_timeout(ch1_test_timeout),
-    .ch1_test_state(ch1_test_state),
-    .ch1_test_calib(ch1_test_calib)
+    .grab_arm(grab_arm),
+    .grab_rd_req(grab_rd_req),
+    .grab_rd_addr(grab_rd_addr),
+    .grab_busy(grab_busy),
+    .grab_rd_data(grab_rd_data),
+    .grab_calib(grab_calib)
 );
 
 i2c_master_top i2c_master(
