@@ -23,30 +23,27 @@ grab), and the high-level [architecture.md](architecture.md).
 
 ## Modules inside `VGA_timing`
 
-```
-                          VGA_timing
- ┌───────────────────────────────────────────────────────────────────────┐
- │                                                                         │
- │  OV7670 ─► CamPixelProcessor ─►(load queue)─► VideoController ──────┐    │
- │  (PixelClk)  pack RGB565        FrameUploader  │  ch0 brains:       │    │
- │                                                │  arbiter + 2 FSMs  │    │
- │                                                │  + scalers         │    │
- │                                  (store queue) │                    │    │
- │                          FIFO_cam ◄────────────┘                    │    │
- │                          (async)                                    │    │
- │                             │ lcd_read_clk                          │    │
- │                             ▼                                        │    │
- │                       LCD_Controller ─► LCD panel (DE/HSYNC/VSYNC/RGB)│   │
- │                       (screen_clk)                                   │    │
- │                                                                ch0 pins   │
- │   cmd_0/cmd_en_0/addr0/wr_data0  ──►  [1-cycle pipeline reg]  ──►  ┌──┴──┐ │
- │                                        cmd_0_p … wr_data0_p        │     │ │
- │                                              │ (tee)               │ Video_frame_buffer
- │                                              ▼                     │ = psram_…_2ch IP
- │   grab_arm/grab_rd_* ──►  psram_ch1  ──────────────────────────►   │ (HyperRAM PHY)
- │   (from Modbus, sys_clk)  ch1 engine: grab-mirror + burst reads    │     │ │
- │                           ch1 pins ───────────────────────────►   └─────┘ │
- └───────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    OV["OV7670<br/>(PixelClk)"]
+    CPP["CamPixelProcessor<br/>pack RGB565"]
+    VC["VideoController<br/>ch0 brains: arbiter + 2 FSMs + scalers"]
+    SF["FIFO_cam<br/>store queue (async)"]
+    LCDC["LCD_Controller<br/>(screen_clk)"]
+    LCD["LCD panel<br/>DE/HSYNC/VSYNC/RGB"]
+    PIPE["ch0 1-cycle pipeline reg<br/>cmd_0_p … wr_data0_p"]
+    PHY["Video_frame_buffer<br/>psram_…_2ch IP (HyperRAM PHY)"]
+    CH1["psram_ch1<br/>ch1 engine: grab-mirror + burst reads"]
+    MB["grab_arm / grab_rd_*<br/>(from Modbus, sys_clk)"]
+
+    subgraph VGA_timing
+        OV --> CPP -->|load queue| VC
+        VC -->|store queue| SF -->|lcd_read_clk| LCDC --> LCD
+        VC -->|"ch0 cmd/cmd_en/addr/wr_data"| PIPE --> PHY
+        PIPE -. tee ch0 writes .-> CH1
+        MB --> CH1
+        CH1 -->|ch1 pins| PHY
+    end
 ```
 
 - **`Video_frame_buffer`** — the Gowin `psram_memory_interface_hs_2ch` IP, the
@@ -126,12 +123,11 @@ index to its PSRAM base.
 The name follows the memory's perspective — `FrameUploader` uploads pixel data
 *into* PSRAM:
 
-```
-OV7670 ──PixelClk──► CamPixelProcessor ──► load queue ──► FrameUploader
-                       (pack RGB565)                         │  request DATA_WRITER grant (idx 2)
-                                                             ▼  write 32-byte bursts (8 words = 16 px),
-                                                          ch0 PSRAM   addr += 16, into the locked
-                                                          (pipelined)  write buffer
+```mermaid
+flowchart LR
+    OV["OV7670"] -->|PixelClk| CPP["CamPixelProcessor<br/>pack RGB565"]
+    CPP -->|load queue| FU["FrameUploader"]
+    FU -->|"DATA_WRITER grant (idx 2)<br/>32-byte bursts (16 px), addr += 16"| PSRAM["ch0 PSRAM<br/>locked write buffer"]
 ```
 
 `FrameUploader` writes whole 32-byte HyperRAM bursts (16 RGB565 pixels) and
@@ -149,12 +145,13 @@ ping-pong double-buffered row prefetch cache that owns the PSRAM reads and the
 stride). It prefetches the next row while the current one drains, so reads
 overlap the LCD-paced consumption.
 
-```
-ch0 PSRAM ──► DownloadRowCache ──► FrameDownloader ──► HorizontalResizer ──► store queue
- (read bursts) (ping-pong rows,      (drain)            (pillarbox borders +    (FIFO_cam)
-               vertical downscale)                       horizontal downscale)      │
-                                                                                    ▼
-                                                                             LCD_Controller ─► panel
+```mermaid
+flowchart LR
+    PSRAM["ch0 PSRAM"] -->|read bursts| DRC["DownloadRowCache<br/>ping-pong rows + vertical downscale"]
+    DRC --> FD["FrameDownloader<br/>drain"]
+    FD --> HR["HorizontalResizer<br/>pillarbox borders + horizontal downscale"]
+    HR --> SF["store queue<br/>(FIFO_cam)"]
+    SF --> LCDC["LCD_Controller"] --> LCD["panel"]
 ```
 
 `HorizontalResizer` adds the pillarbox borders and the horizontal downscale on
@@ -175,12 +172,11 @@ There is **no copy through the arbiter** (all four arbiter slots are already in
 use). Instead `psram_ch1` *tees* the channel-0 write stream and mirrors it into
 channel 1:
 
-```
-ch0 write (pipelined): cmd_en_0_p & cmd_0_p, wr_data0_p     grab_active (from VideoController)
-                         │                                     │ brackets one upload pass
-                         ▼                                     ▼
-                    psram_ch1 grab-mirror  ──►  ch1 PSRAM, contiguous from addr 0
-                    (S_GWAIT → S_GCAP → S_GDRAIN)              (addr += 16 per burst)
+```mermaid
+flowchart LR
+    W["ch0 write (pipelined)<br/>cmd_en_0_p & cmd_0_p, wr_data0_p"] --> M["psram_ch1 grab-mirror<br/>S_GWAIT → S_GCAP → S_GDRAIN"]
+    GA["grab_active<br/>brackets one upload pass"] --> M
+    M -->|"addr += 16 per burst"| CH1["ch1 PSRAM<br/>contiguous from addr 0"]
 ```
 
 - A host write of `1` to register `0xF3` arms the grab. `psram_ch1` waits in
@@ -194,13 +190,13 @@ ch0 write (pipelined): cmd_en_0_p & cmd_0_p, wr_data0_p     grab_active (from Vi
 
 ### Download — burst reads streamed over Modbus
 
-```
-host FC03 (≥0x1000) ─► modbus_cam_backend ─► grab_rd_req / grab_rd_addr ─► psram_ch1
-                          (stream FSM)                                       (S_RCMD→S_RDAT)
-                                                                                  │ read one
-                                                                                  ▼ 8-word burst
-   host ◄── UART ◄── modbus_rtu_slave ◄── be_rdata (one pixel) ◄── backend ◄── grab_rd_data[255:0]
-            (pay_ram BSRAM packs 125 px/FC03)                   (serves 16 px/burst)
+```mermaid
+flowchart LR
+    H1["host: FC03 (≥0x1000)"] --> BE["modbus_cam_backend<br/>stream FSM"]
+    BE -->|"grab_rd_req / grab_rd_addr"| CH1["psram_ch1<br/>S_RCMD → S_RDAT"]
+    CH1 -->|"grab_rd_data[255:0]<br/>(8-word burst)"| BE
+    BE -->|"be_rdata (1 pixel,<br/>serves 16 px/burst)"| SL["modbus_rtu_slave<br/>pay_ram packs 125 px/FC03"]
+    SL -->|UART| H2["host"]
 ```
 
 `psram_ch1`'s read path (`S_RCMD → S_RDAT`) issues one ch1 read and collects all
@@ -215,16 +211,17 @@ registers `0xF4`–`0xF7` (it just returns word 0 of the addressed burst).
 
 ### `psram_ch1` state machine
 
-```
-        ┌────────────────────────── S_IDLE ──────────────────────────┐
-        │ grab_start (0xF3=1)              rd_start (stream / 0xF3=2)  │
-        ▼                                                  ▼          │
-     S_GWAIT ─ grab_active ↑ ─► S_GCAP ─ grab_active ↓ ─► S_GDRAIN ───┤
-   (await fresh    (mirror ch0 writes      (flush the tap, +5 cycles) │
-    frame start)    into ch1, addr+=16)                               │
-                                                                      │
-     S_RCMD ─► S_RDAT (collect 8 words → rd_burst_f) ─────────────────┘
-   (issue read)   (done toggle → CDC the 256-bit burst to sys_clk)
+```mermaid
+stateDiagram-v2
+    [*] --> S_IDLE
+    S_IDLE --> S_GWAIT: grab_start (0xF3=1)
+    S_IDLE --> S_RCMD: rd_start (stream / 0xF3=2)
+    S_GWAIT --> S_GCAP: grab_active ↑ (fresh frame start)
+    S_GCAP --> S_GCAP: mirror ch0 writes into ch1 (addr += 16)
+    S_GCAP --> S_GDRAIN: grab_active ↓
+    S_GDRAIN --> S_IDLE: flush the tap (+5 cycles)
+    S_RCMD --> S_RDAT: issue read
+    S_RDAT --> S_IDLE: collect 8 words → 256-bit burst (CDC to sys_clk)
 ```
 
 CDC between the `sys_clk` control side (Modbus) and the `fb_clk` PHY side uses

@@ -16,29 +16,22 @@ the backend drives, see [video_datapath.md](video_datapath.md).
 Everything here runs in the **27 MHz `sys_clk`** domain. Only `psram_ch1`
 crosses into the PSRAM `fb_clk` domain (handled internally by toggle CDCs).
 
-```
-   host PC (pyserial / web app, Modbus RTU @ 1 Mbaud 8-E-1)
-        │  USB
-   ┌────┴─────┐  FT2232H ch B
-   │  uart.sv │  byte layer (tx/rx, 8-E-1, parity)
-   └────┬─────┘
-        │ rx_data/rx_valid          tx_data/tx_start/tx_busy
-   ┌────┴──────────────────────────────────────────────┐
-   │            modbus_rtu_slave.sv                      │  RTU framing,
-   │   FC03 / FC06 / FC10, CRC-16, exceptions            │  CRC, FSM
-   │   response payload in BSRAM (pay_ram)               │
-   └────┬───────────────────────────────────────────────┘
-        │  be_* backend handshake (req/we/addr/wdata → ready/rdata)
-   ┌────┴───────────────────────────────────────────────┐
-   │            modbus_cam_backend.sv                     │  one access →
-   │   address decode → one of three actions:             │  one action
-   └──┬───────────────────┬───────────────────┬──────────┘
-      │ camera reg         │ reserved/status   │ stream pixel (≥0x1000)
-      │ (0x00..0xC9)       │ (0xF0..0xF8)      │ + grab arm (0xF3)
-      ▼                    ▼                   ▼
- i2c_control_fsm      (served inline,     grab_arm / grab_rd_* ──► VGA_timing
- → OV7670 (SCCB)       no bus access)                              └► psram_ch1
-                                                                      (PSRAM ch1)
+```mermaid
+flowchart TB
+    HOST["host PC<br/>pyserial / web app<br/>Modbus RTU @ 1 Mbaud 8-E-1"]
+    UART["uart.sv<br/>byte layer (8-E-1, parity)"]
+    SLAVE["modbus_rtu_slave.sv<br/>FC03 / FC06 / FC10<br/>CRC-16, exceptions<br/>response payload in BSRAM"]
+    BE["modbus_cam_backend.sv<br/>address decode → one of three actions"]
+    I2C["i2c_control_fsm → OV7670 (SCCB)"]
+    RES["served inline<br/>(no bus access)"]
+    CH1["grab_arm / grab_rd_* → VGA_timing<br/>→ psram_ch1 (PSRAM ch1)"]
+
+    HOST <-->|"USB / FT2232H ch B"| UART
+    UART <-->|"rx/tx bytes"| SLAVE
+    SLAVE <-->|"be_* handshake"| BE
+    BE -->|"camera reg 0x00..0xC9"| I2C
+    BE -->|"reserved/status 0xF0..0xF8"| RES
+    BE -->|"stream pixel ≥0x1000 / grab arm 0xF3"| CH1
 ```
 
 The init FSM inside `camera_control.v` owns the SCCB controller during power-on
@@ -82,32 +75,30 @@ be_req, be_we, be_addr, be_wdata   →   (backend)   →   be_ready, be_rdata
 
 ### State machine
 
-```
-        ┌─────────────────────────── S_DONE ◄──────────────────────────┐
-        │ (rearm RX)                                                    │
-        ▼                                                               │
-     S_RX ──t3.5 silence──► S_CHECK ──► S_DECIDE ─┬─ exception/echo ─┐  │
-   (collect bytes,         (latch       (shallow  │                  │  │
-    CRC on the fly)         fields,      mux on    │ FC03 read        │  │
-                            compute      flags)    ▼                  │  │
-                            bounds/                S_RD_REQ ◄────┐    │  │
-                            validity                  │          │    │  │
-                            flags)                    ▼ (be_*)   │    │  │
-                                                   S_RD_CAP ──────┘    │  │
-                                                   (capture be_rdata   │  │
-                                                    into pay_ram;      │  │
-                                                    loop qty regs)     │  │
-                                                       │ done          │  │
-                                          FC06/FC10     ▼              │  │
-                                          S_WR_REQ ─► S_WR_WAIT        │  │
-                                            ▲            │ (loop)      │  │
-                                            └────────────┘             │  │
-                                                       ▼               ▼  │
-                                                   S_TX_SETUP ─► S_TX_LOAD ─► S_TX_PEND ─► S_TX_WAIT
-                                                   (settle       (emit byte:    (wait UART     (byte sent,
-                                                    BSRAM read)   header FF /     accept)        tidx++) ──┘
-                                                                  payload BSRAM /
-                                                                  CRC)
+```mermaid
+stateDiagram-v2
+    [*] --> S_RX
+    S_RX --> S_CHECK: t3.5 silence (CRC on the fly)
+    S_CHECK --> S_DECIDE: latch fields, compute bounds
+    S_DECIDE --> S_RD_REQ: FC03 read
+    S_DECIDE --> S_WR_REQ: FC06 / FC10 write
+    S_DECIDE --> S_TX_SETUP: exception / echo
+    S_DECIDE --> S_DONE: broadcast / bad frame
+
+    S_RD_REQ --> S_RD_CAP: be_* read
+    S_RD_CAP --> S_RD_REQ: more registers
+    S_RD_CAP --> S_TX_SETUP: last reg (payload to pay_ram)
+
+    S_WR_REQ --> S_WR_WAIT: be_* write
+    S_WR_WAIT --> S_WR_REQ: more registers (FC10)
+    S_WR_WAIT --> S_TX_SETUP: done
+
+    S_TX_SETUP --> S_TX_LOAD: settle BSRAM read
+    S_TX_LOAD --> S_TX_PEND: emit byte (hdr FF / pay_ram / CRC)
+    S_TX_LOAD --> S_DONE: all bytes + CRC sent
+    S_TX_PEND --> S_TX_WAIT: UART accepted
+    S_TX_WAIT --> S_TX_SETUP: next byte (tidx++)
+    S_DONE --> S_RX: rearm
 ```
 
 **Two-stage decode (S_CHECK → S_DECIDE).** All the heavy arithmetic — the 16-bit
@@ -174,17 +165,21 @@ even during camera init:
 This is the [frame download](video_datapath.md#frame-grab-and-host-download)
 fast path. The backend keeps a stream pointer and a 256-bit burst buffer:
 
+```mermaid
+stateDiagram-v2
+    IDLE --> S_STRM: stream read (be_addr ≥ 0x1000)
+    S_STRM --> S_SERVE: burst already buffered
+    S_STRM --> S_FETCH0: need a new burst
+    S_FETCH0 --> S_FETCH1: pulse grab_rd_req @ s_baddr
+    S_FETCH1 --> S_FETCH2: grab_busy ↑ (accepted)
+    S_FETCH2 --> S_SERVE: grab_busy ↓, latch 256-bit burst
+    S_SERVE --> ACK: return pixel (lo then hi half), advance widx/half
+    ACK --> DRAIN: be_ready pulse
+    DRAIN --> IDLE: be_req dropped
 ```
- S_STRM ─ buffer holds this burst? ─yes─► S_SERVE
-   │ no                                      │ return the current 16-bit pixel
-   ▼                                         │ (low half then high half of each
- S_FETCH0  pulse grab_rd_req @ s_baddr       │  32-bit word); advance widx/half;
-   ▼                                         │ at end of an 8-word burst,
- S_FETCH1  wait grab_busy ↑ (accepted)       │ s_baddr += 16, mark buffer empty
-   ▼                                         ▼
- S_FETCH2  wait grab_busy ↓, latch the     ACK ─► DRAIN ─► IDLE
-           256-bit burst into s_burst         (be_ready pulse, wait be_req drop)
-```
+
+At the end of an 8-word burst the pointer advances (`s_baddr += 16`) and the
+buffer is marked empty, so the next pixel triggers a fresh `S_FETCH0`.
 
 Each `psram_ch1` read returns a full **8-word (16-pixel) burst**, so the backend
 only hits PSRAM once per 16 pixels and serves the rest from `s_burst`. An FC03 of
