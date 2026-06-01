@@ -109,6 +109,7 @@ function enterState(next, info) {
     $("#tab-basic").hidden = true;
     $("#tab-color").hidden = true;
     $("#tab-capture").hidden = true;
+    clearGrabCanvas();          // drop any grabbed frame from a prior session
   }
 
   if (next === ST.RECONNECTING) {
@@ -149,6 +150,7 @@ async function connect() {
     lastConn = cfg;
     lastUptime = null;
     statusUnsupportedNoted = false;
+    currentTab = "basic";       // a fresh connection lands on Basic controls
     enterState(ST.CONNECTED, info);
     renderControls();
     await loadSettings();
@@ -538,6 +540,15 @@ async function rawWrite() {
 function setGrabProgress(pct, label) {
   $("#grab-progress-bar").style.width = pct + "%";
   $("#grab-progress-text").textContent = label;
+}
+
+function clearGrabCanvas() {
+  const c = $("#grab-canvas");
+  if (c) c.getContext("2d").clearRect(0, 0, c.width, c.height);
+  $("#grab-save").hidden = true;
+  const st = $("#grab-status");
+  st.textContent = "Grab a 640×480 frame from PSRAM channel 1.";
+  st.className = "status";
 }
 
 async function pollGrabProgress() {
