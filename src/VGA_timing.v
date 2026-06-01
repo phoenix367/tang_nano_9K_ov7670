@@ -34,7 +34,7 @@ module VGA_timing
     input href,
     input [7:0] p_data,
     output LCD_CLK,
-    output reg debug_led,
+    output debug_led,
     input memory_clk,
     input pll_lock,
     input screen_clk,
@@ -59,7 +59,9 @@ module VGA_timing
 
     wire calib_1;
 
-    assign debug_led = ~(error0 || error1);
+    // debug_led is driven by the health watchdog instantiated at the end of this
+    // module: it blinks while the LCD, memory and camera subsystems are all
+    // active, and goes solid-on if any of them stalls.
 
     wire [20:0] addr0;
     wire [20:0] addr1;
@@ -373,4 +375,25 @@ VideoController #(
         .LCD_G(LCD_G),
         .LCD_R(LCD_R)
     );
+
+    // ---- health watchdog: blink debug_led while the LCD, memory and camera
+    // subsystems all show activity; hold it solid-on (active-low) if any hangs.
+    // The three heartbeats are on unrelated clock domains; the watchdog runs on
+    // sys_clk and synchronizes each internally.
+    wire wd_hang, wd_blink;
+    watchdog #(
+        .STARTUP(54_000_000),   // ~2 s grace at 27 MHz (reset / calib / first frame)
+        .TIMEOUT(13_500_000),   // ~0.5 s without a heartbeat = hang
+        .BLINK(23)              // ~1.6 Hz heartbeat
+    ) health_watchdog (
+        .clk(sys_clk),
+        .reset_n(nRST),
+        .beats({cam_vsync,                    // [2] OV7670 frame capture (vsync)
+                rd_data_valid_0 | cmd_en_0,   // [1] PSRAM / memory subsystem
+                LCD_VSYNC}),                  // [0] LCD rendering
+        .hang(wd_hang),
+        .blink(wd_blink)
+    );
+    assign debug_led = ~(wd_hang | wd_blink);   // active-low: solid on hang, else blink
+
 endmodule

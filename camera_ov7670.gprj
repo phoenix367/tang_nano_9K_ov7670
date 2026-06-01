@@ -55,6 +55,7 @@
         <File path="src/timescale.v" type="file.verilog" enable="1"/>
         <File path="src/modbus/uart.sv" type="file.verilog" enable="1"/>
         <File path="src/video_controller.sv" type="file.verilog" enable="1"/>
+        <File path="src/watchdog.sv" type="file.verilog" enable="1"/>
         <File path="src/camera_ov7670.cst" type="file.cst" enable="1"/>
         <File path="src/camera_control.sdc" type="file.sdc" enable="1"/>
         <File path="CMakeLists.txt" type="file.other" enable="1"/>

@@ -175,6 +175,9 @@ endforeach()
 # UART module test (src/modbus/uart.sv is not part of VIDEO_BUFFER_TEST_SOURCES).
 register_test(unit "uart/frame" "${SRC_FOLDER}/modbus/uart.sv")
 
+# Health watchdog unit test (standalone module).
+register_test(unit "watchdog/health" "${SRC_FOLDER}/watchdog.sv")
+
 # Modbus RTU slave test (UART byte layer + the slave).
 register_test(integration "modbus/rtu_slave"
     "${SRC_FOLDER}/modbus/uart.sv"
