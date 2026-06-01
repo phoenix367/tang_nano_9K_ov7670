@@ -55,8 +55,8 @@ module PositionScaler_vert
     wire             take2 = (sum >= 2*SOURCE_PIXELS);
     assign position_increment = take2 ? 2'd2 : 2'd1;
 
-    wire [ACC_W-1:0] resid_n = take2 ? (sum - 2*SOURCE_PIXELS)
-                                     : (sum -   SOURCE_PIXELS);
+    wire [ACC_W-1:0] resid_n = take2 ? ACC_W'(sum - 2*SOURCE_PIXELS)
+                                     : ACC_W'(sum -   SOURCE_PIXELS);
 
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n)     resid <= `WRAP_SIM(#1) INIT;

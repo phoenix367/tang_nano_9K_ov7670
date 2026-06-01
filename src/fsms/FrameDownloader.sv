@@ -200,7 +200,7 @@ module FrameDownloader
                             state <= `WRAP_SIM(#1) S_ROW_END;
                         end else begin
                             col_counter <= `WRAP_SIM(#1) col_counter + 1'b1;
-                            rd_pix_addr <= `WRAP_SIM(#1) col_counter + 1'b1;
+                            rd_pix_addr <= `WRAP_SIM(#1) 10'(col_counter + 1'b1);
                             last_col    <= `WRAP_SIM(#1) ((col_counter + 1'b1) == EMIT_ROW_SIZE - 1);
                             state       <= `WRAP_SIM(#1) S_DRAIN_W1;
                         end

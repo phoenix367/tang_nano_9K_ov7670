@@ -231,11 +231,11 @@ module DownloadRowCache
                             bank_full[fill_bank] <= `WRAP_SIM(#1) 1'b1;
                             fill_bank            <= `WRAP_SIM(#1) ~fill_bank;
                             rows_fetched         <= `WRAP_SIM(#1) rows_fetched + 1'b1;
-                            cur_addr             <= `WRAP_SIM(#1) row_base + stride_rows * ORIG_FRAME_WIDTH;
+                            cur_addr             <= `WRAP_SIM(#1) 21'(row_base + stride_rows * ORIG_FRAME_WIDTH);
                             fstate               <= `WRAP_SIM(#1) F_IDLE;
                         end else begin
                             burst_in_row <= `WRAP_SIM(#1) burst_in_row + 1'b1;
-                            cur_addr     <= `WRAP_SIM(#1) cur_addr + PIX_PER_BURST;
+                            cur_addr     <= `WRAP_SIM(#1) 21'(cur_addr + PIX_PER_BURST);
                             fstate       <= `WRAP_SIM(#1) F_REQ;
                         end
                     end
