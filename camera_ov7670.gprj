@@ -17,23 +17,6 @@
         <File path="FPGADesignElements/Register.v" type="file.verilog" enable="1"/>
         <File path="FPGADesignElements/Register_Toggle.v" type="file.verilog" enable="1"/>
         <File path="FPGADesignElements/Reset_Synchronizer.v" type="file.verilog" enable="1"/>
-        <File path="sim/download_buffer_test.sv" type="file.verilog" enable="0"/>
-        <File path="sim/frame_buffer_test_read_frame_23x17.sv" type="file.verilog" enable="0"/>
-        <File path="sim/frame_buffer_test_read_frame_23x17_2.sv" type="file.verilog" enable="0"/>
-        <File path="sim/frame_buffer_test_read_frame_multi_23x17.sv" type="file.verilog" enable="0"/>
-        <File path="sim/frame_buffer_test_read_write_frame_23x17.sv" type="file.verilog" enable="0"/>
-        <File path="sim/i2c_slave_model.sv" type="file.verilog" enable="0"/>
-        <File path="sim/lcd_controller_test.sv" type="file.verilog" enable="0"/>
-        <File path="sim/psram_model.sv" type="file.verilog" enable="0"/>
-        <File path="sim/svlogger.sv" type="file.verilog" enable="0"/>
-        <File path="sim/test_bench.sv" type="file.verilog" enable="0"/>
-        <File path="sim/test_config.sv" type="file.verilog" enable="0"/>
-        <File path="sim/test_pattern_write_frame_640x20.sv" type="file.verilog" enable="0"/>
-        <File path="sim/test_utils.sv" type="file.verilog" enable="0"/>
-        <File path="sim/tst_bench_top.v" type="file.verilog" enable="0"/>
-        <File path="sim/uploader_test_bench.sv" type="file.verilog" enable="0"/>
-        <File path="sim/video_test_bench.sv" type="file.verilog" enable="0"/>
-        <File path="sim/wb_master_model.v" type="file.verilog" enable="0"/>
         <File path="src/BufferController.sv" type="file.verilog" enable="1"/>
         <File path="src/DownloadRowCache.sv" type="file.verilog" enable="1"/>
         <File path="src/resize/HorizontalResizer.sv" type="file.verilog" enable="1"/>
@@ -76,10 +59,8 @@
         <File path="src/camera_control.sdc" type="file.sdc" enable="1"/>
         <File path="CMakeLists.txt" type="file.other" enable="1"/>
         <File path="sim/CMakeLists.txt" type="file.other" enable="1"/>
-        <File path="sim/run_simulator.bat.in" type="file.other" enable="1"/>
         <File path="sim/run_test_baseline.bat" type="file.other" enable="1"/>
         <File path="sim/run_test_video.bat" type="file.other" enable="1"/>
-        <File path="sim/test_config.sv.in" type="file.other" enable="1"/>
         <File path="src/CMakeLists.txt" type="file.other" enable="1"/>
     </FileList>
 </Project>
