@@ -208,6 +208,55 @@ feeds the store FIFO, which `LCD_Controller` drains at `screen_clk`. The resize
 geometry (input/screen size, `EMIT_ROW_SIZE`) comes from `platform.json` via
 `platform_config.vh`.
 
+Like the write path, the read side uses **command tokens** (frame-start /
+row-start / frame-end) into the store queue, with `read_rdy`-style back-pressure
+via `queue_full`. The key difference is the **prefetch/drain overlap**:
+`DownloadRowCache` reads the *next* source row from PSRAM (its own arbiter read
+grant, vertical-resize addressing) while the FSM drains the *current* row's front
+bank, then `row_release` swaps the ping-pong banks. The per-frame communication
+sequence (the inner read prefetch overlaps the drain shown beside it):
+
+```mermaid
+sequenceDiagram
+    participant VC as VideoController<br/>(download FSM)
+    participant BC as BufferController
+    participant ARB as arbiter
+    participant FD as FrameDownloader<br/>(sequencer + drain)
+    participant DRC as DownloadRowCache<br/>(+ PositionScaler_vert)
+    participant PHY as ch0 PSRAM<br/>(via pipeline reg)
+    participant OUT as HorizontalResizer →<br/>store FIFO → LCD
+
+    VC->>ARB: consumer_req (lock buffer meta)
+    ARB-->>VC: grant (idx 1)
+    VC->>BC: request the display buffer
+    BC-->>VC: buffer_id → base_addr
+    VC->>FD: start (+ base_addr)
+    FD->>DRC: cache_start (seed prefetch)
+    FD->>OUT: frame-start token (if !queue_full)
+
+    loop each of FRAME_HEIGHT output rows
+        Note over DRC,PHY: prefetch next source row (overlaps the drain)
+        DRC->>DRC: PositionScaler_vert → source row address
+        DRC->>ARB: read_rq
+        ARB-->>DRC: read_ack (grant idx 3)
+        DRC->>PHY: mem_rd_en + read_addr (8-word bursts)
+        PHY-->>DRC: read_data + rd_data_valid → back bank
+        DRC-->>FD: row_avail (front bank ready)
+        FD->>OUT: row-start token
+        loop each pixel in the row
+            FD->>DRC: rd_pix_addr
+            DRC-->>FD: rd_pix_data (2-cycle latency)
+            FD->>OUT: pixel (or held on queue_full back-pressure)
+        end
+        FD->>DRC: row_release (swap ping-pong banks)
+    end
+
+    FD->>OUT: frame-end token
+    FD->>VC: download_done
+    VC->>BC: finalize → advance read pointer
+    Note over OUT: LCD_Controller pulls from the store FIFO at<br/>screen_clk (async), driving DE/HSYNC/VSYNC/RGB
+```
+
 ## Frame grab and host download
 
 Channel 1 lets a host capture and download a full 640×480 frame independently of
