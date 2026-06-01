@@ -401,6 +401,18 @@ def api_grab_cancel():
     return jsonify(ok=True)
 
 
+@app.route("/api/dump")
+def api_dump():
+    """Read every OV7670 register (0x00..0xC9) for a full register dump."""
+    with _lock:
+        try:
+            client = _require_client()
+            regs = client.dump_registers()
+        except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError) as e:
+            return _classify(e)
+    return jsonify(ok=True, registers={f"0x{a:02X}": v for a, v in sorted(regs.items())})
+
+
 @app.route("/api/reset_defaults", methods=["POST"])
 def api_reset_defaults():
     """Re-run the camera's power-on init (reset every register to its default).

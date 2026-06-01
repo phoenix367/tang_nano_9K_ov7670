@@ -231,3 +231,11 @@ def test_reset_defaults_route(client):
     _connect(tc)
     assert tc.post("/api/reset_defaults").get_json()["ok"] is True
     assert fake["slave"].regs.get(0xFA) == 1
+
+
+def test_dump_route(client):
+    tc, _ = client
+    _connect(tc)
+    r = tc.get("/api/dump").get_json()
+    assert r["ok"] and len(r["registers"]) == 0xCA
+    assert r["registers"]["0x0A"] == 0x76

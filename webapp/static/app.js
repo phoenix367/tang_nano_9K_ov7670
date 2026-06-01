@@ -557,6 +557,30 @@ async function rawWrite() {
   } catch (e) { toast(e.message, "error"); }
 }
 
+async function dumpRegisters() {
+  const btn = $("#raw-dump");
+  btn.disabled = true;
+  try {
+    const data = await api("/api/dump");          // { ok, registers: {"0x00": int, ...} }
+    const out = {};
+    for (const [addr, v] of Object.entries(data.registers)) out[addr] = hex(v);
+    const blob = new Blob([JSON.stringify(out, null, 2) + "\n"], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "ov7670_registers.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast(`Dumped ${Object.keys(out).length} registers`);
+  } catch (e) {
+    toast(e.message, "error");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function resetDefaults() {
   if (!window.confirm("Re-run the camera initialization? This resets every "
                       + "register to its default and discards live tweaks.")) return;
@@ -674,6 +698,7 @@ async function init() {
   $("#raw-read").addEventListener("click", rawRead);
   $("#raw-write").addEventListener("click", rawWrite);
   $("#raw-reset").addEventListener("click", resetDefaults);
+  $("#raw-dump").addEventListener("click", dumpRegisters);
   $("#grab").addEventListener("click", grabFrame);
   $("#grab-cancel").addEventListener("click", cancelGrab);
   $("#matrix-autocc").addEventListener("change", async (e) => {

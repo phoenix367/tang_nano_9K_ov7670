@@ -15,6 +15,7 @@ import serial  # pyserial
 # Reserved bridge registers above the OV7670 0x00..0xC9 range (see
 # src/modbus/modbus_cam_backend.sv). The frame-grab feature captures a camera frame
 # into PSRAM channel 1 and streams it back over FC03.
+CAM_REG_MAX = 0x00C9   # highest OV7670 register (the 1:1-mapped camera range is 0x00..0xC9)
 REG_GRAB    = 0x00F3   # write 1 = arm a grab; read bit0 = busy, bit1 = ch1 calibrated
 REG_STREAM  = 0x00F8   # write = rewind the download stream to pixel 0
 REG_HEALTH  = 0x00F9   # read = watchdog health bits (see read_health)
@@ -186,6 +187,21 @@ class ModbusRTU:
             "memory_hang": bool(v & 0x02),
             "lcd_hang":    bool(v & 0x01),
         }
+
+    def dump_registers(self):
+        """Read every OV7670 register (0x00..0xC9) and return {addr: value}.
+
+        Each read is a live SCCB transaction on the device, issued in FC03 bursts
+        of up to 125 registers, so a full dump is a couple of Modbus requests.
+        """
+        regs = {}
+        addr = 0
+        while addr <= CAM_REG_MAX:
+            n = min(125, CAM_REG_MAX + 1 - addr)
+            for i, v in enumerate(self.read_holding(addr, n)):
+                regs[addr + i] = v & 0xFF
+            addr += n
+        return regs
 
     def reset_to_defaults(self):
         """Re-run the camera's power-on init sequence (reset every OV7670 register

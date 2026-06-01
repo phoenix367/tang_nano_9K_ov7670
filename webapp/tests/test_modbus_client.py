@@ -145,3 +145,11 @@ def test_reset_to_defaults(rtu):
     c, slave = rtu
     c.reset_to_defaults()
     assert slave.regs.get(0xFA) == 1     # the reinit write (0xFA = 1) reached the slave
+
+
+def test_dump_registers(rtu):
+    c, _ = rtu
+    regs = c.dump_registers()
+    assert len(regs) == 0xCA          # 0x00..0xC9 inclusive = 202 registers
+    assert regs[0x0A] == 0x76         # PID from the fake's defaults
+    assert 0x00 in regs and 0xC9 in regs
