@@ -562,9 +562,13 @@ async function dumpRegisters() {
   btn.disabled = true;
   try {
     const data = await api("/api/dump");          // { ok, registers: {"0x00": int, ...} }
-    const out = {};
-    for (const [addr, v] of Object.entries(data.registers)) out[addr] = hex(v);
-    const blob = new Blob([JSON.stringify(out, null, 2) + "\n"], { type: "application/json" });
+    const registers = {};
+    for (const [addr, v] of Object.entries(data.registers)) registers[addr] = hex(v);
+    const dump = {
+      description: "OV7670 camera register dump (addresses 0x00–0xC9, 8-bit hex values)",
+      registers,
+    };
+    const blob = new Blob([JSON.stringify(dump, null, 2) + "\n"], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -573,7 +577,7 @@ async function dumpRegisters() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    toast(`Dumped ${Object.keys(out).length} registers`);
+    toast(`Dumped ${Object.keys(registers).length} registers`);
   } catch (e) {
     toast(e.message, "error");
   } finally {
