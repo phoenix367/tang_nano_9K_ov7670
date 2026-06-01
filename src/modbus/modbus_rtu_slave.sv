@@ -37,7 +37,12 @@ module modbus_rtu_slave
     parameter integer CLK_FREQ  = 27_000_000,
     parameter integer BAUD      = 9600,
     parameter [7:0]   SLAVE_ADDR = 8'd7,
-    parameter integer REG_COUNT = 16,
+    parameter integer REG_COUNT = 16,             // internal register file size (sizes reg_o)
+    // Highest address the FC03/FC06/FC10 bounds check accepts (saddr+qty must be
+    // <= this). Defaults to REG_COUNT for the internal backend; an external
+    // backend that decodes a sparse/large map (e.g. the camera bridge's stream
+    // band) sets it large WITHOUT bloating REG_COUNT / the reg_o port.
+    parameter integer ADDR_LIMIT = REG_COUNT,
     parameter integer MAX_FRAME = 64,             // request buffer (frame[]) size
     // Max FC03 registers in one response. The data payload lives in BSRAM
     // (pay_ram), so this can reach the Modbus protocol ceiling of 127 without a
@@ -247,7 +252,7 @@ module modbus_rtu_slave
                     qty      <= `WRAP_SIM(#1) {frame[4], frame[5]};
                     cur      <= `WRAP_SIM(#1) {frame[2], frame[3]};
                     wval     <= `WRAP_SIM(#1) {frame[4], frame[5]};
-                    qlast    <= `WRAP_SIM(#1) {frame[4], frame[5]} - 16'd1;  // loop terminal (qty-1)
+                    qlast    <= `WRAP_SIM(#1) 8'({frame[4], frame[5]} - 16'd1);  // loop terminal (qty-1)
                     bidx     <= `WRAP_SIM(#1) 'd0;
                     tidx     <= `WRAP_SIM(#1) 'd0;
                     hdr_len  <= `WRAP_SIM(#1) 4'd3;          // FC03 / exceptions: 3-byte header
@@ -258,8 +263,8 @@ module modbus_rtu_slave
                                        crc_acc != 16'h0000 ||
                                        (frame[0] != SLAVE_ADDR && frame[0] != 8'h00);
                     v_qty0      <= `WRAP_SIM(#1) ({frame[4],frame[5]} == 16'd0);
-                    v_addr_oor  <= `WRAP_SIM(#1) (({frame[2],frame[3]} + {frame[4],frame[5]}) > REG_COUNT);
-                    v_saddr_oor <= `WRAP_SIM(#1) ({frame[2],frame[3]} >= REG_COUNT);
+                    v_addr_oor  <= `WRAP_SIM(#1) (({frame[2],frame[3]} + {frame[4],frame[5]}) > ADDR_LIMIT);
+                    v_saddr_oor <= `WRAP_SIM(#1) ({frame[2],frame[3]} >= ADDR_LIMIT);
                     v_oversize  <= `WRAP_SIM(#1) ({frame[4],frame[5]} > MAX_QTY);
                     v_bc_bad    <= `WRAP_SIM(#1) (frame[6] != ({frame[4],frame[5]} << 1));
 
@@ -290,8 +295,8 @@ module modbus_rtu_slave
                                     state <= `WRAP_SIM(#1) S_DONE;   // no read on broadcast
                                 end else begin
                                     resp_hdr[1] <= `WRAP_SIM(#1) 8'h03;
-                                    resp_hdr[2] <= `WRAP_SIM(#1) (qty << 1);
-                                    rlen    <= `WRAP_SIM(#1) 'd3 + (qty << 1);  // header + payload
+                                    resp_hdr[2] <= `WRAP_SIM(#1) 8'(qty << 1);
+                                    rlen    <= `WRAP_SIM(#1) RW'('d3 + (qty << 1));  // header + payload
                                     state   <= `WRAP_SIM(#1) S_RD_REQ;
                                 end
                             end

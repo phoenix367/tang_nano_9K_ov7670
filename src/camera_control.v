@@ -48,11 +48,13 @@ module CameraControl_TOP (
 // is loaded undisturbed.
 // OV7670 register space 0x00..0xC9 plus the bridge's reserved status registers
 // (0xF0 magic, 0xF1/0xF2 uptime) so the host can detect a hard reset.
-// Register-address span the slave range-checks against. Covers the OV7670 map
-// (0x00..0xC9), the reserved status/grab registers (0xF0..0xF8), and the frame
-// download stream band (>= 0x1000, served by modbus_cam_backend), so an FC03 of
-// up to 127 pixels starting at 0x1000 passes the bounds check.
-localparam integer MODBUS_REGS = 'h1100;
+// Highest address the slave's bounds check accepts (its ADDR_LIMIT). Covers the
+// OV7670 map (0x00..0xC9), the reserved status/grab registers (0xF0..0xF8), and
+// the frame download stream band (>= 0x1000, served by modbus_cam_backend), so
+// an FC03 of up to 127 pixels starting at 0x1000 passes the bounds check. This
+// is the *address span*, not a physical register count — the backend is external
+// so there is no internal register file (REG_COUNT stays small).
+localparam integer MODBUS_ADDR_LIMIT = 'h1100;
 
 wire [7:0] uart_rx_data;
 wire       uart_rx_valid, uart_rx_perr;
@@ -105,7 +107,8 @@ modbus_rtu_slave #(
     .CLK_FREQ('d27_000_000),
     .BAUD('d1_000_000),
     .SLAVE_ADDR(8'd7),
-    .REG_COUNT(MODBUS_REGS),
+    .REG_COUNT(16),         // external backend: no internal register file, keep reg_o tiny
+    .ADDR_LIMIT(MODBUS_ADDR_LIMIT),  // bounds check spans the OV7670 + stream band
     .MAX_FRAME(32),         // request buffer: FC10 camera writes stay small
     .MAX_QTY(127),          // FC03 download burst: protocol max, payload in BSRAM
     .EXTERNAL_BACKEND(1)
