@@ -44,6 +44,7 @@
     <button class="tab active" data-tab="basic">Basic controls</button>
     <button class="tab" data-tab="color">Color</button>
     <button class="tab" data-tab="capture">Capture</button>
+    <button class="tab" data-tab="overlay">OSD overlay</button>
   </nav>
 
   <div class="tab-content" id="tab-basic" hidden>
@@ -130,6 +131,25 @@
       <p class="hint">The FPGA captures a fresh camera frame into PSRAM channel&nbsp;1,
         then streams all 640&times;480 RGB565 pixels back over Modbus FC03
         (~10&nbsp;s at 1&nbsp;Mbaud). The bus is busy for the whole download.</p>
+    </section>
+  </div>
+
+  <div class="tab-content" id="tab-overlay" hidden>
+    <section class="panel" id="osd-panel">
+      <div class="row between">
+        <h2>OSD text overlay</h2>
+        <label class="inline"><input type="checkbox" id="osd-enable"> Show overlay</label>
+      </div>
+      <p class="hint">8&times;16 white font on a 60&times;17 character grid (480&times;272 LCD).
+        Each input line maps to one screen row; characters past column&nbsp;60 wrap onto
+        the next row. Latin-1 (0x00&ndash;0xFF) characters are supported.</p>
+      <textarea id="osd-text" rows="6" spellcheck="false" maxlength="1020"
+        placeholder="Type overlay text — one screen row per line…"></textarea>
+      <div class="row">
+        <button id="osd-send" class="primary">Send to display</button>
+        <button id="osd-clear" class="ghost">Clear</button>
+      </div>
+      <div id="osd-status" class="status">Text is composited over the live video on the LCD.</div>
     </section>
   </div>
 

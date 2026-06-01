@@ -15,6 +15,7 @@ set(VIDEO_BUFFER_TEST_SOURCES
     "${SRC_FOLDER}/DownloadRowCache.sv"
     "${SRC_FOLDER}/cam_pixel_processor.sv"
     "${SRC_FOLDER}/lcd_controller.sv"
+    "${SRC_FOLDER}/osd_overlay.sv"
     "${SRC_FOLDER}/debug/debug_pattern_generator.sv"
     "${SRC_FOLDER}/debug/debug_pattern_generator2.sv"
     "${SRC_FOLDER}/BufferController.sv"
@@ -55,6 +56,7 @@ set(UNIT_TESTS
     horizontal_resizer/stream
     download_row_cache/prefetch
     frame_downloader/stream
+    osd/overlay
 )
 set(INTEGRATION_TESTS
     frame_roundtrip/read_23x17

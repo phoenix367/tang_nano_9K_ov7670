@@ -23,12 +23,12 @@ module VGA_timing
     input                   nRST,
 
     output                  LCD_DE,
-    output                  reg LCD_HSYNC,
-    output                  reg LCD_VSYNC,
+    output                  LCD_HSYNC,
+    output                  LCD_VSYNC,
 
-	output          reg [4:0]    LCD_B,
-	output          reg [5:0]    LCD_G,
-	output          reg [4:0]    LCD_R,
+	output          [4:0]    LCD_B,
+	output          [5:0]    LCD_G,
+	output          [4:0]    LCD_R,
 
     input cam_vsync,
     input href,
@@ -53,7 +53,13 @@ module VGA_timing
     output                 grab_calib,
     // health watchdog status (sys_clk): [4]=monitoring [3]=any-hang
     //                                   [2]=cam [1]=mem [0]=lcd (sticky hangs)
-    output [4:0]           wd_health
+    output [4:0]           wd_health,
+    // OSD text overlay: enable bit + character-buffer write port (sys_clk side)
+    input                  osd_enable,
+    input                  osd_wr_clk,
+    input                  osd_wr_en,
+    input  [10:0]          osd_wr_addr,
+    input  [7:0]           osd_wr_data
 );
 // Logger initialization
 `ifdef __ICARUS__
@@ -370,13 +376,46 @@ VideoController #(
         .queue_rd_en(lcd_queue_rd_en),
         .queue_clk(lcd_read_clk),
 
-        .LCD_DE(LCD_DE),
-        .LCD_HSYNC(LCD_HSYNC),
-        .LCD_VSYNC(LCD_VSYNC),
+        .LCD_DE(lcdc_de),
+        .LCD_HSYNC(lcdc_hsync),
+        .LCD_VSYNC(lcdc_vsync),
 
-        .LCD_B(LCD_B),
-        .LCD_G(LCD_G),
-        .LCD_R(LCD_R)
+        .LCD_B(lcdc_b),
+        .LCD_G(lcdc_g),
+        .LCD_R(lcdc_r)
+    );
+
+    // ---- OSD text overlay: composite the 8x16 font glyphs over the LCD stream.
+    // It reconstructs the active pixel position from the controller's DE/VSYNC,
+    // so it sits transparently between LCD_Controller and the LCD pins (a constant
+    // 3-pixel pipeline delay). The character buffer is a dual-clock RAM written
+    // from the sys_clk host side (osd_wr_*); osd_enable crosses via a synchronizer.
+    wire        lcdc_de, lcdc_hsync, lcdc_vsync;
+    wire [4:0]  lcdc_r, lcdc_b;
+    wire [5:0]  lcdc_g;
+    OSDOverlay #(
+        .SCREEN_WIDTH(480),
+        .SCREEN_HEIGHT(272)
+    ) osd_overlay (
+        .clk(screen_clk),
+        .reset_n(nRST),
+        .de_in(lcdc_de),
+        .hsync_in(lcdc_hsync),
+        .vsync_in(lcdc_vsync),
+        .r_in(lcdc_r),
+        .g_in(lcdc_g),
+        .b_in(lcdc_b),
+        .de_out(LCD_DE),
+        .hsync_out(LCD_HSYNC),
+        .vsync_out(LCD_VSYNC),
+        .r_out(LCD_R),
+        .g_out(LCD_G),
+        .b_out(LCD_B),
+        .osd_enable(osd_enable),
+        .wr_clk(osd_wr_clk),
+        .wr_en(osd_wr_en),
+        .wr_addr(osd_wr_addr),
+        .wr_data(osd_wr_data)
     );
 
     // ---- health watchdog: blink debug_led while the LCD, memory and camera

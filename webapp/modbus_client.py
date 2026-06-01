@@ -20,9 +20,16 @@ REG_GRAB    = 0x00F3   # write 1 = arm a grab; read bit0 = busy, bit1 = ch1 cali
 REG_STREAM  = 0x00F8   # write = rewind the download stream to pixel 0
 REG_HEALTH  = 0x00F9   # read = watchdog health bits (see read_health)
 REG_REINIT  = 0x00FA   # write 1 = re-run camera init (reset all registers to defaults)
+REG_OSD_CTRL = 0x00FB  # write bit0 = enable, bit1 = clear; read bit0 = enable
+REG_OSD_ADDR = 0x00FC  # write = OSD char-cell write cursor (row*OSD_COLS + col)
+REG_OSD_DATA = 0x00FD  # write = char code at the cursor (cursor auto-increments)
 STREAM_BASE = 0x1000   # any FC03 read >= here returns the next frame pixel(s)
 FRAME_W, FRAME_H = 640, 480
 FRAME_PIXELS = FRAME_W * FRAME_H
+
+# OSD text overlay grid (480x272 screen, 8x16 glyphs); matches OSDOverlay/backend.
+OSD_COLS, OSD_ROWS = 60, 17
+OSD_CELLS = OSD_COLS * OSD_ROWS
 
 # pyserial's low-level POSIX calls (tcflush/tcdrain in reset_input_buffer etc.)
 # raise termios.error on a vanished port, which is NOT an OSError subclass and
@@ -208,6 +215,34 @@ class ModbusRTU:
         to its ROM default). The device reloads its config over the next tens of
         ms; re-read the settings afterwards to reflect the reverted state."""
         self.write_single(REG_REINIT, 1)
+
+    # ---- OSD text overlay (8x16 font, 60x17 char grid on the LCD) ------------
+    def osd_enabled(self):
+        """True if the OSD text overlay is currently shown on the LCD."""
+        return bool(self.read_holding(REG_OSD_CTRL, 1)[0] & 0x01)
+
+    def osd_set_enabled(self, on):
+        """Show (True) or hide (False) the OSD text overlay on the LCD."""
+        self.write_single(REG_OSD_CTRL, 0x01 if on else 0x00)
+
+    def osd_clear(self):
+        """Blank the whole OSD character buffer (the firmware sweeps all cells)."""
+        self.write_single(REG_OSD_CTRL, 0x02)
+
+    def osd_write_text(self, row, col, text):
+        """Write `text` into the OSD grid starting at (row, col).
+
+        Sets the write cursor to row*OSD_COLS+col, then streams the Latin-1 byte
+        of each character; the device auto-increments the cursor per character.
+        Characters past the end of the row continue onto the next row (the cursor
+        wraps the whole buffer). Raises ValueError if (row, col) is off-grid.
+        """
+        if not (0 <= row < OSD_ROWS and 0 <= col < OSD_COLS):
+            raise ValueError(f"OSD cell ({row}, {col}) out of range")
+        self.write_single(REG_OSD_ADDR, row * OSD_COLS + col)
+        for ch in text:
+            code = ord(ch)
+            self.write_single(REG_OSD_DATA, code if code <= 0xFF else ord("?"))
 
     # ---- frame grab (capture into PSRAM ch1, then stream over FC03) ----------
     def grab_busy(self):

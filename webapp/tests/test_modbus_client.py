@@ -153,3 +153,42 @@ def test_dump_registers(rtu):
     assert len(regs) == 0xCA          # 0x00..0xC9 inclusive = 202 registers
     assert regs[0x0A] == 0x76         # PID from the fake's defaults
     assert 0x00 in regs and 0xC9 in regs
+
+
+def test_osd_set_enabled(rtu):
+    c, slave = rtu
+    assert c.osd_enabled() is False
+    c.osd_set_enabled(True)
+    assert slave.osd_enabled is True
+    assert c.osd_enabled() is True
+    c.osd_set_enabled(False)
+    assert c.osd_enabled() is False
+
+
+def test_osd_write_text_lands_in_cells(rtu):
+    c, slave = rtu
+    c.osd_write_text(0, 0, "Hi")
+    assert slave.osd_cells[0] == ord("H")
+    assert slave.osd_cells[1] == ord("i")
+    assert slave.osd_cursor == 2          # cursor advanced past the two chars
+
+
+def test_osd_write_text_honours_row_col(rtu):
+    c, slave = rtu
+    c.osd_write_text(2, 5, "X")
+    cell = 2 * modbus_client.OSD_COLS + 5
+    assert slave.osd_cells[cell] == ord("X")
+
+
+def test_osd_write_text_off_grid_raises(rtu):
+    c, _ = rtu
+    with pytest.raises(ValueError):
+        c.osd_write_text(modbus_client.OSD_ROWS, 0, "x")
+
+
+def test_osd_clear_blanks_buffer(rtu):
+    c, slave = rtu
+    c.osd_write_text(0, 0, "ABC")
+    c.osd_clear()
+    assert set(slave.osd_cells) == {0}
+    assert slave.osd_cursor == 0

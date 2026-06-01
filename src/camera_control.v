@@ -71,6 +71,12 @@ wire        be_busy;
 // pulse from the Modbus bridge (reg 0xFA write) -> re-run camera init
 wire        cam_reinit;
 
+// OSD text overlay (Modbus bridge -> VGA_timing -> OSDOverlay on the LCD side)
+wire        osd_enable;
+wire        osd_wr_en;
+wire [10:0] osd_wr_addr;
+wire [7:0]  osd_wr_data;
+
 // channel-1 PSRAM bring-up loopback (Modbus backend <-> VGA_timing/psram_ch1)
 wire        grab_arm;
 wire        grab_rd_req;
@@ -156,6 +162,10 @@ modbus_cam_backend cam_bridge (
     .i2c_dout(i2c_data_out),
     .busy(be_busy),
     .cam_reinit(cam_reinit),
+    .osd_enable(osd_enable),
+    .osd_wr_en(osd_wr_en),
+    .osd_wr_addr(osd_wr_addr),
+    .osd_wr_data(osd_wr_data),
     .grab_arm(grab_arm),
     .grab_rd_req(grab_rd_req),
     .grab_rd_addr(grab_rd_addr),
@@ -307,7 +317,13 @@ VGA_timing	VGA_timing_inst(
     .grab_busy(grab_busy),
     .grab_rd_data(grab_rd_data),
     .grab_calib(grab_calib),
-    .wd_health(wd_health)
+    .wd_health(wd_health),
+    // OSD text overlay: enable bit + char-buffer write port (sys_clk side)
+    .osd_enable(osd_enable),
+    .osd_wr_clk(sys_clk),
+    .osd_wr_en(osd_wr_en),
+    .osd_wr_addr(osd_wr_addr),
+    .osd_wr_data(osd_wr_data)
 );
 
 i2c_master_top i2c_master(

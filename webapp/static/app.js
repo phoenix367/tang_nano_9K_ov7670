@@ -135,7 +135,7 @@ function connStatus(msg, cls) {
 
 function showTab(name) {
   currentTab = name;
-  for (const t of ["basic", "color", "capture"]) $("#tab-" + t).hidden = (t !== name);
+  for (const t of ["basic", "color", "capture", "overlay"]) $("#tab-" + t).hidden = (t !== name);
   document.querySelectorAll(".tab").forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === name);
   });
@@ -155,6 +155,7 @@ async function connect() {
     enterState(ST.CONNECTED, info);
     renderControls();
     await loadSettings();
+    loadOsdState();
     toast("Connected");
   } catch (e) {
     connStatus(e.message, "error");
@@ -606,6 +607,47 @@ async function resetDefaults() {
   }
 }
 
+// --------------------------------------------------------------- OSD overlay
+async function loadOsdState() {
+  try {
+    const { enabled } = await api("/api/osd");
+    $("#osd-enable").checked = !!enabled;
+  } catch { /* not connected yet — leave the checkbox as-is */ }
+}
+
+function osdLines() {
+  return $("#osd-text").value.split("\n").slice(0, 17).map((l) => l.slice(0, 60));
+}
+
+async function sendOsd() {
+  const btn = $("#osd-send");
+  btn.disabled = true;
+  try {
+    const lines = osdLines();
+    await postJSON("/api/osd", { clear: true, lines, enabled: $("#osd-enable").checked });
+    $("#osd-status").textContent = `Sent ${lines.length} line(s) to the display.`;
+    toast("Overlay updated");
+  } catch (e) { toast(e.message, "error"); }
+  finally { btn.disabled = false; }
+}
+
+async function clearOsd() {
+  try {
+    await postJSON("/api/osd", { clear: true });
+    $("#osd-text").value = "";
+    $("#osd-status").textContent = "Overlay cleared.";
+    toast("Overlay cleared");
+  } catch (e) { toast(e.message, "error"); }
+}
+
+async function toggleOsd() {
+  const on = $("#osd-enable").checked;
+  try {
+    await postJSON("/api/osd", { enabled: on });
+    toast(on ? "Overlay shown" : "Overlay hidden");
+  } catch (e) { toast(e.message, "error"); $("#osd-enable").checked = !on; }
+}
+
 // ------------------------------------------------------------- frame capture
 function setGrabProgress(pct, label) {
   $("#grab-progress-bar").style.width = pct + "%";
@@ -705,6 +747,9 @@ async function init() {
   $("#raw-dump").addEventListener("click", dumpRegisters);
   $("#grab").addEventListener("click", grabFrame);
   $("#grab-cancel").addEventListener("click", cancelGrab);
+  $("#osd-send").addEventListener("click", sendOsd);
+  $("#osd-clear").addEventListener("click", clearOsd);
+  $("#osd-enable").addEventListener("change", toggleOsd);
   $("#matrix-autocc").addEventListener("change", async (e) => {
     try { renderMatrix(await postJSON("/api/matrix/contrast_center", { on: e.target.checked })); }
     catch (err) { toast(err.message, "error"); loadMatrix(); }
@@ -721,6 +766,7 @@ async function init() {
       enterState(ST.CONNECTED, { port: st.port, slave: st.slave, pid: 0 });
       renderControls();
       await loadSettings();
+      loadOsdState();
     }
   } catch (e) { toast(e.message, "error"); }
 }

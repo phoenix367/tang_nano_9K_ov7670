@@ -239,3 +239,40 @@ def test_dump_route(client):
     r = tc.get("/api/dump").get_json()
     assert r["ok"] and len(r["registers"]) == 0xCA
     assert r["registers"]["0x0A"] == 0x76
+
+
+# ------------------------------------------------------------------ OSD overlay
+def test_osd_get_default_disabled(client):
+    tc, _ = client
+    _connect(tc)
+    r = tc.get("/api/osd").get_json()
+    assert r["ok"] and r["enabled"] is False
+
+
+def test_osd_enable_and_write_text(client):
+    tc, fake = client
+    _connect(tc)
+    r = tc.post("/api/osd", json={"text": "Hi", "row": 1, "col": 2,
+                                  "enabled": True}).get_json()
+    assert r["ok"] and r["enabled"] is True
+    slave = fake["slave"]
+    base = 1 * 60 + 2
+    assert slave.osd_cells[base] == ord("H")
+    assert slave.osd_cells[base + 1] == ord("i")
+    assert slave.osd_enabled is True
+
+
+def test_osd_lines_and_clear(client):
+    tc, fake = client
+    _connect(tc)
+    tc.post("/api/osd", json={"lines": ["AB", "CD"]})
+    slave = fake["slave"]
+    assert slave.osd_cells[0] == ord("A") and slave.osd_cells[1] == ord("B")
+    assert slave.osd_cells[60] == ord("C") and slave.osd_cells[61] == ord("D")
+    tc.post("/api/osd", json={"clear": True})
+    assert set(slave.osd_cells) == {0}
+
+
+def test_osd_not_connected_is_400(client):
+    tc, _ = client
+    assert tc.get("/api/osd").status_code == 400

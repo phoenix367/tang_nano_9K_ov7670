@@ -16,7 +16,15 @@ import threading
 
 import ov7670
 from flask import Flask, Response, jsonify, render_template, request
-from modbus_client import FRAME_H, FRAME_W, GrabCancelled, ModbusError, ModbusRTU, rgb565_to_rgba
+from modbus_client import (
+    FRAME_H,
+    FRAME_W,
+    OSD_ROWS,
+    GrabCancelled,
+    ModbusError,
+    ModbusRTU,
+    rgb565_to_rgba,
+)
 
 try:
     from serial.tools import list_ports
@@ -425,6 +433,40 @@ def api_reset_defaults():
         except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError) as e:
             return _classify(e)
     return jsonify(ok=True)
+
+
+@app.route("/api/osd", methods=["GET", "POST"])
+def api_osd():
+    """OSD text overlay control.
+
+    GET  -> {ok, enabled}.
+    POST JSON keys (all optional, applied in this order):
+      "clear":   true      -> blank the whole character buffer first
+      "text":    "string"  -> write at ("row","col") (defaults 0,0)
+      "lines":   ["a","b"] -> write each string at row i, column 0
+      "enabled": bool      -> show/hide the overlay (applied last)
+    """
+    with _lock:
+        try:
+            client = _require_client()
+            if request.method == "GET":
+                return jsonify(ok=True, enabled=client.osd_enabled())
+            data = request.get_json(force=True, silent=True) or {}
+            if data.get("clear"):
+                client.osd_clear()
+            if isinstance(data.get("lines"), list):
+                for i, line in enumerate(data["lines"]):
+                    if i < OSD_ROWS:
+                        client.osd_write_text(i, 0, str(line))
+            if data.get("text") is not None:
+                client.osd_write_text(int(data.get("row", 0)),
+                                      int(data.get("col", 0)), str(data["text"]))
+            if "enabled" in data:
+                client.osd_set_enabled(bool(data["enabled"]))
+            return jsonify(ok=True, enabled=client.osd_enabled())
+        except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError,
+                KeyError, TypeError) as e:
+            return _classify(e)
 
 
 @app.route("/api/raw", methods=["GET", "POST"])

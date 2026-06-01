@@ -56,6 +56,10 @@ class FakeModbusSlave:
         self.uptime = 0x1234
         self.health = 0x10            # watchdog: monitoring set, no hangs (bit4)
         self.stream_ptr = 0           # frame-download pixel cursor (rewound by 0xF8)
+        # OSD overlay model (60x17 char grid)
+        self.osd_enabled = False
+        self.osd_cursor = 0
+        self.osd_cells = bytearray(60 * 17)
         self._rx = bytearray()        # bytes the client will read back
         self.is_open = True
         # fault injection
@@ -98,6 +102,10 @@ class FakeModbusSlave:
             return 0x02              # bit1 = ch1 calibrated, bit0 = busy (grab instant)
         if addr == 0xF9:
             return self.health       # watchdog health bits (default: monitoring, no hangs)
+        if addr == 0xFB:
+            return 0x01 if self.osd_enabled else 0x00   # OSD control: bit0 = enable
+        if addr == 0xFC:
+            return self.osd_cursor   # OSD write cursor
         return self.regs.get(addr, 0) & 0xFF
 
     def _reply(self, func, payload):
@@ -139,6 +147,19 @@ class FakeModbusSlave:
                 self.stream_ptr = 0
                 return self._reply(func, body[:4])
             if saddr == 0xF3:                   # arm grab (instant in the fake)
+                return self._reply(func, body[:4])
+            if saddr == 0xFB:                   # OSD control: bit0=enable, bit1=clear
+                if val & 0x02:
+                    self.osd_cells = bytearray(len(self.osd_cells))
+                    self.osd_cursor = 0
+                self.osd_enabled = bool(val & 0x01)
+                return self._reply(func, body[:4])
+            if saddr == 0xFC:                   # OSD write cursor
+                self.osd_cursor = val % len(self.osd_cells)
+                return self._reply(func, body[:4])
+            if saddr == 0xFD:                   # OSD char at cursor, cursor auto-increments
+                self.osd_cells[self.osd_cursor] = val & 0xFF
+                self.osd_cursor = (self.osd_cursor + 1) % len(self.osd_cells)
                 return self._reply(func, body[:4])
             if saddr >= self.reg_count:
                 return self._exception(func, 0x02)
