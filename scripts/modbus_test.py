@@ -178,7 +178,8 @@ def main():
     ap.add_argument("-b", "--baud", type=int, default=1000000, help="baud rate (default 1000000)")
     ap.add_argument("-s", "--slave", type=int, default=7, help="slave/unit id (default 7)")
     ap.add_argument("--timeout", type=float, default=1.0, help="response timeout s (default 1.0)")
-    ap.add_argument("--reg-count", type=int, default=8, help="holding registers on the slave (default 8)")
+    ap.add_argument("--reg-count", type=int, default=8,
+                    help="holding registers on the slave (default 8)")
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--read", nargs=2, metavar=("ADDR", "COUNT"), type=parse_int,
                    help="read COUNT holding registers from ADDR")

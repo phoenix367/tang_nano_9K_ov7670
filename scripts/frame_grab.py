@@ -61,7 +61,8 @@ def main():
     ap.add_argument("-b", "--baud", type=int, default=1000000, help="baud (default 1000000)")
     ap.add_argument("-s", "--slave", type=int, default=7, help="slave id (default 7)")
     ap.add_argument("--timeout", type=float, default=1.0, help="response timeout s")
-    ap.add_argument("-o", "--out", default="frame.ppm", help="output path (.ppm; .png also if Pillow)")
+    ap.add_argument("-o", "--out", default="frame.ppm",
+                    help="output path (.ppm; .png too if Pillow)")
     args = ap.parse_args()
 
     mb = ModbusRTU(args.port, baud=args.baud, slave=args.slave, timeout=args.timeout)

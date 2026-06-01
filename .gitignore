@@ -5,4 +5,5 @@ src/platform_config.vh
 sim/Testing/
 .venv/
 __pycache__/
+node_modules/
 

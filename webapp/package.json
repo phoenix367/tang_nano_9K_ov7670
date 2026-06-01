@@ -1,0 +1,14 @@
+{
+  "name": "ov7670-webapp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lint tooling for the OV7670 control web app's browser JavaScript",
+  "scripts": {
+    "lint": "eslint static"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9",
+    "eslint": "^9",
+    "globals": "^15"
+  }
+}

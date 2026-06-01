@@ -14,11 +14,9 @@ Run:
 import os
 import threading
 
-from flask import Flask, Response, jsonify, render_template, request
-
 import ov7670
-from modbus_client import (FRAME_H, FRAME_W, GrabCancelled, ModbusError,
-                           ModbusRTU, rgb565_to_rgba)
+from flask import Flask, Response, jsonify, render_template, request
+from modbus_client import FRAME_H, FRAME_W, GrabCancelled, ModbusError, ModbusRTU, rgb565_to_rgba
 
 try:
     from serial.tools import list_ports

@@ -9,10 +9,9 @@ import sys
 # webapp/ (parent of tests/) on the path -> import app / ov7670 / modbus_client
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import pytest
-
 import app as flask_app
 import modbus_client
+import pytest
 from fake_modbus import FakeModbusSlave
 
 

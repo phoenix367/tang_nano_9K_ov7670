@@ -64,6 +64,18 @@ set, decode, gamma-curve math, color-matrix decode/transform), and
 `test_app.py` (every API route plus the not-connected / Modbus-exception /
 device-lost error paths).
 
+## Linting
+
+Python is linted with [Ruff](https://docs.astral.sh/ruff/) (config in the repo
+root `ruff.toml`, covering `webapp/` and `scripts/`); the browser JS is linted
+with [ESLint](https://eslint.org/) (`eslint.config.mjs`). Both run in CI
+(`.github/workflows/lint.yml`).
+
+```bash
+pip install -r webapp/requirements-dev.txt && ruff check .   # from the repo root
+cd webapp && npm install && npm run lint                     # JS
+```
+
 ## Layout
 
 | File | Purpose |

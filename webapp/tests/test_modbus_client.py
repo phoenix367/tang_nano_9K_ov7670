@@ -1,9 +1,8 @@
 """Tests for the Modbus RTU client: CRC, framing, exceptions, retries, and the
 termios.error -> OSError normalization."""
 
-import pytest
-
 import modbus_client
+import pytest
 from modbus_client import CRCError, ModbusError
 
 

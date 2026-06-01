@@ -3,8 +3,6 @@ error-classification paths (not-connected, Modbus exception, disconnect)."""
 
 import pytest
 
-import app as flask_app
-
 
 def _connect(tc):
     return tc.post("/api/connect", json={"port": "fake"}).get_json()

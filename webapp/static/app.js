@@ -422,7 +422,7 @@ async function previewGamma(value) {
   try {
     const d = await api(`/api/gamma?value=${encodeURIComponent(value)}`);
     renderGammaCurve(d.points, d.registers, `preview — γ ${d.exponent.toFixed(2)} (not yet applied)`);
-  } catch (e) { /* preview is best-effort */ }
+  } catch { /* preview is best-effort */ }
 }
 const previewGammaDebounced = debounce(previewGamma, 120);
 
