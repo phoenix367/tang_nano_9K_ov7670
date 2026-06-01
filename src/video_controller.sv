@@ -168,6 +168,11 @@ assign grab_active = up_active;
 assign cmd = (mem_wr_en) ? 1'b1 : 1'b0;
 assign cmd_en = (mem_wr_en | mem_rd_en) ? 1'b1 : 1'b0;
 
+// `error` flags the illegal "write and read asserted at once" condition (the
+// FrameUploader and FrameDownloader must never drive the ch0 bus together).
+// This should be impossible by construction; the sim assertion below catches it.
+assign error = mem_wr_en & mem_rd_en;
+
 `ifdef __ICARUS__
 always @(mem_wr_en or mem_rd_en)
     if (mem_wr_en == 1'b1 && mem_rd_en == 1'b1) begin
