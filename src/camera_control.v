@@ -75,6 +75,15 @@ wire        grab_busy;
 wire [255:0] grab_rd_data;
 wire        grab_calib;
 
+// SCCB controller result + ownership signals. Declared here because the
+// modbus_cam_backend instance below references them, but they're driven by logic
+// further down (the i2c controller and the init FSM); declaring up front avoids
+// implicit-net warnings on first use.
+wire [7:0]  i2c_data_out;     // i2c_control_fsm read result
+wire        i2c_data_valid;
+wire        device_ready;
+reg         cam_init_complete; // latched at TRANSMIT_COMPLETE; hands SCCB to the bridge
+
 uart #(
     .CLK_FREQ('d27_000_000),
     .BAUD('d1_000_000)          // exact divisor of 27 MHz (÷27); ~7-9 s for a full frame
@@ -208,14 +217,6 @@ reg delay_reset;
 reg [7:0] rom_addr;
 CONTROL_STATES controller_state;
 
-// Latched high once the power-on register load reaches TRANSMIT_COMPLETE; hands
-// the SCCB controller over from the init FSM to the Modbus bridge.
-reg        cam_init_complete;
-
-// i2c_control_fsm read result (driven once the read path returns).
-wire [7:0] i2c_data_out;
-wire       i2c_data_valid;
-
 // SCCB controller inputs, owned by the init FSM during init and by the Modbus
 // bridge afterwards.
 wire       sccb_store_data = cam_init_complete ? be_store_data : store_data;
@@ -240,7 +241,6 @@ wire sda_o_oen;
 wire cyc;
 wire [2:0] reg_addr;
 wire cmd_ack;
-wire device_ready;
 wire transmit_error;
 wire delay_done;
 
