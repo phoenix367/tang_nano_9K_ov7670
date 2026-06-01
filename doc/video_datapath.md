@@ -136,6 +136,54 @@ for the full duration of one upload pass (set on `start_uploading`, cleared on
 `upload_done`); that flag is what the channel-1 grab uses to bracket exactly one
 frame.
 
+The load queue is coordinated by **command tokens**: `CamPixelProcessor` raises
+`command_data_valid` with `command_data` = 1 (frame start), 2 (row start), or 3
+(frame end), and `FrameUploader` acks each with `read_rdy`. Pixels themselves sit
+in a row buffer that the uploader reads by driving `pixel_addr` and latching
+`pixel_data`. Each burst is gated by an arbiter round-trip (`write_rq` →
+`write_ack`). The full per-frame communication sequence:
+
+```mermaid
+sequenceDiagram
+    participant CPP as CamPixelProcessor<br/>(load queue)
+    participant VC as VideoController<br/>(upload FSM)
+    participant BC as BufferController
+    participant ARB as arbiter
+    participant FU as FrameUploader
+    participant PHY as ch0 PSRAM<br/>(via pipeline reg)
+    participant CH1 as psram_ch1<br/>(ch1 tee)
+
+    VC->>ARB: producer_req (lock buffer meta)
+    ARB-->>VC: grant (idx 0)
+    VC->>BC: request a free write buffer
+    BC-->>VC: buffer_id → base_addr
+    VC->>FU: start (+ base_addr)
+    Note over VC,CH1: grab_active ↑ (brackets one frame)
+
+    CPP->>FU: command_data_valid = 1 (frame start)
+    FU-->>CPP: read_rdy
+
+    loop each of FRAME_HEIGHT rows
+        CPP->>FU: command_data_valid = 2 (row start)
+        FU-->>CPP: read_rdy
+        loop each 16-pixel burst across the row
+            FU->>ARB: write_rq
+            ARB-->>FU: write_ack (grant idx 2)
+            FU->>CPP: pixel_addr
+            CPP-->>FU: pixel_data
+            FU->>PHY: mem_wr_en + write_addr + write_data (32-byte burst)
+            PHY-->>CH1: tee cmd_en_0_p & cmd_0_p, wr_data0_p (if grab_active)
+            Note over FU: frame_addr += 16
+        end
+    end
+
+    CPP->>FU: command_data_valid = 3 (frame end)
+    FU-->>CPP: read_rdy
+    FU->>VC: upload_done
+    Note over VC,CH1: grab_active ↓
+    VC->>BC: finalize → advance write pointer
+```
+
 ## LCD-display path
 
 `FrameDownloader` reads frames back out toward the LCD. It is a thin
