@@ -69,7 +69,8 @@ module PositionScaler_horz
     // keep for that next accumulator value (registered into keep_q).
     wire keep_adv = ((acc_adv + TARGET_PIXELS[ACC_WIDTH-1:0]) >= SOURCE_PIXELS[ACC_WIDTH-1:0]);
     // keep for column 0 (acc = 0): only when not downscaling (TARGET >= SOURCE).
-    localparam KEEP0 = (TARGET_PIXELS >= SOURCE_PIXELS);
+    // 1-bit vector so the keep_q assignment is a clean bit, not a scalar index.
+    localparam [0:0] KEEP0 = (TARGET_PIXELS >= SOURCE_PIXELS);
 
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
