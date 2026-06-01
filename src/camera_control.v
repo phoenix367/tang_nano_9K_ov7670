@@ -76,6 +76,8 @@ wire [20:0] grab_rd_addr;
 wire        grab_busy;
 wire [255:0] grab_rd_data;
 wire        grab_calib;
+// health watchdog status from VGA_timing -> modbus_cam_backend (reg 0xF9)
+wire [4:0]  wd_health;
 
 // SCCB controller result + ownership signals. Declared here because the
 // modbus_cam_backend instance below references them, but they're driven by logic
@@ -156,7 +158,8 @@ modbus_cam_backend cam_bridge (
     .grab_rd_addr(grab_rd_addr),
     .grab_busy(grab_busy),
     .grab_rd_data(grab_rd_data),
-    .grab_calib(grab_calib)
+    .grab_calib(grab_calib),
+    .wd_health(wd_health)
 );
 
 // ---- UART activity blink + host-presence timeout ----
@@ -300,7 +303,8 @@ VGA_timing	VGA_timing_inst(
     .grab_rd_addr(grab_rd_addr),
     .grab_busy(grab_busy),
     .grab_rd_data(grab_rd_data),
-    .grab_calib(grab_calib)
+    .grab_calib(grab_calib),
+    .wd_health(wd_health)
 );
 
 i2c_master_top i2c_master(

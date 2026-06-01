@@ -21,11 +21,12 @@ localparam integer BLINK   = 3;
 
 reg  clk, reset_n;
 reg  lcd_beat, mem_beat, cam_beat;
-wire hang, blink;
+wire hang, blink, monitoring;
+wire [2:0] sub_hang;             // {cam, mem, lcd} sticky hang flags
 reg  lcd_en, mem_en, cam_en;
 reg  blink_seen0, blink_seen1;
 integer errors, tick;
-string module_name;
+string module_name, str;
 
 DataLogger #(.verbosity(LOG_LEVEL)) logger();
 
@@ -34,7 +35,9 @@ watchdog #(.STARTUP(STARTUP), .TIMEOUT(TIMEOUT), .BLINK(BLINK)) dut (
     .reset_n(reset_n),
     .beats({cam_beat, mem_beat, lcd_beat}),   // {camera, memory, lcd}
     .hang(hang),
-    .blink(blink)
+    .blink(blink),
+    .subsystem_hang(sub_hang),
+    .monitoring(monitoring)
 );
 
 always #5 clk = ~clk;
@@ -91,18 +94,28 @@ initial begin
         logger.error(module_name, "blink did not toggle during healthy operation");
         errors = errors + 1;
     end
+    if (monitoring !== 1'b1) begin
+        logger.error(module_name, "monitoring not asserted after the startup grace");
+        errors = errors + 1;
+    end
 
-    // --- stop the camera heartbeat: that monitor must time out ---
+    // --- stop the camera heartbeat: only that monitor must time out ---
     cam_en = 1'b0;
     step(TIMEOUT + 30);
     if (hang !== 1'b1) begin
         logger.error(module_name, "hang did not assert after the camera heartbeat stopped");
         errors = errors + 1;
     end
+    // beats = {cam, mem, lcd} -> cam is subsystem_hang[2]; mem/lcd must stay healthy
+    if (sub_hang !== 3'b100) begin
+        $sformat(str, "subsystem_hang = %b, expected 100 (only camera stalled)", sub_hang);
+        logger.error(module_name, str);
+        errors = errors + 1;
+    end
 
     // --- sticky: lcd/mem still healthy, hang must stay asserted ---
     step(TIMEOUT * 2);
-    if (hang !== 1'b1) begin
+    if (hang !== 1'b1 || sub_hang !== 3'b100) begin
         logger.error(module_name, "hang not sticky -- cleared while a subsystem was still stalled");
         errors = errors + 1;
     end

@@ -157,6 +157,7 @@ def api_health():
             magic = client.read_reg(ov7670.STATUS_MAGIC_ADDR)
             hi, lo = client.read_holding(ov7670.STATUS_UPTIME_ADDR, 2)
             uptime = ((hi & 0xFF) << 8) | (lo & 0xFF)
+            health = client.read_health()   # watchdog board health (0 if unsupported)
         except ModbusError as e:
             # the device answered (so it's alive) but has no status registers --
             # an older bitstream without the bridge's reserved 0xF0..0xF2 block.
@@ -164,7 +165,7 @@ def api_health():
         except (RuntimeError, ValueError, TimeoutError, OSError) as e:
             return _classify(e)
     return jsonify(ok=True, alive=True, status_supported=True, magic=magic,
-                   magic_ok=(magic == ov7670.STATUS_MAGIC), uptime=uptime)
+                   magic_ok=(magic == ov7670.STATUS_MAGIC), uptime=uptime, health=health)
 
 
 @app.route("/api/connect", methods=["POST"])

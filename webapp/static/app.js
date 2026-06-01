@@ -110,6 +110,7 @@ function enterState(next, info) {
     $("#tab-color").hidden = true;
     $("#tab-capture").hidden = true;
     clearGrabCanvas();          // drop any grabbed frame from a prior session
+    $("#board-health").hidden = true;
   }
 
   if (next === ST.RECONNECTING) {
@@ -198,6 +199,26 @@ async function heartbeat() {
     statusUnsupportedNoted = true;
     toast("Reset detection unavailable (older bitstream)");
   }
+  renderHealth(data.status_supported ? data.health : null);
+}
+
+function setChip(el, state, text) {
+  el.textContent = text;
+  el.className = "health-chip " + state;     // state: ok | bad | idle
+}
+
+function renderHealth(health) {
+  const box = $("#board-health");
+  if (!health) { box.hidden = true; return; }
+  box.hidden = false;
+  const mon = !!health.monitoring;
+  setChip($("#health-overall"),
+          health.any_hang ? "bad" : (mon ? "ok" : "idle"),
+          health.any_hang ? "HANG" : (mon ? "Healthy" : "starting…"));
+  const sub = (el, label, hang) => setChip(el, !mon ? "idle" : (hang ? "bad" : "ok"), label);
+  sub($("#health-lcd"), "LCD", health.lcd_hang);
+  sub($("#health-mem"), "Memory", health.memory_hang);
+  sub($("#health-cam"), "Camera", health.camera_hang);
 }
 
 function startReconnect() { stopReconnect(); reconnectTimer = setInterval(tryReconnect, 3000); }

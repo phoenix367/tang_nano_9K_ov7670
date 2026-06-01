@@ -129,6 +129,7 @@ during camera init) so a host can identify the firmware and detect a hard reset:
 | `0xF4`/`0xF5`| Single-read ch1 address, low / high (debug)                      |
 | `0xF6`/`0xF7`| Single-read ch1 word, high / low halves (debug)                  |
 | `0xF8`| Write = rewind the [download stream](#frame-grab-and-download) to pixel 0 |
+| `0xF9`| Watchdog board health (read-only): bit0 LCD hang, bit1 memory hang, bit2 camera hang, bit3 any-hang, bit4 monitoring (armed). Per-subsystem bits are sticky until reset. Reads `0` on firmware without the watchdog. |
 
 The 16-bit uptime is `0` at reset and free-runs (~1 Hz). A host that sees it jump
 **backward** knows the board was reset (and its registers reverted to defaults),

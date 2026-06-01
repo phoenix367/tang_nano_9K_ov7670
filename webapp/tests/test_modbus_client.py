@@ -123,3 +123,19 @@ def test_grab_frame_cancel_raises(rtu):
     c, _ = rtu
     with pytest.raises(modbus_client.GrabCancelled):
         c.grab_frame(should_cancel=lambda: True)
+
+
+def test_read_health_healthy(rtu):
+    c, slave = rtu
+    slave.health = 0x10                      # monitoring, no hangs
+    h = c.read_health()
+    assert h["monitoring"] and not h["any_hang"]
+    assert not (h["lcd_hang"] or h["memory_hang"] or h["camera_hang"])
+
+
+def test_read_health_memory_hang(rtu):
+    c, slave = rtu
+    slave.health = 0x10 | 0x08 | 0x02        # monitoring + any-hang + memory
+    h = c.read_health()
+    assert h["monitoring"] and h["any_hang"] and h["memory_hang"]
+    assert not h["lcd_hang"] and not h["camera_hang"]

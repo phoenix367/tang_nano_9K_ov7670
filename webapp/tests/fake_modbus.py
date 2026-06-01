@@ -54,6 +54,7 @@ class FakeModbusSlave:
         self.reg_count = reg_count
         self.regs = default_registers()
         self.uptime = 0x1234
+        self.health = 0x10            # watchdog: monitoring set, no hangs (bit4)
         self.stream_ptr = 0           # frame-download pixel cursor (rewound by 0xF8)
         self._rx = bytearray()        # bytes the client will read back
         self.is_open = True
@@ -95,6 +96,8 @@ class FakeModbusSlave:
             return self.uptime & 0xFF
         if addr == 0xF3:
             return 0x02              # bit1 = ch1 calibrated, bit0 = busy (grab instant)
+        if addr == 0xF9:
+            return self.health       # watchdog health bits (default: monitoring, no hangs)
         return self.regs.get(addr, 0) & 0xFF
 
     def _reply(self, func, payload):

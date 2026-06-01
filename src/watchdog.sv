@@ -35,9 +35,11 @@ module watchdog #(
 (
     input  wire       clk,
     input  wire       reset_n,
-    input  wire [2:0] beats,    // {camera, memory, lcd} activity heartbeats
-    output wire       hang,     // 1 once any monitored subsystem stalls (sticky)
-    output wire       blink     // healthy-state heartbeat for the LED
+    input  wire [2:0] beats,           // {camera, memory, lcd} activity heartbeats
+    output wire       hang,            // 1 once any monitored subsystem stalls (sticky)
+    output wire       blink,           // healthy-state heartbeat for the LED
+    output wire [2:0] subsystem_hang,  // sticky per-subsystem hang {camera, memory, lcd}
+    output wire       monitoring       // armed: past the startup grace
 );
     localparam integer CW = (TIMEOUT <= 1) ? 1 : $clog2(TIMEOUT + 1);
     localparam integer SW = (STARTUP <= 1) ? 1 : $clog2(STARTUP + 1);
@@ -55,9 +57,9 @@ module watchdog #(
             else                              start_cnt <= start_cnt + 1'b1;
         end
     end
+    assign monitoring = armed;
 
-    // ---- one monitor per subsystem ----
-    wire [2:0] subsystem_hang;
+    // ---- one monitor per subsystem (subsystem_hang is the output port) ----
     genvar i;
     generate
         for (i = 0; i < 3; i = i + 1) begin : mon

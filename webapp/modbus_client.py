@@ -17,6 +17,7 @@ import serial  # pyserial
 # into PSRAM channel 1 and streams it back over FC03.
 REG_GRAB    = 0x00F3   # write 1 = arm a grab; read bit0 = busy, bit1 = ch1 calibrated
 REG_STREAM  = 0x00F8   # write = rewind the download stream to pixel 0
+REG_HEALTH  = 0x00F9   # read = watchdog health bits (see read_health)
 STREAM_BASE = 0x1000   # any FC03 read >= here returns the next frame pixel(s)
 FRAME_W, FRAME_H = 640, 480
 FRAME_PIXELS = FRAME_W * FRAME_H
@@ -168,6 +169,22 @@ class ModbusRTU:
     def write_reg(self, addr, value):
         """Write a single OV7670 register (low byte is what reaches SCCB)."""
         self.write_single(addr, value & 0xFF)
+
+    def read_health(self):
+        """Read the watchdog board-health register (0xF9) and decode the bits.
+
+        Returns a dict of booleans. `monitoring` is False on firmware without the
+        watchdog (the register reads 0) or during the watchdog's startup grace;
+        the per-subsystem flags are sticky (latched until the board is reset).
+        """
+        v = self.read_holding(REG_HEALTH, 1)[0]
+        return {
+            "monitoring":  bool(v & 0x10),   # watchdog armed (past startup grace)
+            "any_hang":    bool(v & 0x08),
+            "camera_hang": bool(v & 0x04),
+            "memory_hang": bool(v & 0x02),
+            "lcd_hang":    bool(v & 0x01),
+        }
 
     # ---- frame grab (capture into PSRAM ch1, then stream over FC03) ----------
     def grab_busy(self):

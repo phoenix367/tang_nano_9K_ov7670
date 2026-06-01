@@ -214,3 +214,13 @@ def test_grab_status_after_grab(client):
 def test_grab_cancel_endpoint(client):
     tc, _ = client
     assert tc.post("/api/grab/cancel").get_json()["ok"] is True
+
+
+def test_health_route_includes_watchdog(client):
+    tc, fake = client
+    _connect(tc)
+    fake["slave"].health = 0x10 | 0x08 | 0x04   # monitoring + any-hang + camera
+    r = tc.get("/api/health").get_json()
+    assert r["ok"] and r["status_supported"]
+    assert r["health"]["monitoring"] and r["health"]["any_hang"]
+    assert r["health"]["camera_hang"] and not r["health"]["lcd_hang"]

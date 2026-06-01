@@ -72,7 +72,8 @@ module modbus_cam_backend
     output reg [20:0]  grab_rd_addr,    // ch1 read address (burst-aligned)
     input  wire        grab_busy,
     input  wire [255:0] grab_rd_data,   // full 8-word burst returned by a ch1 read
-    input  wire        grab_calib
+    input  wire        grab_calib,
+    input  wire [4:0]  wd_health        // watchdog: [4]=monitoring [3]=any-hang [2]=cam [1]=mem [0]=lcd
 );
     localparam [4:0]
         IDLE         = 5'd0,
@@ -115,6 +116,7 @@ module modbus_cam_backend
                       ADDR_RDDATA_HI  = 16'h00F6,    // read: ch1 word [31:16]
                       ADDR_RDDATA_LO  = 16'h00F7,    // read: ch1 word [15:0]
                       ADDR_STREAM     = 16'h00F8,    // write: reset the download stream to ch1 addr 0
+                      ADDR_HEALTH     = 16'h00F9,    // read: watchdog health bits (see wd_health)
                       STREAM_BASE     = 16'h1000;    // any read >= here returns the next frame pixel
 
     localparam [20:0] BSTEP = 21'd16;                // ch1 burst-address increment (matches the grab)
@@ -226,6 +228,9 @@ module modbus_cam_backend
                                         s_loaded <= `WRAP_SIM(#1) 1'b0;
                                     end
                                 end
+                                ADDR_HEALTH:
+                                    // watchdog board health (read-only)
+                                    be_rdata <= `WRAP_SIM(#1) {11'd0, wd_health};
                                 default:
                                     be_rdata <= `WRAP_SIM(#1) 16'h0000;
                             endcase

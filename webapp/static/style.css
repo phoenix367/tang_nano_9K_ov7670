@@ -245,3 +245,18 @@ label.inline { flex-direction: row; align-items: center; gap: 6px; color: var(--
   font-size: 12px;
   color: var(--muted);
 }
+
+/* ---- board health chips ---- */
+.health { margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.health-label { color: var(--muted); font-size: 13px; }
+.health-chip {
+  font-size: 12px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--muted);
+}
+.health-chip.ok   { border-color: var(--ok);  color: var(--ok); }
+.health-chip.bad  { border-color: var(--bad); color: var(--bad); background: rgba(232,88,79,0.12); }
+.health-chip.idle { color: var(--muted); }

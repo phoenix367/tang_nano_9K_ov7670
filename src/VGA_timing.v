@@ -50,7 +50,10 @@ module VGA_timing
     input  [20:0]          grab_rd_addr,
     output                 grab_busy,
     output [255:0]         grab_rd_data,
-    output                 grab_calib
+    output                 grab_calib,
+    // health watchdog status (sys_clk): [4]=monitoring [3]=any-hang
+    //                                   [2]=cam [1]=mem [0]=lcd (sticky hangs)
+    output [4:0]           wd_health
 );
 // Logger initialization
 `ifdef __ICARUS__
@@ -380,7 +383,8 @@ VideoController #(
     // subsystems all show activity; hold it solid-on (active-low) if any hangs.
     // The three heartbeats are on unrelated clock domains; the watchdog runs on
     // sys_clk and synchronizes each internally.
-    wire wd_hang, wd_blink;
+    wire       wd_hang, wd_blink, wd_monitoring;
+    wire [2:0] wd_subsystem_hang;
     watchdog #(
         .STARTUP(54_000_000),   // ~2 s grace at 27 MHz (reset / calib / first frame)
         .TIMEOUT(13_500_000),   // ~0.5 s without a heartbeat = hang
@@ -392,8 +396,11 @@ VideoController #(
                 rd_data_valid_0 | cmd_en_0,   // [1] PSRAM / memory subsystem
                 LCD_VSYNC}),                  // [0] LCD rendering
         .hang(wd_hang),
-        .blink(wd_blink)
+        .blink(wd_blink),
+        .subsystem_hang(wd_subsystem_hang),
+        .monitoring(wd_monitoring)
     );
     assign debug_led = ~(wd_hang | wd_blink);   // active-low: solid on hang, else blink
+    assign wd_health = {wd_monitoring, wd_hang, wd_subsystem_hang};
 
 endmodule
