@@ -221,7 +221,7 @@ stateDiagram-v2
   in `FrameDownloader`/`DownloadRowCache`: those emit a plain `EMIT_ROW_SIZE`-wide
   row, and `HorizontalResizer` downscales it to the active band and adds the
   `BORDER_SIZE` black columns on each side (362-wide active band centred on a
-  480-wide line). See [`src/HorizontalResizer.sv`](../src/HorizontalResizer.sv).
+  480-wide line). See [`src/resize/HorizontalResizer.sv`](../src/resize/HorizontalResizer.sv).
 
 The structure and pixel mapping are covered by the
 `integration/pillarbox/*` and `integration/frame_roundtrip/*` testbenches, and

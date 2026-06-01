@@ -17,71 +17,51 @@
         <File path="FPGADesignElements/Register.v" type="file.verilog" enable="1"/>
         <File path="FPGADesignElements/Register_Toggle.v" type="file.verilog" enable="1"/>
         <File path="FPGADesignElements/Reset_Synchronizer.v" type="file.verilog" enable="1"/>
-        <File path="sim/download_buffer_test.sv" type="file.verilog" enable="0"/>
-        <File path="sim/frame_buffer_test_read_frame_23x17.sv" type="file.verilog" enable="0"/>
-        <File path="sim/frame_buffer_test_read_frame_23x17_2.sv" type="file.verilog" enable="0"/>
-        <File path="sim/frame_buffer_test_read_frame_multi_23x17.sv" type="file.verilog" enable="0"/>
-        <File path="sim/frame_buffer_test_read_write_frame_23x17.sv" type="file.verilog" enable="0"/>
-        <File path="sim/i2c_slave_model.sv" type="file.verilog" enable="0"/>
-        <File path="sim/lcd_controller_test.sv" type="file.verilog" enable="0"/>
-        <File path="sim/psram_model.sv" type="file.verilog" enable="0"/>
-        <File path="sim/svlogger.sv" type="file.verilog" enable="0"/>
-        <File path="sim/test_bench.sv" type="file.verilog" enable="0"/>
-        <File path="sim/test_config.sv" type="file.verilog" enable="0"/>
-        <File path="sim/test_pattern_write_frame_640x20.sv" type="file.verilog" enable="0"/>
-        <File path="sim/test_utils.sv" type="file.verilog" enable="0"/>
-        <File path="sim/tst_bench_top.v" type="file.verilog" enable="0"/>
-        <File path="sim/uploader_test_bench.sv" type="file.verilog" enable="0"/>
-        <File path="sim/video_test_bench.sv" type="file.verilog" enable="0"/>
-        <File path="sim/wb_master_model.v" type="file.verilog" enable="0"/>
         <File path="src/BufferController.sv" type="file.verilog" enable="1"/>
         <File path="src/DownloadRowCache.sv" type="file.verilog" enable="1"/>
-        <File path="src/HorizontalResizer.sv" type="file.verilog" enable="1"/>
-        <File path="src/PositionScaler_horz.sv" type="file.verilog" enable="1"/>
-        <File path="src/PositionScaler_vert.sv" type="file.verilog" enable="1"/>
+        <File path="src/resize/HorizontalResizer.sv" type="file.verilog" enable="1"/>
+        <File path="src/resize/PositionScaler_horz.sv" type="file.verilog" enable="1"/>
+        <File path="src/resize/PositionScaler_vert.sv" type="file.verilog" enable="1"/>
         <File path="src/VGA_timing.v" type="file.verilog" enable="1"/>
         <File path="src/arbiter.v" type="file.verilog" enable="1"/>
         <File path="src/cam_pixel_processor.sv" type="file.verilog" enable="1"/>
         <File path="src/camera_control.v" type="file.verilog" enable="1"/>
         <File path="src/camera_control_defs.vh" type="file.verilog" enable="1"/>
         <File path="src/color_utilities.vh" type="file.verilog" enable="1"/>
-        <File path="src/modbus_rtu_slave.sv" type="file.verilog" enable="1"/>
-        <File path="src/modbus_cam_backend.sv" type="file.verilog" enable="1"/>
+        <File path="src/modbus/modbus_rtu_slave.sv" type="file.verilog" enable="1"/>
+        <File path="src/modbus/modbus_cam_backend.sv" type="file.verilog" enable="1"/>
         <File path="src/platform_config.vh" type="file.verilog" enable="1"/>
-        <File path="src/debug_pattern_generator.sv" type="file.verilog" enable="1"/>
-        <File path="src/debug_pattern_generator2.sv" type="file.verilog" enable="1"/>
+        <File path="src/debug/debug_pattern_generator.sv" type="file.verilog" enable="1"/>
+        <File path="src/debug/debug_pattern_generator2.sv" type="file.verilog" enable="1"/>
         <File path="src/device_delay.sv" type="file.verilog" enable="1"/>
         <File path="src/fifo_top/fifo_cam_data.v" type="file.verilog" enable="1"/>
         <File path="src/fsms/FrameDownloader.sv" type="file.verilog" enable="1"/>
         <File path="src/fsms/FrameUploader.sv" type="file.verilog" enable="1"/>
         <File path="src/functions.v" type="file.verilog" enable="1"/>
-        <File path="src/gowin_alu54/gowin_alu54.v" type="file.verilog" enable="1"/>
         <File path="src/gowin_rpll/memory_rpll.v" type="file.verilog" enable="1"/>
         <File path="src/gowin_sdpb_dn/gowin_sdpb_dn.v" type="file.verilog" enable="1"/>
-        <File path="src/i2c_control_fsm.v" type="file.verilog" enable="1"/>
-        <File path="src/i2c_controller.v" type="file.verilog" enable="0"/>
-        <File path="src/i2c_master.v" type="file.verilog" enable="1"/>
-        <File path="src/i2c_master/i2c_master.v" type="file.verilog" enable="0"/>
-        <File path="src/i2c_master_bit_ctrl.v" type="file.verilog" enable="1"/>
-        <File path="src/i2c_master_byte_ctrl.v" type="file.verilog" enable="1"/>
-        <File path="src/i2c_master_defines.v" type="file.verilog" enable="1"/>
+        <File path="src/i2c/i2c_control_fsm.v" type="file.verilog" enable="1"/>
+        <File path="src/i2c/i2c_master.v" type="file.verilog" enable="1"/>
+        <File path="src/i2c/i2c_master_bit_ctrl.v" type="file.verilog" enable="1"/>
+        <File path="src/i2c/i2c_master_byte_ctrl.v" type="file.verilog" enable="1"/>
+        <File path="src/i2c/i2c_master_defines.v" type="file.verilog" enable="1"/>
         <File path="src/lcd_controller.sv" type="file.verilog" enable="1"/>
         <File path="src/ov7670_default.sv" type="file.verilog" enable="1"/>
         <File path="src/ov7670_regs.vh" type="file.verilog" enable="1"/>
         <File path="src/psram_memory_interface_hs_2ch/psram_memory_interface_hs_2ch.v" type="file.verilog" enable="1"/>
         <File path="src/psram_utils.vh" type="file.verilog" enable="1"/>
+        <File path="src/psram_ch1.sv" type="file.verilog" enable="1"/>
         <File path="src/sdpb_1kx32/sdpb_1kx32.v" type="file.verilog" enable="1"/>
         <File path="src/timescale.v" type="file.verilog" enable="1"/>
-        <File path="src/uart.sv" type="file.verilog" enable="1"/>
+        <File path="src/modbus/uart.sv" type="file.verilog" enable="1"/>
         <File path="src/video_controller.sv" type="file.verilog" enable="1"/>
+        <File path="src/watchdog.sv" type="file.verilog" enable="1"/>
         <File path="src/camera_ov7670.cst" type="file.cst" enable="1"/>
         <File path="src/camera_control.sdc" type="file.sdc" enable="1"/>
         <File path="CMakeLists.txt" type="file.other" enable="1"/>
         <File path="sim/CMakeLists.txt" type="file.other" enable="1"/>
-        <File path="sim/run_simulator.bat.in" type="file.other" enable="1"/>
         <File path="sim/run_test_baseline.bat" type="file.other" enable="1"/>
         <File path="sim/run_test_video.bat" type="file.other" enable="1"/>
-        <File path="sim/test_config.sv.in" type="file.other" enable="1"/>
         <File path="src/CMakeLists.txt" type="file.other" enable="1"/>
     </FileList>
 </Project>

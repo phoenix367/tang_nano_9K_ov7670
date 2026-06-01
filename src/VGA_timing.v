@@ -34,7 +34,7 @@ module VGA_timing
     input href,
     input [7:0] p_data,
     output LCD_CLK,
-    output reg debug_led,
+    output debug_led,
     input memory_clk,
     input pll_lock,
     input screen_clk,
@@ -43,7 +43,17 @@ module VGA_timing
     inout [1:0]           IO_psram_rwds,
     output[1:0]           O_psram_reset_n,
     inout [15:0]           IO_psram_dq,
-    output[1:0]           O_psram_cs_n
+    output[1:0]           O_psram_cs_n,
+    // channel-1 frame grab / readout (sys_clk domain)
+    input                  grab_arm,
+    input                  grab_rd_req,
+    input  [20:0]          grab_rd_addr,
+    output                 grab_busy,
+    output [255:0]         grab_rd_data,
+    output                 grab_calib,
+    // health watchdog status (sys_clk): [4]=monitoring [3]=any-hang
+    //                                   [2]=cam [1]=mem [0]=lcd (sticky hangs)
+    output [4:0]           wd_health
 );
 // Logger initialization
 `ifdef __ICARUS__
@@ -52,7 +62,9 @@ module VGA_timing
 
     wire calib_1;
 
-    assign debug_led = ~(error0 || error1);
+    // debug_led is driven by the health watchdog instantiated at the end of this
+    // module: it blinks while the LCD, memory and camera subsystems are all
+    // active, and goes solid-on if any of them stalls.
 
     wire [20:0] addr0;
     wire [20:0] addr1;
@@ -116,11 +128,34 @@ module VGA_timing
     wire queue_store_full;
     wire [16:0] video_data_queue_in;
 
-    assign addr1 = 21'h0;
-    assign wr_data1 = 32'h0;
-    assign cmd_1 = 1'b0;
-    assign cmd_en_1 = 1'b1;
-    assign data_mask_1 = 4'h0;
+    // Channel-1 PSRAM access engine — drives the ch1 IP pins directly (no
+    // arbiter; ch1 is exclusively this module's). Phase B: a loopback self-test.
+    wire grab_active;   // a camera frame is being written to ch0 (from VideoController)
+
+    psram_ch1 #(.MEMORY_BURST(32)) ch1_engine (
+        .fb_clk(clk_2),
+        .fb_rst_n(nRST),
+        .calib1(init_done_1),
+        .cmd1(cmd_1),
+        .cmd_en1(cmd_en_1),
+        .addr1(addr1),
+        .wr_data1(wr_data1),
+        .data_mask1(data_mask_1),
+        .rd_data1(rd_data1),
+        .rd_data_valid1(rd_data_valid_1),
+        // tee the (pipelined) ch0 write stream for the grab-mirror
+        .tap_wr_cmd(cmd_en_0_p & cmd_0_p),
+        .tap_wr_data(wr_data0_p),
+        .grab_active(grab_active),
+        .sclk(sys_clk),
+        .srst_n(nRST),
+        .grab_arm(grab_arm),
+        .rd_req(grab_rd_req),
+        .rd_addr(grab_rd_addr),
+        .busy(grab_busy),
+        .rd_data_o(grab_rd_data),
+        .ch1_calib(grab_calib)
+    );
 
     Video_frame_buffer frame_buffer(
         .clk(sys_clk), 
@@ -176,6 +211,7 @@ VideoController #(
     .rd_data_valid(rd_data_valid_0),
     .error(error0),
     .data_mask(data_mask_0),
+    .grab_active(grab_active),
 
     .load_clk_o(mem_load_clk),
     .load_read_rdy(load_read_rdy),
@@ -342,4 +378,29 @@ VideoController #(
         .LCD_G(LCD_G),
         .LCD_R(LCD_R)
     );
+
+    // ---- health watchdog: blink debug_led while the LCD, memory and camera
+    // subsystems all show activity; hold it solid-on (active-low) if any hangs.
+    // The three heartbeats are on unrelated clock domains; the watchdog runs on
+    // sys_clk and synchronizes each internally.
+    wire       wd_hang, wd_blink, wd_monitoring;
+    wire [2:0] wd_subsystem_hang;
+    watchdog #(
+        .STARTUP(54_000_000),   // ~2 s grace at 27 MHz (reset / calib / first frame)
+        .TIMEOUT(13_500_000),   // ~0.5 s without a heartbeat = hang
+        .BLINK(23)              // ~1.6 Hz heartbeat
+    ) health_watchdog (
+        .clk(sys_clk),
+        .reset_n(nRST),
+        .beats({cam_vsync,                    // [2] OV7670 frame capture (vsync)
+                rd_data_valid_0 | cmd_en_0,   // [1] PSRAM / memory subsystem
+                LCD_VSYNC}),                  // [0] LCD rendering
+        .hang(wd_hang),
+        .blink(wd_blink),
+        .subsystem_hang(wd_subsystem_hang),
+        .monitoring(wd_monitoring)
+    );
+    assign debug_led = ~(wd_hang | wd_blink);   // active-low: solid on hang, else blink
+    assign wd_health = {wd_monitoring, wd_hang, wd_subsystem_hang};
+
 endmodule

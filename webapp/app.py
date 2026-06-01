@@ -14,10 +14,9 @@ Run:
 import os
 import threading
 
-from flask import Flask, jsonify, render_template, request
-
 import ov7670
-from modbus_client import ModbusError, ModbusRTU
+from flask import Flask, Response, jsonify, render_template, request
+from modbus_client import FRAME_H, FRAME_W, GrabCancelled, ModbusError, ModbusRTU, rgb565_to_rgba
 
 try:
     from serial.tools import list_ports
@@ -30,6 +29,13 @@ app = Flask(__name__)
 # physical resource and a transaction must complete before the next starts).
 _lock = threading.Lock()
 _client = None  # type: ModbusRTU | None
+
+# Frame-grab progress, updated by the (long-running) /api/grab request as it
+# streams pixels and read concurrently by /api/grab/status for the UI's progress
+# bar. Guarded by its own lock so a status poll never waits on the bus lock.
+_progress_lock = threading.Lock()
+_grab_progress = {"active": False, "done": 0, "total": FRAME_W * FRAME_H,
+                  "cancel": False}
 
 
 # --------------------------------------------------------------------------- #
@@ -151,6 +157,7 @@ def api_health():
             magic = client.read_reg(ov7670.STATUS_MAGIC_ADDR)
             hi, lo = client.read_holding(ov7670.STATUS_UPTIME_ADDR, 2)
             uptime = ((hi & 0xFF) << 8) | (lo & 0xFF)
+            health = client.read_health()   # watchdog board health (0 if unsupported)
         except ModbusError as e:
             # the device answered (so it's alive) but has no status registers --
             # an older bitstream without the bridge's reserved 0xF0..0xF2 block.
@@ -158,7 +165,7 @@ def api_health():
         except (RuntimeError, ValueError, TimeoutError, OSError) as e:
             return _classify(e)
     return jsonify(ok=True, alive=True, status_supported=True, magic=magic,
-                   magic_ok=(magic == ov7670.STATUS_MAGIC), uptime=uptime)
+                   magic_ok=(magic == ov7670.STATUS_MAGIC), uptime=uptime, health=health)
 
 
 @app.route("/api/connect", methods=["POST"])
@@ -168,7 +175,7 @@ def api_connect():
     port = data.get("port")
     if not port:
         return _error("no port specified")
-    baud = int(data.get("baud", 9600))
+    baud = int(data.get("baud", 1000000))
     slave = int(data.get("slave", 7))
     timeout = float(data.get("timeout", 1.0))
     with _lock:
@@ -336,6 +343,88 @@ def api_matrix_contrast_center():
         except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError) as e:
             return _classify(e)
     return jsonify(payload)
+
+
+@app.route("/api/grab", methods=["POST"])
+def api_grab():
+    """Capture a frame into ch1 and stream it back as raw RGBA for a canvas draw.
+
+    Holds the bus lock for the whole ~10 s download (single physical resource),
+    so the heartbeat just waits its turn. As it streams, it updates the shared
+    progress counter that /api/grab/status reports for the UI's progress bar.
+    The body is FRAME_W*FRAME_H*4 bytes; width/height ship in headers so the
+    client sizes its ImageData."""
+    with _progress_lock:
+        _grab_progress.update(active=True, done=0, total=FRAME_W * FRAME_H,
+                              cancel=False)
+
+    def on_progress(done, total):
+        with _progress_lock:
+            _grab_progress["done"] = done
+            _grab_progress["total"] = total
+
+    def should_cancel():
+        with _progress_lock:
+            return _grab_progress["cancel"]
+
+    try:
+        with _lock:
+            client = _require_client()
+            pixels = client.grab_frame(progress=on_progress, should_cancel=should_cancel)
+    except GrabCancelled:
+        return jsonify(ok=False, cancelled=True), 409
+    except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError) as e:
+        return _classify(e)
+    finally:
+        with _progress_lock:
+            _grab_progress["active"] = False
+    body = rgb565_to_rgba(pixels)
+    resp = Response(body, mimetype="application/octet-stream")
+    resp.headers["X-Frame-Width"] = str(FRAME_W)
+    resp.headers["X-Frame-Height"] = str(FRAME_H)
+    return resp
+
+
+@app.route("/api/grab/status")
+def api_grab_status():
+    """Frame-grab progress (no bus access — safe to poll during a download)."""
+    with _progress_lock:
+        return jsonify(ok=True, **_grab_progress)
+
+
+@app.route("/api/grab/cancel", methods=["POST"])
+def api_grab_cancel():
+    """Signal an in-flight grab to abort. The grab loop checks this between
+    chunks and returns promptly (no bus access here, so it never blocks)."""
+    with _progress_lock:
+        _grab_progress["cancel"] = True
+    return jsonify(ok=True)
+
+
+@app.route("/api/dump")
+def api_dump():
+    """Read every OV7670 register (0x00..0xC9) for a full register dump."""
+    with _lock:
+        try:
+            client = _require_client()
+            regs = client.dump_registers()
+        except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError) as e:
+            return _classify(e)
+    return jsonify(ok=True, registers={f"0x{a:02X}": v for a, v in sorted(regs.items())})
+
+
+@app.route("/api/reset_defaults", methods=["POST"])
+def api_reset_defaults():
+    """Re-run the camera's power-on init (reset every register to its default).
+    Returns immediately; the device reloads over the next tens of ms, so the
+    client should re-read settings shortly after."""
+    with _lock:
+        try:
+            client = _require_client()
+            client.reset_to_defaults()
+        except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError) as e:
+            return _classify(e)
+    return jsonify(ok=True)
 
 
 @app.route("/api/raw", methods=["GET", "POST"])

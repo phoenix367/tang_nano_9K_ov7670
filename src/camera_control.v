@@ -48,7 +48,13 @@ module CameraControl_TOP (
 // is loaded undisturbed.
 // OV7670 register space 0x00..0xC9 plus the bridge's reserved status registers
 // (0xF0 magic, 0xF1/0xF2 uptime) so the host can detect a hard reset.
-localparam integer MODBUS_REGS = 'hF3;
+// Highest address the slave's bounds check accepts (its ADDR_LIMIT). Covers the
+// OV7670 map (0x00..0xC9), the reserved status/grab registers (0xF0..0xF8), and
+// the frame download stream band (>= 0x1000, served by modbus_cam_backend), so
+// an FC03 of up to 127 pixels starting at 0x1000 passes the bounds check. This
+// is the *address span*, not a physical register count — the backend is external
+// so there is no internal register file (REG_COUNT stays small).
+localparam integer MODBUS_ADDR_LIMIT = 'h1100;
 
 wire [7:0] uart_rx_data;
 wire       uart_rx_valid, uart_rx_perr;
@@ -62,10 +68,31 @@ wire [15:0] be_addr, be_wdata, be_rdata;
 wire        be_store_data, be_send_data, be_recv_data;
 wire [7:0]  be_din;
 wire        be_busy;
+// pulse from the Modbus bridge (reg 0xFA write) -> re-run camera init
+wire        cam_reinit;
+
+// channel-1 PSRAM bring-up loopback (Modbus backend <-> VGA_timing/psram_ch1)
+wire        grab_arm;
+wire        grab_rd_req;
+wire [20:0] grab_rd_addr;
+wire        grab_busy;
+wire [255:0] grab_rd_data;
+wire        grab_calib;
+// health watchdog status from VGA_timing -> modbus_cam_backend (reg 0xF9)
+wire [4:0]  wd_health;
+
+// SCCB controller result + ownership signals. Declared here because the
+// modbus_cam_backend instance below references them, but they're driven by logic
+// further down (the i2c controller and the init FSM); declaring up front avoids
+// implicit-net warnings on first use.
+wire [7:0]  i2c_data_out;     // i2c_control_fsm read result
+wire        i2c_data_valid;
+wire        device_ready;
+reg         cam_init_complete; // latched at TRANSMIT_COMPLETE; hands SCCB to the bridge
 
 uart #(
     .CLK_FREQ('d27_000_000),
-    .BAUD('d9600)
+    .BAUD('d1_000_000)          // exact divisor of 27 MHz (÷27); ~7-9 s for a full frame
 ) uart_inst (
     .clk(sys_clk),
     .reset_n(sys_rst_n),
@@ -82,10 +109,12 @@ uart #(
 
 modbus_rtu_slave #(
     .CLK_FREQ('d27_000_000),
-    .BAUD('d9600),
+    .BAUD('d1_000_000),
     .SLAVE_ADDR(8'd7),
-    .REG_COUNT(MODBUS_REGS),
-    .MAX_FRAME(32),         // caps a read burst at 13 regs; keeps the buffers small
+    .REG_COUNT(16),         // external backend: no internal register file, keep reg_o tiny
+    .ADDR_LIMIT(MODBUS_ADDR_LIMIT),  // bounds check spans the OV7670 + stream band
+    .MAX_FRAME(32),         // request buffer: FC10 camera writes stay small
+    .MAX_QTY(127),          // FC03 download burst: protocol max, payload in BSRAM
     .EXTERNAL_BACKEND(1)
 ) modbus_inst (
     .clk(sys_clk),
@@ -125,7 +154,15 @@ modbus_cam_backend cam_bridge (
     .device_rdy(device_ready),
     .data_valid(i2c_data_valid),
     .i2c_dout(i2c_data_out),
-    .busy(be_busy)
+    .busy(be_busy),
+    .cam_reinit(cam_reinit),
+    .grab_arm(grab_arm),
+    .grab_rd_req(grab_rd_req),
+    .grab_rd_addr(grab_rd_addr),
+    .grab_busy(grab_busy),
+    .grab_rd_data(grab_rd_data),
+    .grab_calib(grab_calib),
+    .wd_health(wd_health)
 );
 
 // ---- UART activity blink + host-presence timeout ----
@@ -189,14 +226,6 @@ reg delay_reset;
 reg [7:0] rom_addr;
 CONTROL_STATES controller_state;
 
-// Latched high once the power-on register load reaches TRANSMIT_COMPLETE; hands
-// the SCCB controller over from the init FSM to the Modbus bridge.
-reg        cam_init_complete;
-
-// i2c_control_fsm read result (driven once the read path returns).
-wire [7:0] i2c_data_out;
-wire       i2c_data_valid;
-
 // SCCB controller inputs, owned by the init FSM during init and by the Modbus
 // bridge afterwards.
 wire       sccb_store_data = cam_init_complete ? be_store_data : store_data;
@@ -221,7 +250,6 @@ wire sda_o_oen;
 wire cyc;
 wire [2:0] reg_addr;
 wire cmd_ack;
-wire device_ready;
 wire transmit_error;
 wire delay_done;
 
@@ -272,7 +300,14 @@ VGA_timing	VGA_timing_inst(
     .IO_psram_rwds(IO_psram_rwds),
     .O_psram_reset_n(O_psram_reset_n), 
     .IO_psram_dq(IO_psram_dq),
-    .O_psram_cs_n(O_psram_cs_n)
+    .O_psram_cs_n(O_psram_cs_n),
+    .grab_arm(grab_arm),
+    .grab_rd_req(grab_rd_req),
+    .grab_rd_addr(grab_rd_addr),
+    .grab_busy(grab_busy),
+    .grab_rd_data(grab_rd_data),
+    .grab_calib(grab_calib),
+    .wd_health(wd_health)
 );
 
 i2c_master_top i2c_master(
@@ -347,6 +382,16 @@ begin
         send_data <= `WRAP_SIM(#1) 1'b0;
         delay_reset <= `WRAP_SIM(#1) 1'b0;
         rom_addr <= `WRAP_SIM(#1) 8'h00;
+        cam_init_complete <= `WRAP_SIM(#1) 1'b0;
+    end else if (cam_reinit) begin
+        // Host requested "reset to defaults": restart the ROM walk from the top,
+        // exactly like a power-on init. Dropping cam_init_complete also hands the
+        // SCCB controller back from the Modbus bridge to this init FSM.
+        controller_state  <= `WRAP_SIM(#1) WAIT_RDY;
+        send_data         <= `WRAP_SIM(#1) 1'b0;
+        store_data        <= `WRAP_SIM(#1) 1'b0;
+        delay_reset       <= `WRAP_SIM(#1) 1'b0;
+        rom_addr          <= `WRAP_SIM(#1) 8'h00;
         cam_init_complete <= `WRAP_SIM(#1) 1'b0;
     end else begin
         case (controller_state)

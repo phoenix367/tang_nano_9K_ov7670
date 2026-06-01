@@ -1,9 +1,8 @@
 """Tests for the Modbus RTU client: CRC, framing, exceptions, retries, and the
 termios.error -> OSError normalization."""
 
-import pytest
-
 import modbus_client
+import pytest
 from modbus_client import CRCError, ModbusError
 
 
@@ -45,7 +44,7 @@ def test_write_takes_low_byte_only(rtu):
 def test_illegal_address_raises_modbus_exception(rtu):
     c, _ = rtu
     with pytest.raises(ModbusError) as ei:
-        c.read_holding(0xF3, 1)                 # 243, past reg_count
+        c.read_holding(0x1100, 1)               # past REG_COUNT (above the stream band)
     assert ei.value.code == 0x02
 
 
@@ -91,3 +90,66 @@ def test_serial_oserror_propagates(rtu):
     slave.fail_on_io = OSError("device gone")
     with pytest.raises(OSError):
         c.read_reg(0x0A)
+
+
+# ----------------------------------------------------- frame grab + conversion
+def test_grab_frame_pattern(rtu):
+    c, _ = rtu
+    pix = c.grab_frame()
+    assert len(pix) == modbus_client.FRAME_PIXELS
+    # the fake serves pixel i = i & 0xFFFF, in raster order
+    assert pix[0] == 0 and pix[1] == 1 and pix[125] == 125
+    assert pix[-1] == (modbus_client.FRAME_PIXELS - 1) & 0xFFFF
+
+
+def test_grab_frame_rewinds_each_time(rtu):
+    c, _ = rtu
+    assert c.grab_frame() == c.grab_frame()      # 0xF8 rewind -> identical frames
+
+
+def test_rgb565_to_rgba_primaries():
+    assert modbus_client.rgb565_to_rgba([0xFFFF]) == bytes([255, 255, 255, 255])
+    assert modbus_client.rgb565_to_rgba([0x0000]) == bytes([0, 0, 0, 255])
+    assert modbus_client.rgb565_to_rgba([0xF800]) == bytes([255, 0, 0, 255])
+    assert modbus_client.rgb565_to_rgba([0x07E0]) == bytes([0, 255, 0, 255])
+    assert modbus_client.rgb565_to_rgba([0x001F]) == bytes([0, 0, 255, 255])
+
+
+def test_rgb565_to_rgb888_length():
+    assert len(modbus_client.rgb565_to_rgb888([0, 1, 2])) == 9
+
+
+def test_grab_frame_cancel_raises(rtu):
+    c, _ = rtu
+    with pytest.raises(modbus_client.GrabCancelled):
+        c.grab_frame(should_cancel=lambda: True)
+
+
+def test_read_health_healthy(rtu):
+    c, slave = rtu
+    slave.health = 0x10                      # monitoring, no hangs
+    h = c.read_health()
+    assert h["monitoring"] and not h["any_hang"]
+    assert not (h["lcd_hang"] or h["memory_hang"] or h["camera_hang"])
+
+
+def test_read_health_memory_hang(rtu):
+    c, slave = rtu
+    slave.health = 0x10 | 0x08 | 0x02        # monitoring + any-hang + memory
+    h = c.read_health()
+    assert h["monitoring"] and h["any_hang"] and h["memory_hang"]
+    assert not h["lcd_hang"] and not h["camera_hang"]
+
+
+def test_reset_to_defaults(rtu):
+    c, slave = rtu
+    c.reset_to_defaults()
+    assert slave.regs.get(0xFA) == 1     # the reinit write (0xFA = 1) reached the slave
+
+
+def test_dump_registers(rtu):
+    c, _ = rtu
+    regs = c.dump_registers()
+    assert len(regs) == 0xCA          # 0x00..0xC9 inclusive = 202 registers
+    assert regs[0x0A] == 0x76         # PID from the fake's defaults
+    assert 0x00 in regs and 0xC9 in regs

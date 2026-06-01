@@ -1,7 +1,7 @@
 # OV7670 Modbus control web app
 
 A small Flask web app to control the OV7670 camera on the Tang Nano 9K over the
-Modbus RTU bridge (FT2232H channel-B UART, 9600 8-E-1, slave id 7). It exposes
+Modbus RTU bridge (FT2232H channel-B UART, 1 Mbaud 8-E-1, slave id 7). It exposes
 the camera's registers through the FPGA's `modbus_rtu_slave` (Direct 1:1
 mapping: holding-register address = OV7670 register number), so every control
 change is a live SCCB write on the device.
@@ -11,7 +11,9 @@ Features:
 - **Pick a serial port** (auto-detected, plus the project's `/dev/ttyGowin`
   symlink) and connect; the connect step sanity-reads the Product ID.
 - **Tabbed UI** once connected: a **Basic controls** tab (identity, controls,
-  raw register access) and a **Color** tab (gamma curve + color matrix).
+  raw register access), a **Color** tab (gamma curve + color matrix), and a
+  **Capture** tab (grab a 640×480 frame into PSRAM ch1, stream it back over
+  Modbus, draw it to a canvas, save as PNG).
 - **Read camera settings** — identity registers (PID/VER/MIDH/MIDL) and the
   decoded value of every control.
 - **Change specific controls** — brightness, contrast, gain, exposure, the
@@ -61,6 +63,18 @@ retries, the termios.error→OSError normalization), `test_ov7670.py` (register
 set, decode, gamma-curve math, color-matrix decode/transform), and
 `test_app.py` (every API route plus the not-connected / Modbus-exception /
 device-lost error paths).
+
+## Linting
+
+Python is linted with [Ruff](https://docs.astral.sh/ruff/) (config in the repo
+root `ruff.toml`, covering `webapp/` and `scripts/`); the browser JS is linted
+with [ESLint](https://eslint.org/) (`eslint.config.mjs`). Both run in CI
+(`.github/workflows/lint.yml`).
+
+```bash
+pip install -r webapp/requirements-dev.txt && ruff check .   # from the repo root
+cd webapp && npm install && npm run lint                     # JS
+```
 
 ## Layout
 

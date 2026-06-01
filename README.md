@@ -88,19 +88,30 @@ Here memory controller is a Gowin PSRAM IP instance.
 ## Host control (Modbus + web app)
 
 A **Modbus RTU server** built into the FPGA exposes the **live OV7670 registers**
-over the on-board USB-UART (`/dev/ttyGowin`, 9600 8-E-1, slave id 7). The
+over the on-board USB-UART (`/dev/ttyGowin`, 1 Mbaud 8-E-1, slave id 7). The
 holding-register address maps **1:1** to the camera register number
 (`0x00`–`0xC9`), so a host reads/writes the camera over SCCB in real time —
 adjust brightness, gain, white balance, gamma, the color matrix, mirror/flip,
 test patterns, and more, without rebuilding.
 
-A bundled **Flask web app** ([`webapp/`](webapp/)) gives a point-and-click panel
-for all of this (with a gamma-curve plot and a color-matrix editor), and
-`scripts/modbus_test.py` is a CLI for scripting. The board's status LEDs show
-UART RX/TX activity, host-connected, camera-init-done, and SCCB errors.
+Beyond live register tuning, the bridge can also **grab a full 640×480 frame**
+into the second PSRAM channel and stream it back to the host, exposes a hardware
+**health watchdog** (LCD / memory / camera) on both a debug LED and a status
+register, and supports **reset-to-defaults** (re-running the power-on camera
+init) on command.
 
-See **[doc/host_control.md](doc/host_control.md)** for the quick-start guide,
-register map, status registers, LED map, and web-app reference.
+A bundled **Flask web app** ([`webapp/`](webapp/)) gives a point-and-click panel
+for all of this — live controls, a gamma-curve plot and color-matrix editor,
+board-health indicators, a frame-grab/download tab, and a one-click register
+dump (JSON). `scripts/modbus_test.py` / `scripts/frame_grab.py` are CLIs for
+scripting.
+
+![Web app — Basic controls](doc/images/webapp_basic.png)
+
+See **[doc/host_control.md](doc/host_control.md)** for the register map, status
+registers, watchdog, frame grab, and LED map, and
+**[doc/webapp_manual.md](doc/webapp_manual.md)** for the web-app walkthrough with
+screenshots.
 
 ## How to build
 
@@ -143,9 +154,16 @@ levels, FTDI udev setup on Linux, GtkWave dumps — see
 - **[doc/build.md](doc/build.md)** — build, simulate, and program from
   CMake on Linux or Windows.
 - **[doc/architecture.md](doc/architecture.md)** — clock plan, data
-  path, frame buffer, scaler, pin map.
+  path, frame buffer, scaler, watchdog, pin map.
 - **[doc/host_control.md](doc/host_control.md)** — Modbus server, camera
-  register map, status registers, LED map, web app, and quick-start guide.
+  register map, reserved/status registers, board health, frame grab, LED
+  map, and quick-start guide.
+- **[doc/webapp_manual.md](doc/webapp_manual.md)** — web-app walkthrough
+  (connection, controls, color, capture, board health) with screenshots.
+- **[doc/modbus_server.md](doc/modbus_server.md)** — Modbus RTU slave +
+  camera-backend RTL (state machines, register map, connections).
+- **[doc/video_datapath.md](doc/video_datapath.md)** — `VGA_timing`
+  internals: PSRAM channels, arbiter, DMA, frame grab, watchdog.
 - **[doc/testing.md](doc/testing.md)** — simulation testbench layout,
   CTest labels, NBA-race conventions, how to add a new test.
 - **[CLAUDE.md](CLAUDE.md)** — quick context for AI coding agents

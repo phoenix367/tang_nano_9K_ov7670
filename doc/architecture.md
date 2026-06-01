@@ -98,7 +98,10 @@ before wiring anything):
 `arbiter` all live inside
 [`src/video_controller.sv`](../src/video_controller.sv), which is in
 turn wrapped by [`src/VGA_timing.v`](../src/VGA_timing.v) together with
-the PSRAM IP, `cam_pixel_processor` and `lcd_controller`.
+the PSRAM IP, `cam_pixel_processor`, `lcd_controller`, and the channel-1
+frame-grab engine. The module layout inside `VGA_timing`, the four-way
+arbiter, the camera-write DMA, and the frame-download path are documented
+in [video_datapath.md](video_datapath.md).
 
 `BufferController` ([`src/BufferController.sv`](../src/BufferController.sv))
 owns the write / read pointers and decides when each FSM is allowed
@@ -116,8 +119,8 @@ OV7670 register values come from a ROM
 defined via [`src/ov7670_regs.vh`](../src/ov7670_regs.vh)).
 
 At power-on, `i2c_control_fsm` walks the ROM and pushes each
-`(addr, value)` pair to the camera over SCCB through `i2c_master`
-([`src/i2c_master/`](../src/i2c_master/)). Status LEDs reflect
+`(addr, value)` pair to the camera over SCCB through `i2c_master_top`
+(the I2C stack in [`src/i2c/`](../src/i2c/)). Status LEDs reflect
 completion / errors. After initialization the camera streams pixels
 on its own clock domain (`video_clk_i`).
 
@@ -125,11 +128,11 @@ on its own clock domain (`video_clk_i`).
 
 After the power-on load finishes, the same `i2c_control_fsm` is reused
 to let a host read and write **live OV7670 registers** over the
-FT2232H channel-B UART (9600 8-E-1). A Modbus RTU slave
-([`src/modbus_rtu_slave.sv`](../src/modbus_rtu_slave.sv), slave id 7)
+FT2232H channel-B UART (1 Mbaud 8-E-1). A Modbus RTU slave
+([`src/modbus/modbus_rtu_slave.sv`](../src/modbus/modbus_rtu_slave.sv), slave id 7)
 runs with `EXTERNAL_BACKEND=1`: instead of an internal register file,
 every holding-register access is handed to
-[`src/modbus_cam_backend.sv`](../src/modbus_cam_backend.sv) over a small
+[`src/modbus/modbus_cam_backend.sv`](../src/modbus/modbus_cam_backend.sv) over a small
 request/ready handshake, and the bridge turns it into one SCCB
 transaction. The mapping is **Direct 1:1** — the Modbus holding-register
 address *is* the OV7670 register number (`0x00..0xC9`); a write uses the
@@ -140,17 +143,33 @@ ownership: the init FSM owns it until the ROM load reaches
 `TRANSMIT_COMPLETE`, which latches `cam_init_complete`; from then on the
 bridge owns it. The bridge stays idle until `cam_init_complete`, so the
 default configuration is loaded undisturbed ("block until init done").
-The bridge also answers three reserved addresses directly (no SCCB):
-`0xF0` firmware magic `0xA5`, `0xF1`/`0xF2` a free-running 16-bit uptime
-so a host can detect a hard reset.
+The bridge also answers reserved addresses directly (no SCCB): `0xF0`
+firmware magic `0xA5`, `0xF1`/`0xF2` a free-running 16-bit uptime so a
+host can detect a hard reset, and `0xF3`/`0xF8` plus the stream band
+`≥ 0x1000` that drive the frame grab (see below).
 
-FC03 read bursts are capped by the slave's `MAX_FRAME` (32 → ~13
-registers per request). The bridge runs entirely on the 27 MHz `sys_clk`
-domain. End-to-end coverage: `sim/integration/modbus/cam_bridge`.
+The FC03 *response* payload lives in inferred BSRAM (`MAX_QTY = 127`), so
+a single read can carry the protocol-max 127 registers — this is what
+makes the frame download practical. The slave's `MAX_FRAME` (32) now only
+bounds the *request* buffer (FC10 camera writes). The bridge runs
+entirely on the 27 MHz `sys_clk` domain. End-to-end coverage:
+`sim/integration/modbus/cam_bridge`.
 
-The full host-facing reference — register map, status registers, LEDs,
-the web app, and the CLI client — is in
-[host_control.md](host_control.md).
+The Modbus server's two blocks, their state machines, and all their
+connections are documented in [modbus_server.md](modbus_server.md); the
+full host-facing reference (register map, status registers, LEDs, web
+app, CLI) is in [host_control.md](host_control.md).
+
+### Frame grab and host download
+
+The second PSRAM channel (channel 1) lets a host capture a full 640×480
+frame and download it over the same Modbus link. `psram_ch1` *tees* the
+channel-0 camera-write stream into channel 1 for one frame (armed by
+register `0xF3`), then serves it back as 8-word burst reads;
+`modbus_cam_backend` streams it pixel-by-pixel to FC03 reads of the
+`≥ 0x1000` band. A full frame downloads in ~10 s at 1 Mbaud. The capture
+costs no extra PSRAM read bandwidth and needs no arbiter changes — see
+[video_datapath.md](video_datapath.md#frame-grab-and-host-download).
 
 ## Capture path
 
@@ -201,10 +220,10 @@ which uses [`src/VGA_timing.v`](../src/VGA_timing.v) to generate
 HSYNC / VSYNC / DE for the 4.3" 480×272 panel.
 
 The 640×480 → LCD-size resize happens on the read side in two places:
-[`src/PositionScaler_vert.sv`](../src/PositionScaler_vert.sv) drives the
+[`src/resize/PositionScaler_vert.sv`](../src/resize/PositionScaler_vert.sv) drives the
 **vertical** downscale (480 → 272) from inside `DownloadRowCache` (it sets
 the per-row source-address stride), and
-[`src/PositionScaler_horz.sv`](../src/PositionScaler_horz.sv) drives the
+[`src/resize/PositionScaler_horz.sv`](../src/resize/PositionScaler_horz.sv) drives the
 **horizontal** downscale inside `HorizontalResizer`, which also adds the
 pillarbox borders. Both are compact DDA kernels (the older LUT variant is
 generated by [`scripts/scaler_generator.py`](../scripts/scaler_generator.py)).
@@ -225,13 +244,28 @@ supplied explicitly. See [build.md](build.md#platform-configuration).
 
 Two synthetic pattern generators bypass the camera input entirely:
 
-- [`src/debug_pattern_generator.sv`](../src/debug_pattern_generator.sv)
-- [`src/debug_pattern_generator2.sv`](../src/debug_pattern_generator2.sv)
+- [`src/debug/debug_pattern_generator.sv`](../src/debug/debug_pattern_generator.sv)
+- [`src/debug/debug_pattern_generator2.sv`](../src/debug/debug_pattern_generator2.sv)
 
 These are wired into several testbenches (`debug_pattern_generator/*`,
 `buffer_controller/*`) and are useful when you need a known,
 predictable input to chase an integration bug without the camera in
 the loop.
+
+### Health watchdog
+
+[`src/watchdog.sv`](../src/watchdog.sv) (instantiated in `VGA_timing`, runs on
+`sys_clk`) monitors an activity heartbeat from each of three subsystems — LCD
+rendering (`LCD_VSYNC`), the memory subsystem (`rd_data_valid` / `cmd_en`), and
+OV7670 capture (`cam_vsync`). The three are on unrelated clock domains, so each
+is brought in through a `CDC_Bit_Synchronizer` and edge-detected; after a ~2 s
+startup grace, a subsystem with no activity for ~0.5 s latches a sticky hang.
+
+It surfaces the result two ways: the **debug LED** (pin 13) blinks ~1.6 Hz when
+healthy and goes solid-on on any hang, and a packed status word is exported to
+the Modbus bridge as read-only register **`0xF9`** (per-subsystem + `any_hang` +
+`monitoring` bits). Unit test: `watchdog/health`. Host-facing detail and the bit
+layout are in [host_control.md](host_control.md#board-health-watchdog).
 
 ## Pin map
 
@@ -278,7 +312,11 @@ shape of the connections.
 PSRAM (`O_psram_*` / `IO_psram_*`) is routed to the GW1NR-9C's
 on-package HyperRAM through the Gowin
 `psram_memory_interface_hs_2ch` IP — its pin assignments come from
-the IP, not the user `.cst`.
+the IP, not the user `.cst`. Channel 0 is the live video frame buffer;
+**channel 1** is owned by `src/psram_ch1.sv`, which on request *tees* the camera
+write stream into ch1 to capture a full frame and serves it back as 8-word burst
+reads. `modbus_cam_backend.sv` streams that frame to the host over Modbus FC03
+(stream band `≥ 0x1000`) — see [host_control.md](host_control.md#frame-grab-and-download).
 
 ## Source-tree organization
 

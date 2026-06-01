@@ -22,7 +22,7 @@
       </label>
       <button id="refresh-ports" class="ghost" title="Rescan serial ports">&#x21bb;</button>
       <label>Baud
-        <input id="baud" type="number" value="9600" min="300" step="100">
+        <input id="baud" type="number" value="1000000" min="300" step="100">
       </label>
       <label>Slave&nbsp;id
         <input id="slave" type="number" value="7" min="0" max="247">
@@ -31,11 +31,19 @@
       <button id="disconnect" class="danger" disabled>Disconnect</button>
     </div>
     <div id="conn-status" class="status">Not connected.</div>
+    <div id="board-health" class="health" hidden>
+      <span class="health-label">Board health:</span>
+      <span id="health-overall" class="health-chip">—</span>
+      <span id="health-lcd" class="health-chip">LCD</span>
+      <span id="health-mem" class="health-chip">Memory</span>
+      <span id="health-cam" class="health-chip">Camera</span>
+    </div>
   </section>
 
   <nav class="tabs" id="tabs" hidden>
     <button class="tab active" data-tab="basic">Basic controls</button>
     <button class="tab" data-tab="color">Color</button>
+    <button class="tab" data-tab="capture">Capture</button>
   </nav>
 
   <div class="tab-content" id="tab-basic" hidden>
@@ -60,6 +68,10 @@
       </div>
       <p class="hint">Address = OV7670 register number (0x00&ndash;0xC9). Only the
         low byte of a write reaches the camera.</p>
+      <div class="row">
+        <button id="raw-dump" class="ghost" title="Download all camera registers as JSON">Dump registers</button>
+        <button id="raw-reset" class="danger" title="Re-run the power-on camera init">Reset to defaults</button>
+      </div>
     </section>
     </div>
 
@@ -99,6 +111,38 @@
         ÷256, sign from MTXS). Swatches apply the matrix to reference colors
         (BT.601 luma + the generated Cr/Cb) — approximate, exact at the default.</p>
     </section>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-capture" hidden>
+    <section class="panel" id="capture-panel">
+      <div class="row between">
+        <h2>Frame capture</h2>
+        <div class="row">
+          <button id="grab" class="primary">Grab frame</button>
+          <a id="grab-save" class="ghost" download="frame.png" hidden>Save PNG</a>
+        </div>
+      </div>
+      <div id="grab-status" class="status">Grab a 640&times;480 frame from PSRAM channel&nbsp;1.</div>
+      <div class="capture-body">
+        <canvas id="grab-canvas" width="640" height="480"></canvas>
+      </div>
+      <p class="hint">The FPGA captures a fresh camera frame into PSRAM channel&nbsp;1,
+        then streams all 640&times;480 RGB565 pixels back over Modbus FC03
+        (~10&nbsp;s at 1&nbsp;Mbaud). The bus is busy for the whole download.</p>
+    </section>
+  </div>
+
+  <div id="grab-modal" class="modal" hidden>
+    <div class="modal-card">
+      <div class="modal-title">Downloading frame…</div>
+      <div class="progress">
+        <div id="grab-progress-bar" class="progress-bar"></div>
+      </div>
+      <div id="grab-progress-text" class="progress-text"></div>
+      <div class="modal-actions">
+        <button id="grab-cancel" class="danger">Cancel</button>
+      </div>
     </div>
   </div>
 

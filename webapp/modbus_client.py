@@ -1,6 +1,6 @@
 """Minimal Modbus RTU client for the Tang Nano 9K OV7670 bridge.
 
-Speaks Modbus RTU over the FT2232H channel-B UART (9600 8-E-1, slave id 7 by
+Speaks Modbus RTU over the FT2232H channel-B UART (1 Mbaud 8-E-1, slave id 7 by
 default). The FPGA's modbus_rtu_slave maps each holding-register address 1:1 to
 an OV7670 register (0x00..0xC9): a write uses the low byte of the value, a read
 returns {0x00, reg_byte}. The RTU framing and CRC-16 are the same as
@@ -8,8 +8,21 @@ scripts/modbus_test.py; only pyserial is required.
 """
 
 import struct
+import time
 
 import serial  # pyserial
+
+# Reserved bridge registers above the OV7670 0x00..0xC9 range (see
+# src/modbus/modbus_cam_backend.sv). The frame-grab feature captures a camera frame
+# into PSRAM channel 1 and streams it back over FC03.
+CAM_REG_MAX = 0x00C9   # highest OV7670 register (the 1:1-mapped camera range is 0x00..0xC9)
+REG_GRAB    = 0x00F3   # write 1 = arm a grab; read bit0 = busy, bit1 = ch1 calibrated
+REG_STREAM  = 0x00F8   # write = rewind the download stream to pixel 0
+REG_HEALTH  = 0x00F9   # read = watchdog health bits (see read_health)
+REG_REINIT  = 0x00FA   # write 1 = re-run camera init (reset all registers to defaults)
+STREAM_BASE = 0x1000   # any FC03 read >= here returns the next frame pixel(s)
+FRAME_W, FRAME_H = 640, 480
+FRAME_PIXELS = FRAME_W * FRAME_H
 
 # pyserial's low-level POSIX calls (tcflush/tcdrain in reset_input_buffer etc.)
 # raise termios.error on a vanished port, which is NOT an OSError subclass and
@@ -35,6 +48,10 @@ class CRCError(ValueError):
     """A response with a bad CRC (transient — worth retrying)."""
 
 
+class GrabCancelled(Exception):
+    """A frame grab was aborted via its should_cancel callback."""
+
+
 class ModbusError(Exception):
     """A Modbus exception response (function code | 0x80)."""
 
@@ -55,7 +72,7 @@ class ModbusError(Exception):
 class ModbusRTU:
     """A thin RTU master over a pyserial port. One transaction at a time."""
 
-    def __init__(self, port, baud=9600, slave=7, timeout=1.0, retries=2):
+    def __init__(self, port, baud=1000000, slave=7, timeout=1.0, retries=2):
         if not (0 <= slave <= 247):
             raise ValueError(f"slave id {slave} out of range 0..247")
         self.port = port
@@ -154,3 +171,113 @@ class ModbusRTU:
     def write_reg(self, addr, value):
         """Write a single OV7670 register (low byte is what reaches SCCB)."""
         self.write_single(addr, value & 0xFF)
+
+    def read_health(self):
+        """Read the watchdog board-health register (0xF9) and decode the bits.
+
+        Returns a dict of booleans. `monitoring` is False on firmware without the
+        watchdog (the register reads 0) or during the watchdog's startup grace;
+        the per-subsystem flags are sticky (latched until the board is reset).
+        """
+        v = self.read_holding(REG_HEALTH, 1)[0]
+        return {
+            "monitoring":  bool(v & 0x10),   # watchdog armed (past startup grace)
+            "any_hang":    bool(v & 0x08),
+            "camera_hang": bool(v & 0x04),
+            "memory_hang": bool(v & 0x02),
+            "lcd_hang":    bool(v & 0x01),
+        }
+
+    def dump_registers(self):
+        """Read every OV7670 register (0x00..0xC9) and return {addr: value}.
+
+        Each read is a live SCCB transaction on the device, issued in FC03 bursts
+        of up to 125 registers, so a full dump is a couple of Modbus requests.
+        """
+        regs = {}
+        addr = 0
+        while addr <= CAM_REG_MAX:
+            n = min(125, CAM_REG_MAX + 1 - addr)
+            for i, v in enumerate(self.read_holding(addr, n)):
+                regs[addr + i] = v & 0xFF
+            addr += n
+        return regs
+
+    def reset_to_defaults(self):
+        """Re-run the camera's power-on init sequence (reset every OV7670 register
+        to its ROM default). The device reloads its config over the next tens of
+        ms; re-read the settings afterwards to reflect the reverted state."""
+        self.write_single(REG_REINIT, 1)
+
+    # ---- frame grab (capture into PSRAM ch1, then stream over FC03) ----------
+    def grab_busy(self):
+        """True while a grab is still capturing into ch1."""
+        return bool(self.read_holding(REG_GRAB, 1)[0] & 0x01)
+
+    def grab_frame(self, progress=None, timeout=3.0, should_cancel=None):
+        """Capture a fresh camera frame into ch1 and stream it to the host.
+
+        Arms the grab, waits for it to finish, rewinds the stream pointer, then
+        pulls all FRAME_PIXELS pixels with back-to-back 125-register FC03 reads.
+        Returns a list of FRAME_PIXELS RGB565 ints in raster order. `progress`,
+        if given, is called as progress(done, total) after each chunk.
+        `should_cancel`, if given, is polled before each step; when it returns
+        true the grab raises GrabCancelled (the partial read is discarded).
+        """
+        def cancelled():
+            return should_cancel is not None and should_cancel()
+
+        self.write_single(REG_GRAB, 1)              # arm
+        deadline = time.monotonic() + timeout
+        while self.grab_busy():
+            if cancelled():
+                raise GrabCancelled()
+            if time.monotonic() > deadline:
+                raise TimeoutError("frame grab did not complete")
+            time.sleep(0.002)
+
+        self.write_single(REG_STREAM, 1)            # rewind to pixel 0
+        pix = []
+        while len(pix) < FRAME_PIXELS:
+            if cancelled():
+                raise GrabCancelled()
+            n = min(125, FRAME_PIXELS - len(pix))
+            pix.extend(self.read_holding(STREAM_BASE, n))
+            if progress:
+                progress(len(pix), FRAME_PIXELS)
+        return pix
+
+
+def rgb565_to_rgb888(pixels):
+    """Convert an iterable of RGB565 ints to a flat bytes() of RGB888 triples."""
+    out = bytearray(len(pixels) * 3)
+    for i, p in enumerate(pixels):
+        r = (p >> 11) & 0x1F
+        g = (p >> 5) & 0x3F
+        b = p & 0x1F
+        out[3 * i]     = (r * 527 + 23) >> 6     # 5-bit -> 8-bit
+        out[3 * i + 1] = (g * 259 + 33) >> 6     # 6-bit -> 8-bit
+        out[3 * i + 2] = (b * 527 + 23) >> 6
+    return bytes(out)
+
+
+def rgb565_to_rgba(pixels):
+    """Convert RGB565 ints to a flat bytes() of RGBA quads (alpha = 255), ready
+    for a browser ImageData/putImageData draw."""
+    out = bytearray(len(pixels) * 4)
+    for i, p in enumerate(pixels):
+        r = (p >> 11) & 0x1F
+        g = (p >> 5) & 0x3F
+        b = p & 0x1F
+        out[4 * i]     = (r * 527 + 23) >> 6
+        out[4 * i + 1] = (g * 259 + 33) >> 6
+        out[4 * i + 2] = (b * 527 + 23) >> 6
+        out[4 * i + 3] = 0xFF
+    return bytes(out)
+
+
+def write_ppm(path, pixels, width=FRAME_W, height=FRAME_H):
+    """Write RGB565 `pixels` to a binary PPM (P6) file."""
+    with open(path, "wb") as f:
+        f.write(b"P6\n%d %d\n255\n" % (width, height))
+        f.write(rgb565_to_rgb888(pixels[:width * height]))

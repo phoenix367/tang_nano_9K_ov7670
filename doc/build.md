@@ -214,7 +214,7 @@ After this:
 - `make hw_program` programs the SRAM in ~3 seconds.
 - `/dev/ttyGowin` is a stable symlink to the FPGA's UART (kernel-side
   name `/dev/ttyUSB0` or `/dev/ttyUSB1` depending on enumeration
-  order). Connect with `picocom -b 9600 /dev/ttyGowin` (or any baud
+  order). Connect with `picocom -b 1000000 /dev/ttyGowin` (or any baud
   your design uses).
 
 The rule sets the UART node `MODE=0666` (plus `TAG+="uaccess"`), so
@@ -245,12 +245,12 @@ IO_PORT "uart_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP BANK_VCCIO=3.3;
 Note `DRIVE` is an output-only attribute — leave it off the `uart_rx`
 input or place-and-route rejects the constraint (`CT1108`).
 
-`CameraControl_TOP` instantiates [`src/uart.sv`](../src/uart.sv) (9600 baud,
-8-E-1) feeding a [`src/modbus_rtu_slave.sv`](../src/modbus_rtu_slave.sv)
+`CameraControl_TOP` instantiates [`src/modbus/uart.sv`](../src/modbus/uart.sv) (1 Mbaud,
+8-E-1) feeding a [`src/modbus/modbus_rtu_slave.sv`](../src/modbus/modbus_rtu_slave.sv)
 **Modbus RTU slave** (slave id 7). The slave maps **1:1 to the live OV7670
 registers** — the holding-register address is the camera register number
 (`0x00`–`0xC9`) — so a Modbus master reads/writes the camera over SCCB in real
-time. Point any RTU master at `/dev/ttyGowin` (9600 8-E-1, slave id 7), or use
+time. Point any RTU master at `/dev/ttyGowin` (1 Mbaud 8-E-1, slave id 7), or use
 the bundled client [`scripts/modbus_test.py`](../scripts/modbus_test.py) (needs
 `pyserial`):
 

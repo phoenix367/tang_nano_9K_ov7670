@@ -107,7 +107,8 @@ modbus_cam_backend #(.UPTIME_DIV(64)) cam_bridge(   // fast uptime tick for sim
     .store_data(be_store_data), .send_data(be_send_data), .recv_data(be_recv_data),
     .i2c_din(be_din),
     .device_rdy(i2c_device_rdy), .data_valid(i2c_data_valid), .i2c_dout(i2c_data_out),
-    .busy()
+    .busy(),
+    .wd_health(5'd0)
 );
 
 i2c_control_fsm i2c_ctrl(

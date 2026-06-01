@@ -1,0 +1,18 @@
+# Ruff config for the repo's Python tooling: the webapp/ Flask app and the
+# scripts/ host utilities. (The RTL is SystemVerilog/Verilog; only these dirs
+# hold Python.) Ruff's default excludes already skip build/, .venv/, etc.
+line-length = 100
+target-version = "py310"
+# The FPGADesignElements submodule and the .claude/ agent tooling aren't this
+# project's code, so don't lint them.
+extend-exclude = ["FPGADesignElements", ".claude"]
+
+[lint]
+# pycodestyle errors/warnings, pyflakes, and import sorting.
+select = ["E", "F", "W", "I"]
+
+[lint.per-file-ignores]
+# scaler_generator.py emits SystemVerilog through triple-quoted templates;
+# trailing/blank-line whitespace inside those strings is part of the generated
+# layout, not a Python style issue.
+"scripts/scaler_generator.py" = ["W291", "W293"]

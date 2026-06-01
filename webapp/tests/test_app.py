@@ -3,8 +3,6 @@ error-classification paths (not-connected, Modbus exception, disconnect)."""
 
 import pytest
 
-import app as flask_app
-
 
 def _connect(tc):
     return tc.post("/api/connect", json={"port": "fake"}).get_json()
@@ -180,3 +178,64 @@ def test_termios_error_returns_503(client):
     r = tc.get("/api/settings")
     assert r.status_code == 503                       # not a 500 crash
     assert tc.get("/api/state").get_json()["connected"] is False
+
+
+# ----------------------------------------------------------------- frame grab
+def test_grab_route(client):
+    tc, _ = client
+    _connect(tc)
+    r = tc.post("/api/grab")
+    assert r.status_code == 200
+    assert r.headers["X-Frame-Width"] == "640"
+    assert r.headers["X-Frame-Height"] == "480"
+    assert len(r.data) == 640 * 480 * 4          # RGBA
+    assert r.data[0:4] == bytes([0, 0, 0, 255])  # fake pixel 0 = 0x0000 -> black
+
+
+def test_grab_route_not_connected(client):
+    tc, _ = client
+    assert tc.post("/api/grab").status_code == 400
+
+
+def test_grab_status_idle(client):
+    tc, _ = client
+    r = tc.get("/api/grab/status").get_json()
+    assert r["ok"] and r["active"] is False and r["total"] == 640 * 480
+
+
+def test_grab_status_after_grab(client):
+    tc, _ = client
+    _connect(tc)
+    tc.post("/api/grab")
+    r = tc.get("/api/grab/status").get_json()
+    assert r["active"] is False and r["done"] == r["total"] == 640 * 480
+
+
+def test_grab_cancel_endpoint(client):
+    tc, _ = client
+    assert tc.post("/api/grab/cancel").get_json()["ok"] is True
+
+
+def test_health_route_includes_watchdog(client):
+    tc, fake = client
+    _connect(tc)
+    fake["slave"].health = 0x10 | 0x08 | 0x04   # monitoring + any-hang + camera
+    r = tc.get("/api/health").get_json()
+    assert r["ok"] and r["status_supported"]
+    assert r["health"]["monitoring"] and r["health"]["any_hang"]
+    assert r["health"]["camera_hang"] and not r["health"]["lcd_hang"]
+
+
+def test_reset_defaults_route(client):
+    tc, fake = client
+    _connect(tc)
+    assert tc.post("/api/reset_defaults").get_json()["ok"] is True
+    assert fake["slave"].regs.get(0xFA) == 1
+
+
+def test_dump_route(client):
+    tc, _ = client
+    _connect(tc)
+    r = tc.get("/api/dump").get_json()
+    assert r["ok"] and len(r["registers"]) == 0xCA
+    assert r["registers"]["0x0A"] == 0x76

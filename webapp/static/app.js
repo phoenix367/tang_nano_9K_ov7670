@@ -108,6 +108,9 @@ function enterState(next, info) {
   } else {
     $("#tab-basic").hidden = true;
     $("#tab-color").hidden = true;
+    $("#tab-capture").hidden = true;
+    clearGrabCanvas();          // drop any grabbed frame from a prior session
+    $("#board-health").hidden = true;
   }
 
   if (next === ST.RECONNECTING) {
@@ -132,7 +135,7 @@ function connStatus(msg, cls) {
 
 function showTab(name) {
   currentTab = name;
-  for (const t of ["basic", "color"]) $("#tab-" + t).hidden = (t !== name);
+  for (const t of ["basic", "color", "capture"]) $("#tab-" + t).hidden = (t !== name);
   document.querySelectorAll(".tab").forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === name);
   });
@@ -148,6 +151,7 @@ async function connect() {
     lastConn = cfg;
     lastUptime = null;
     statusUnsupportedNoted = false;
+    currentTab = "basic";       // a fresh connection lands on Basic controls
     enterState(ST.CONNECTED, info);
     renderControls();
     await loadSettings();
@@ -195,6 +199,26 @@ async function heartbeat() {
     statusUnsupportedNoted = true;
     toast("Reset detection unavailable (older bitstream)");
   }
+  renderHealth(data.status_supported ? data.health : null);
+}
+
+function setChip(el, state, text) {
+  el.textContent = text;
+  el.className = "health-chip " + state;     // state: ok | bad | idle
+}
+
+function renderHealth(health) {
+  const box = $("#board-health");
+  if (!health) { box.hidden = true; return; }
+  box.hidden = false;
+  const mon = !!health.monitoring;
+  setChip($("#health-overall"),
+          health.any_hang ? "bad" : (mon ? "ok" : "idle"),
+          health.any_hang ? "HANG" : (mon ? "Healthy" : "starting…"));
+  const sub = (el, label, hang) => setChip(el, !mon ? "idle" : (hang ? "bad" : "ok"), label);
+  sub($("#health-lcd"), "LCD", health.lcd_hang);
+  sub($("#health-mem"), "Memory", health.memory_hang);
+  sub($("#health-cam"), "Camera", health.camera_hang);
 }
 
 function startReconnect() { stopReconnect(); reconnectTimer = setInterval(tryReconnect, 3000); }
@@ -421,7 +445,7 @@ async function previewGamma(value) {
   try {
     const d = await api(`/api/gamma?value=${encodeURIComponent(value)}`);
     renderGammaCurve(d.points, d.registers, `preview — γ ${d.exponent.toFixed(2)} (not yet applied)`);
-  } catch (e) { /* preview is best-effort */ }
+  } catch { /* preview is best-effort */ }
 }
 const previewGammaDebounced = debounce(previewGamma, 120);
 
@@ -533,6 +557,139 @@ async function rawWrite() {
   } catch (e) { toast(e.message, "error"); }
 }
 
+async function dumpRegisters() {
+  const btn = $("#raw-dump");
+  btn.disabled = true;
+  try {
+    const data = await api("/api/dump");          // { ok, registers: {"0x00": int, ...} }
+    const registers = {};
+    for (const [addr, v] of Object.entries(data.registers)) registers[addr] = hex(v);
+    const dump = {
+      description: "OV7670 camera register dump (addresses 0x00–0xC9, 8-bit hex values)",
+      registers,
+    };
+    const blob = new Blob([JSON.stringify(dump, null, 2) + "\n"], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "ov7670_registers.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast(`Dumped ${Object.keys(registers).length} registers`);
+  } catch (e) {
+    toast(e.message, "error");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function resetDefaults() {
+  if (!window.confirm("Re-run the camera initialization? This resets every "
+                      + "register to its default and discards live tweaks.")) return;
+  const btn = $("#raw-reset");
+  btn.disabled = true;
+  try {
+    await postJSON("/api/reset_defaults", {});
+    toast("Re-running camera init…");
+    // the device reloads its ROM config over the next tens of ms; give it a
+    // moment, then re-read the (reverted) register state.
+    setTimeout(async () => {
+      try { await loadSettings(); toast("Camera reset to defaults"); }
+      catch (e) { toast(e.message, "error"); }
+      btn.disabled = false;
+    }, 700);
+  } catch (e) {
+    toast(e.message, "error");
+    btn.disabled = false;
+  }
+}
+
+// ------------------------------------------------------------- frame capture
+function setGrabProgress(pct, label) {
+  $("#grab-progress-bar").style.width = pct + "%";
+  $("#grab-progress-text").textContent = label;
+}
+
+function clearGrabCanvas() {
+  const c = $("#grab-canvas");
+  if (c) c.getContext("2d").clearRect(0, 0, c.width, c.height);
+  $("#grab-save").hidden = true;
+  const st = $("#grab-status");
+  st.textContent = "Grab a 640×480 frame from PSRAM channel 1.";
+  st.className = "status";
+}
+
+async function pollGrabProgress() {
+  const { data } = await rawFetch("/api/grab/status");
+  if (!data || !data.ok || !data.active || !data.total) return;
+  const pct = Math.min(100, Math.floor((100 * data.done) / data.total));
+  setGrabProgress(pct, `${pct}% — ${data.done.toLocaleString()} / ${data.total.toLocaleString()} px`);
+}
+
+async function cancelGrab() {
+  const c = $("#grab-cancel");
+  c.disabled = true;
+  c.textContent = "Cancelling…";
+  try { await fetch("/api/grab/cancel", { method: "POST" }); } catch { /* best effort */ }
+}
+
+async function grabFrame() {
+  const btn = $("#grab"), status = $("#grab-status"), save = $("#grab-save");
+  const modal = $("#grab-modal"), cancelBtn = $("#grab-cancel");
+  btn.disabled = true;
+  save.hidden = true;
+  status.textContent = "Capturing & downloading…";
+  status.className = "status";
+  setGrabProgress(0, "0%");
+  cancelBtn.disabled = false;
+  cancelBtn.textContent = "Cancel";
+  modal.hidden = false;
+  // the download holds the bus for ~10 s; pause the heartbeat so health probes
+  // don't pile up behind it on the server-side lock, and poll the grab's own
+  // progress endpoint (no bus access) to drive the bar.
+  stopHeartbeat();
+  const poll = setInterval(pollGrabProgress, 200);
+  const t0 = performance.now();
+  try {
+    const res = await fetch("/api/grab", { method: "POST" });
+    if (!res.ok) {
+      let body = {};
+      try { body = await res.json(); } catch { /* binary/none */ }
+      if (body.cancelled) {
+        status.textContent = "Grab cancelled.";
+        status.className = "status";
+        toast("Grab cancelled");
+        return;
+      }
+      throw new Error(body.error || `HTTP ${res.status}`);
+    }
+    const w = Number(res.headers.get("X-Frame-Width")) || 640;
+    const h = Number(res.headers.get("X-Frame-Height")) || 480;
+    const buf = new Uint8ClampedArray(await res.arrayBuffer());
+    const canvas = $("#grab-canvas");
+    canvas.width = w; canvas.height = h;
+    canvas.getContext("2d").putImageData(new ImageData(buf, w, h), 0, 0);
+    setGrabProgress(100, "100%");
+    const secs = ((performance.now() - t0) / 1000).toFixed(1);
+    status.textContent = `Captured ${w}×${h} in ${secs}s.`;
+    status.className = "status connected";
+    save.href = canvas.toDataURL("image/png");
+    save.hidden = false;
+    toast("Frame captured");
+  } catch (e) {
+    status.textContent = "Grab failed: " + e.message;
+    status.className = "status error";
+    toast(e.message, "error");
+  } finally {
+    clearInterval(poll);
+    modal.hidden = true;
+    btn.disabled = false;
+    if (connState === ST.CONNECTED) startHeartbeat();
+  }
+}
+
 // -------------------------------------------------------------------- init
 async function init() {
   $("#connect").addEventListener("click", connect);
@@ -544,6 +701,10 @@ async function init() {
   });
   $("#raw-read").addEventListener("click", rawRead);
   $("#raw-write").addEventListener("click", rawWrite);
+  $("#raw-reset").addEventListener("click", resetDefaults);
+  $("#raw-dump").addEventListener("click", dumpRegisters);
+  $("#grab").addEventListener("click", grabFrame);
+  $("#grab-cancel").addEventListener("click", cancelGrab);
   $("#matrix-autocc").addEventListener("change", async (e) => {
     try { renderMatrix(await postJSON("/api/matrix/contrast_center", { on: e.target.checked })); }
     catch (err) { toast(err.message, "error"); loadMatrix(); }

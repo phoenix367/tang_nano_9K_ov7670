@@ -12,8 +12,16 @@ import struct
 
 import modbus_client  # for crc16 + (optional) termios
 
-REG_COUNT = 243                       # 0x00..0xC9 camera + 0xF0..0xF2 status (matches FPGA)
+REG_COUNT = 0x1100                    # matches the FPGA: camera + status/grab + stream band
 STATUS_MAGIC = 0xA5
+STREAM_BASE = 0x1000                  # FC03 reads >= here stream the captured frame
+FRAME_PIXELS = modbus_client.FRAME_PIXELS
+
+
+def fake_pixel(i):
+    """Deterministic stand-in frame: pixel i = i & 0xFFFF, so a download can be
+    checked for correct order and completeness without hardware."""
+    return i & 0xFFFF
 
 
 def default_registers():
@@ -46,6 +54,8 @@ class FakeModbusSlave:
         self.reg_count = reg_count
         self.regs = default_registers()
         self.uptime = 0x1234
+        self.health = 0x10            # watchdog: monitoring set, no hangs (bit4)
+        self.stream_ptr = 0           # frame-download pixel cursor (rewound by 0xF8)
         self._rx = bytearray()        # bytes the client will read back
         self.is_open = True
         # fault injection
@@ -84,6 +94,10 @@ class FakeModbusSlave:
             return (self.uptime >> 8) & 0xFF
         if addr == 0xF2:
             return self.uptime & 0xFF
+        if addr == 0xF3:
+            return 0x02              # bit1 = ch1 calibrated, bit0 = busy (grab instant)
+        if addr == 0xF9:
+            return self.health       # watchdog health bits (default: monitoring, no hangs)
         return self.regs.get(addr, 0) & 0xFF
 
     def _reply(self, func, payload):
@@ -111,10 +125,21 @@ class FakeModbusSlave:
                 return self._exception(func, 0x03)
             if saddr + qty > self.reg_count:
                 return self._exception(func, 0x02)
+            if saddr >= STREAM_BASE:
+                # frame download: serve the next qty pixels, advance the cursor
+                data = b"".join(struct.pack(">H", fake_pixel(self.stream_ptr + i))
+                                for i in range(qty))
+                self.stream_ptr += qty
+                return self._reply(func, bytes([2 * qty]) + data)
             data = b"".join(struct.pack(">H", self._read_reg(saddr + i)) for i in range(qty))
             self._reply(func, bytes([2 * qty]) + data)
         elif func == 0x06:
             saddr, val = struct.unpack(">HH", body[:4])
+            if saddr == 0xF8:                   # rewind the download stream
+                self.stream_ptr = 0
+                return self._reply(func, body[:4])
+            if saddr == 0xF3:                   # arm grab (instant in the fake)
+                return self._reply(func, body[:4])
             if saddr >= self.reg_count:
                 return self._exception(func, 0x02)
             self.regs[saddr] = val & 0xFF
