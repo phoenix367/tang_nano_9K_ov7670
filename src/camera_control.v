@@ -68,6 +68,8 @@ wire [15:0] be_addr, be_wdata, be_rdata;
 wire        be_store_data, be_send_data, be_recv_data;
 wire [7:0]  be_din;
 wire        be_busy;
+// pulse from the Modbus bridge (reg 0xFA write) -> re-run camera init
+wire        cam_reinit;
 
 // channel-1 PSRAM bring-up loopback (Modbus backend <-> VGA_timing/psram_ch1)
 wire        grab_arm;
@@ -153,6 +155,7 @@ modbus_cam_backend cam_bridge (
     .data_valid(i2c_data_valid),
     .i2c_dout(i2c_data_out),
     .busy(be_busy),
+    .cam_reinit(cam_reinit),
     .grab_arm(grab_arm),
     .grab_rd_req(grab_rd_req),
     .grab_rd_addr(grab_rd_addr),
@@ -379,6 +382,16 @@ begin
         send_data <= `WRAP_SIM(#1) 1'b0;
         delay_reset <= `WRAP_SIM(#1) 1'b0;
         rom_addr <= `WRAP_SIM(#1) 8'h00;
+        cam_init_complete <= `WRAP_SIM(#1) 1'b0;
+    end else if (cam_reinit) begin
+        // Host requested "reset to defaults": restart the ROM walk from the top,
+        // exactly like a power-on init. Dropping cam_init_complete also hands the
+        // SCCB controller back from the Modbus bridge to this init FSM.
+        controller_state  <= `WRAP_SIM(#1) WAIT_RDY;
+        send_data         <= `WRAP_SIM(#1) 1'b0;
+        store_data        <= `WRAP_SIM(#1) 1'b0;
+        delay_reset       <= `WRAP_SIM(#1) 1'b0;
+        rom_addr          <= `WRAP_SIM(#1) 8'h00;
         cam_init_complete <= `WRAP_SIM(#1) 1'b0;
     end else begin
         case (controller_state)

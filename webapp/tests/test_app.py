@@ -224,3 +224,10 @@ def test_health_route_includes_watchdog(client):
     assert r["ok"] and r["status_supported"]
     assert r["health"]["monitoring"] and r["health"]["any_hang"]
     assert r["health"]["camera_hang"] and not r["health"]["lcd_hang"]
+
+
+def test_reset_defaults_route(client):
+    tc, fake = client
+    _connect(tc)
+    assert tc.post("/api/reset_defaults").get_json()["ok"] is True
+    assert fake["slave"].regs.get(0xFA) == 1

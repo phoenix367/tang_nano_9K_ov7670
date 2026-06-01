@@ -30,7 +30,7 @@ flowchart TB
     UART <-->|"rx/tx bytes"| SLAVE
     SLAVE <-->|"be_* handshake"| BE
     BE -->|"camera reg 0x00..0xC9"| I2C
-    BE -->|"reserved/status 0xF0..0xF9"| RES
+    BE -->|"reserved/status 0xF0..0xFA"| RES
     BE -->|"stream pixel ≥0x1000 / grab arm 0xF3"| CH1
 ```
 
@@ -146,7 +146,7 @@ Drives the existing `i2c_control_fsm` exactly the way the power-on init FSM does
 Camera accesses are **gated by `cam_init_complete`** — they wait in `IDLE` until
 power-on init has released the SCCB bus.
 
-### 2. Reserved / status register (`0xF0..0xF9`) → served inline
+### 2. Reserved / status register (`0xF0..0xFA`) → served inline
 
 Answered directly in `IDLE` (no SCCB, no bus access), so the host can poll them
 even during camera init:
@@ -160,6 +160,7 @@ even during camera init:
 | `0xF6/0xF7` | read the single-read ch1 word hi/lo halves (debug)              |
 | `0xF8`      | write = rewind the download stream pointer to pixel 0           |
 | `0xF9`      | read = watchdog board health `{monitoring, any_hang, cam, mem, lcd}` (from `wd_health`, see [video_datapath.md](video_datapath.md#health-watchdog)) |
+| `0xFA`      | write 1 = reset to defaults — pulse `cam_reinit`, restarting the camera init FSM in `camera_control.v` (re-walks the ROM like power-on) |
 
 ### 3. Stream pixel (`be_addr ≥ 0x1000`) → frame download
 

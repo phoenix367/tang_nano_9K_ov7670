@@ -61,7 +61,7 @@ FT2232H channel B.
 | Slave / unit id  | **7**                                            |
 | Function codes   | `0x03` read holding, `0x06` write single, `0x10` write multiple |
 | Exceptions       | `0x01` illegal function, `0x02` illegal address, `0x03` illegal value |
-| Read-burst cap   | a single `0x03` reads ≤ ~13 registers (`MAX_FRAME`) |
+| Read-burst cap   | a single `0x03` reads ≤ 125 registers (response payload in BSRAM) |
 
 Instead of an internal register file, the server runs with `EXTERNAL_BACKEND=1`:
 every holding-register access is handed to
@@ -83,7 +83,7 @@ OV7670 register number (`0x00`–`0xC9`, see
 - **Write** (`0x06`/`0x10`): the **low byte** of the 16-bit Modbus value is sent.
 - **Read** (`0x03`): returns `{0x00, reg_byte}` (value in the low byte).
 
-Addresses `0xCA`–`0xEF` read as 0; `0xF0`–`0xF9` are the
+Addresses `0xCA`–`0xEF` read as 0; `0xF0`–`0xFA` are the
 [reserved bridge registers](#reserved-registers-above-the-ov7670-map); the stream band
 `≥ 0x1000` serves the [frame download](#frame-grab-and-download). Addresses above
 the configured range (`≥ 0x1100`) return illegal-address.
@@ -118,7 +118,7 @@ low bits are scaling values — preserve them (defaults `0x3A`/`0x35`), e.g. wri
 
 ## Reserved registers (above the OV7670 map)
 
-Addresses `0xF0`–`0xF9` are **bridge** registers, answered directly (no SCCB
+Addresses `0xF0`–`0xFA` are **bridge** registers, answered directly (no SCCB
 cycle, served even during camera init) so a host can identify the firmware,
 detect a hard reset, drive the [frame grab](#frame-grab-and-download), and read
 [board health](#board-health-watchdog). The download stream band (`≥ 0x1000`) is
@@ -134,6 +134,7 @@ covered in [Frame grab and download](#frame-grab-and-download).
 | `0xF6`/`0xF7`| R | Single-read ch1 word, high / low halves (debug)                |
 | `0xF8`| W      | Rewind the [download stream](#frame-grab-and-download) to pixel 0 |
 | `0xF9`| R      | [Watchdog board health](#board-health-watchdog) (bit-field, below) |
+| `0xFA`| W      | Write `1` = reset to defaults — re-run the power-on camera init (reloads every OV7670 register from ROM) |
 
 The 16-bit uptime (`0xF1`/`0xF2`) is `0` at reset and free-runs (~1 Hz); read the
 high byte first (it latches the low byte for a coherent pair). A host that sees
@@ -233,7 +234,8 @@ Capabilities:
 - **Basic controls tab** — camera identity readout, a compact two-column control
   panel (sliders: brightness/contrast/gain/exposure + test-pattern selector;
   checkboxes: AGC/AWB/AEC, mirror/flip, negative, night mode), and a raw
-  register read/write panel.
+  register read/write panel with a **Reset to defaults** button (re-runs the
+  power-on camera init via register `0xFA`, then re-reads the reverted state).
 - **Color tab** — a **gamma-curve** block (enable toggle + exponent slider that
   regenerates SLOP+GAM1–15, with a live SVG plot and the register values) and a
   **color-matrix** block (the 2×3 chroma matrix as a signed heatmap grid with

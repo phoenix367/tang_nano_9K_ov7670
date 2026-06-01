@@ -18,6 +18,7 @@ import serial  # pyserial
 REG_GRAB    = 0x00F3   # write 1 = arm a grab; read bit0 = busy, bit1 = ch1 calibrated
 REG_STREAM  = 0x00F8   # write = rewind the download stream to pixel 0
 REG_HEALTH  = 0x00F9   # read = watchdog health bits (see read_health)
+REG_REINIT  = 0x00FA   # write 1 = re-run camera init (reset all registers to defaults)
 STREAM_BASE = 0x1000   # any FC03 read >= here returns the next frame pixel(s)
 FRAME_W, FRAME_H = 640, 480
 FRAME_PIXELS = FRAME_W * FRAME_H
@@ -185,6 +186,12 @@ class ModbusRTU:
             "memory_hang": bool(v & 0x02),
             "lcd_hang":    bool(v & 0x01),
         }
+
+    def reset_to_defaults(self):
+        """Re-run the camera's power-on init sequence (reset every OV7670 register
+        to its ROM default). The device reloads its config over the next tens of
+        ms; re-read the settings afterwards to reflect the reverted state."""
+        self.write_single(REG_REINIT, 1)
 
     # ---- frame grab (capture into PSRAM ch1, then stream over FC03) ----------
     def grab_busy(self):

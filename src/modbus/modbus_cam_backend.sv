@@ -66,6 +66,9 @@ module modbus_cam_backend
 
     output wire        busy,
 
+    // pulse: re-run the power-on camera initialization (reset to defaults)
+    output reg         cam_reinit,
+
     // channel-1 PSRAM bring-up loopback (to/from psram_ch1 via VGA_timing)
     output reg         grab_arm,        // pulse: capture the next frame into ch1
     output reg         grab_rd_req,     // pulse: read the ch1 burst at grab_rd_addr
@@ -117,6 +120,7 @@ module modbus_cam_backend
                       ADDR_RDDATA_LO  = 16'h00F7,    // read: ch1 word [15:0]
                       ADDR_STREAM     = 16'h00F8,    // write: reset the download stream to ch1 addr 0
                       ADDR_HEALTH     = 16'h00F9,    // read: watchdog health bits (see wd_health)
+                      ADDR_REINIT     = 16'h00FA,    // write 1: re-run camera init (reset to defaults)
                       STREAM_BASE     = 16'h1000;    // any read >= here returns the next frame pixel
 
     localparam [20:0] BSTEP = 21'd16;                // ch1 burst-address increment (matches the grab)
@@ -152,6 +156,7 @@ module modbus_cam_backend
             uptime       <= `WRAP_SIM(#1) 16'h0000;
             uptime_latch <= `WRAP_SIM(#1) 16'h0000;
             uptime_div   <= `WRAP_SIM(#1) 32'h0;
+            cam_reinit   <= `WRAP_SIM(#1) 1'b0;
             grab_arm     <= `WRAP_SIM(#1) 1'b0;
             grab_rd_req  <= `WRAP_SIM(#1) 1'b0;
             grab_rd_addr <= `WRAP_SIM(#1) 21'd0;
@@ -161,7 +166,8 @@ module modbus_cam_backend
             s_loaded     <= `WRAP_SIM(#1) 1'b0;
             s_burst      <= `WRAP_SIM(#1) 256'd0;
         end else begin
-            grab_arm    <= `WRAP_SIM(#1) 1'b0;      // 1-cycle pulse defaults
+            cam_reinit  <= `WRAP_SIM(#1) 1'b0;      // 1-cycle pulse defaults
+            grab_arm    <= `WRAP_SIM(#1) 1'b0;
             grab_rd_req <= `WRAP_SIM(#1) 1'b0;
             // free-running uptime tick (independent of the SCCB FSM)
             if (uptime_div >= UPTIME_DIV - 1) begin
@@ -231,6 +237,11 @@ module modbus_cam_backend
                                 ADDR_HEALTH:
                                     // watchdog board health (read-only)
                                     be_rdata <= `WRAP_SIM(#1) {11'd0, wd_health};
+                                ADDR_REINIT: begin
+                                    // write 1 = re-run camera init (reset to defaults)
+                                    be_rdata <= `WRAP_SIM(#1) 16'd0;
+                                    if (be_we && be_wdata[0]) cam_reinit <= `WRAP_SIM(#1) 1'b1;
+                                end
                                 default:
                                     be_rdata <= `WRAP_SIM(#1) 16'h0000;
                             endcase

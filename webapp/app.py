@@ -401,6 +401,20 @@ def api_grab_cancel():
     return jsonify(ok=True)
 
 
+@app.route("/api/reset_defaults", methods=["POST"])
+def api_reset_defaults():
+    """Re-run the camera's power-on init (reset every register to its default).
+    Returns immediately; the device reloads over the next tens of ms, so the
+    client should re-read settings shortly after."""
+    with _lock:
+        try:
+            client = _require_client()
+            client.reset_to_defaults()
+        except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError) as e:
+            return _classify(e)
+    return jsonify(ok=True)
+
+
 @app.route("/api/raw", methods=["GET", "POST"])
 def api_raw():
     with _lock:

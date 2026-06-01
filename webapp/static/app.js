@@ -557,6 +557,27 @@ async function rawWrite() {
   } catch (e) { toast(e.message, "error"); }
 }
 
+async function resetDefaults() {
+  if (!window.confirm("Re-run the camera initialization? This resets every "
+                      + "register to its default and discards live tweaks.")) return;
+  const btn = $("#raw-reset");
+  btn.disabled = true;
+  try {
+    await postJSON("/api/reset_defaults", {});
+    toast("Re-running camera init…");
+    // the device reloads its ROM config over the next tens of ms; give it a
+    // moment, then re-read the (reverted) register state.
+    setTimeout(async () => {
+      try { await loadSettings(); toast("Camera reset to defaults"); }
+      catch (e) { toast(e.message, "error"); }
+      btn.disabled = false;
+    }, 700);
+  } catch (e) {
+    toast(e.message, "error");
+    btn.disabled = false;
+  }
+}
+
 // ------------------------------------------------------------- frame capture
 function setGrabProgress(pct, label) {
   $("#grab-progress-bar").style.width = pct + "%";
@@ -652,6 +673,7 @@ async function init() {
   });
   $("#raw-read").addEventListener("click", rawRead);
   $("#raw-write").addEventListener("click", rawWrite);
+  $("#raw-reset").addEventListener("click", resetDefaults);
   $("#grab").addEventListener("click", grabFrame);
   $("#grab-cancel").addEventListener("click", cancelGrab);
   $("#matrix-autocc").addEventListener("change", async (e) => {

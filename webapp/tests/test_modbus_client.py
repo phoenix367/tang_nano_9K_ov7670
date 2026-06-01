@@ -139,3 +139,9 @@ def test_read_health_memory_hang(rtu):
     h = c.read_health()
     assert h["monitoring"] and h["any_hang"] and h["memory_hang"]
     assert not h["lcd_hang"] and not h["camera_hang"]
+
+
+def test_reset_to_defaults(rtu):
+    c, slave = rtu
+    c.reset_to_defaults()
+    assert slave.regs.get(0xFA) == 1     # the reinit write (0xFA = 1) reached the slave
