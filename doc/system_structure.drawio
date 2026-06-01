@@ -306,6 +306,21 @@
             <mxPoint x="-13" y="13" as="offset" />
           </mxGeometry>
         </mxCell>
+        <mxCell id="mb-srv" value="Modbus server&lt;br&gt;(UART + RTU slave +&lt;br&gt;cam backend)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#9AC7E8;" vertex="1" parent="1">
+          <mxGeometry x="450" y="70" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="mb-host" value="Host PC&lt;br&gt;(Modbus master)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#CCE5FF;" vertex="1" parent="1">
+          <mxGeometry x="960" y="170" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="mb-e-uart" value="UART (FT2232H)&lt;br&gt;Modbus RTU 1 Mbaud" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;startArrow=classic;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="mb-host" target="mb-srv">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="mb-e-i2c" value="OV7670 reg R/W" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;startArrow=classic;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="mb-srv" target="lLx9HIjAvpz1RYFSknVg-4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="mb-e-grab" value="frame grab +&lt;br&gt;download (PSRAM ch1)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;startArrow=classic;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="mb-srv" target="lLx9HIjAvpz1RYFSknVg-6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
