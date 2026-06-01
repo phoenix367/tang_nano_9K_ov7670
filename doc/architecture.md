@@ -252,6 +252,21 @@ These are wired into several testbenches (`debug_pattern_generator/*`,
 predictable input to chase an integration bug without the camera in
 the loop.
 
+### Health watchdog
+
+[`src/watchdog.sv`](../src/watchdog.sv) (instantiated in `VGA_timing`, runs on
+`sys_clk`) monitors an activity heartbeat from each of three subsystems — LCD
+rendering (`LCD_VSYNC`), the memory subsystem (`rd_data_valid` / `cmd_en`), and
+OV7670 capture (`cam_vsync`). The three are on unrelated clock domains, so each
+is brought in through a `CDC_Bit_Synchronizer` and edge-detected; after a ~2 s
+startup grace, a subsystem with no activity for ~0.5 s latches a sticky hang.
+
+It surfaces the result two ways: the **debug LED** (pin 13) blinks ~1.6 Hz when
+healthy and goes solid-on on any hang, and a packed status word is exported to
+the Modbus bridge as read-only register **`0xF9`** (per-subsystem + `any_hang` +
+`monitoring` bits). Unit test: `watchdog/health`. Host-facing detail and the bit
+layout are in [host_control.md](host_control.md#board-health-watchdog).
+
 ## Pin map
 
 The `cst` file is the authoritative source; this is just the

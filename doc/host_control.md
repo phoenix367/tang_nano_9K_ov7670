@@ -8,7 +8,8 @@ the FPGA. This document covers that interface end-to-end and a quick-start guide
 - [Quick start](#quick-start)
 - [Modbus server](#modbus-server)
 - [Camera register map](#camera-register-map)
-- [Reserved status registers](#reserved-status-registers)
+- [Reserved registers (above the OV7670 map)](#reserved-registers-above-the-ov7670-map)
+- [Board health (watchdog)](#board-health-watchdog)
 - [Frame grab and download](#frame-grab-and-download)
 - [Status LEDs](#status-leds)
 - [Web app](#web-app)
@@ -82,8 +83,8 @@ OV7670 register number (`0x00`–`0xC9`, see
 - **Write** (`0x06`/`0x10`): the **low byte** of the 16-bit Modbus value is sent.
 - **Read** (`0x03`): returns `{0x00, reg_byte}` (value in the low byte).
 
-Addresses `0xCA`–`0xEF` read as 0; `0xF0`–`0xF8` are the
-[status / frame-grab registers](#reserved-status-registers); the stream band
+Addresses `0xCA`–`0xEF` read as 0; `0xF0`–`0xF9` are the
+[reserved bridge registers](#reserved-registers-above-the-ov7670-map); the stream band
 `≥ 0x1000` serves the [frame download](#frame-grab-and-download). Addresses above
 the configured range (`≥ 0x1100`) return illegal-address.
 
@@ -115,25 +116,69 @@ low bits are scaling values — preserve them (defaults `0x3A`/`0x35`), e.g. wri
 
 > Writing **COM7** (`0x12`) with its reset bit (`0x80`) re-resets the camera.
 
-## Reserved status registers
+## Reserved registers (above the OV7670 map)
 
-The bridge answers three addresses **directly** (no SCCB cycle, served even
-during camera init) so a host can identify the firmware and detect a hard reset:
+Addresses `0xF0`–`0xF9` are **bridge** registers, answered directly (no SCCB
+cycle, served even during camera init) so a host can identify the firmware,
+detect a hard reset, drive the [frame grab](#frame-grab-and-download), and read
+[board health](#board-health-watchdog). The download stream band (`≥ 0x1000`) is
+covered in [Frame grab and download](#frame-grab-and-download).
 
-| Addr  | Meaning                                                                 |
-| ----- | ----------------------------------------------------------------------- |
-| `0xF0`| Firmware magic — reads `0xA5` (confirms you're talking to this bridge)   |
-| `0xF1`| Uptime, high byte                                                       |
-| `0xF2`| Uptime, low byte                                                        |
-| `0xF3`| Write `1` = arm a frame grab; write `2` = trigger a single-word ch1 read. Read: bit0 = busy, bit1 = ch1 calibrated |
-| `0xF4`/`0xF5`| Single-read ch1 address, low / high (debug)                      |
-| `0xF6`/`0xF7`| Single-read ch1 word, high / low halves (debug)                  |
-| `0xF8`| Write = rewind the [download stream](#frame-grab-and-download) to pixel 0 |
-| `0xF9`| Watchdog board health (read-only): bit0 LCD hang, bit1 memory hang, bit2 camera hang, bit3 any-hang, bit4 monitoring (armed). Per-subsystem bits are sticky until reset. Reads `0` on firmware without the watchdog. |
+| Addr  | Access | Meaning                                                        |
+| ----- | ------ | -------------------------------------------------------------- |
+| `0xF0`| R      | Firmware magic — reads `0xA5` (confirms you're talking to this bridge) |
+| `0xF1`| R      | Uptime, high byte                                              |
+| `0xF2`| R      | Uptime, low byte                                              |
+| `0xF3`| R/W    | Write `1` = arm a frame grab, `2` = trigger a single-word ch1 read. Read: bit0 = grab busy, bit1 = ch1 calibrated |
+| `0xF4`/`0xF5`| W | Single-read ch1 address, low / high (debug)                    |
+| `0xF6`/`0xF7`| R | Single-read ch1 word, high / low halves (debug)                |
+| `0xF8`| W      | Rewind the [download stream](#frame-grab-and-download) to pixel 0 |
+| `0xF9`| R      | [Watchdog board health](#board-health-watchdog) (bit-field, below) |
 
-The 16-bit uptime is `0` at reset and free-runs (~1 Hz). A host that sees it jump
-**backward** knows the board was reset (and its registers reverted to defaults),
-and should re-read its settings.
+The 16-bit uptime (`0xF1`/`0xF2`) is `0` at reset and free-runs (~1 Hz); read the
+high byte first (it latches the low byte for a coherent pair). A host that sees
+it jump **backward** knows the board was reset (its registers reverted to
+defaults) and should re-read its settings.
+
+## Board health (watchdog)
+
+A hardware **health watchdog** (`src/watchdog.sv`) continuously monitors an
+activity heartbeat from each of three subsystems and surfaces the result two
+ways — an on-board LED and a Modbus register:
+
+| Subsystem | Heartbeat it watches            |
+| --------- | ------------------------------- |
+| LCD rendering        | `LCD_VSYNC` (per displayed frame)    |
+| Memory subsystem     | PSRAM `rd_data_valid` / `cmd_en`     |
+| OV7670 frame capture | camera `vsync` (per captured frame)  |
+
+Each heartbeat must show activity at least every ~0.5 s once the watchdog is
+armed (a ~2 s startup grace covers reset / PSRAM calibration / first frame). A
+subsystem that goes quiet latches a **sticky** hang flag (held until the board is
+reset).
+
+**Debug LED** (pin 13): **blinks** ~1.6 Hz while all three subsystems are
+healthy, and turns **solid on** if any of them hangs.
+
+**Register `0xF9`** (read-only) reports the same state as a bit-field:
+
+| Bit | Name         | Meaning                                              |
+| --- | ------------ | ---------------------------------------------------- |
+| 0   | `lcd_hang`   | LCD render heartbeat stalled (sticky)                |
+| 1   | `mem_hang`   | memory/PSRAM heartbeat stalled (sticky)              |
+| 2   | `cam_hang`   | OV7670 capture heartbeat stalled (sticky)            |
+| 3   | `any_hang`   | OR of the three (== `lcd|mem|cam`)                   |
+| 4   | `monitoring` | watchdog armed (past the startup grace)              |
+
+A healthy board reads `0x10` (monitoring, no hangs). `monitoring = 0` means the
+watchdog is still in its startup grace **or** the firmware predates the watchdog
+(the register reads `0`), so treat the hang bits as meaningful only when
+`monitoring = 1`. The web app's [Board-health row](#web-app) decodes these bits
+live; the CLI can read them directly:
+
+```sh
+scripts/modbus_test.py --port /dev/ttyGowin --read 0xF9 1   # 0x0010 = healthy
+```
 
 ## Frame grab and download
 
@@ -195,6 +240,10 @@ Capabilities:
   per-cell sliders, an auto-contrast toggle, and before→after color swatches).
 - **Capture tab** — grabs a full 640×480 frame into PSRAM channel 1, streams it
   back over Modbus (~10 s), draws it to a canvas, and offers a PNG download.
+- **Board health** — the Connection panel shows a health row, refreshed by the
+  heartbeat, with an overall chip (Healthy / HANG / starting…) plus per-subsystem
+  LCD / Memory / Camera chips decoded from the [watchdog](#board-health-watchdog)
+  register `0xF9` (green OK, red on a latched hang).
 - **Reset resilience** — a heartbeat polls the status registers; if the board is
   reset the UI resyncs, and if the port drops it shows a banner and
   auto-reconnects when it returns.

@@ -75,6 +75,7 @@ flowchart TB
 - **`psram_ch1`** — the channel-1 engine: the grab-mirror, the ch1 burst reader,
   and the `sys_clk ↔ fb_clk` CDC. Detailed under
   [frame grab](#frame-grab-and-host-download).
+- **`watchdog`** — the health monitor (on `sys_clk`); see [below](#health-watchdog).
 
 ## Inside `VideoController`: the arbiter and the two FSMs
 
@@ -326,3 +327,31 @@ toggle handshakes: a request toggle is set on `grab_arm`/`rd_req`, synchronized
 with 2–3 flops on `fb_clk`, and edge-detected to start the op; a completion
 toggle returns the other way to clear `busy` and latch the result. `calib1`
 (ch1 calibrated) is likewise synced out as `grab_calib`.
+
+## Health watchdog
+
+`watchdog` (`src/watchdog.sv`, on `sys_clk`) flags a stalled video pipeline. It
+watches one activity heartbeat per subsystem, each on a different clock domain:
+
+| `beats` bit | Subsystem            | Signal tapped in `VGA_timing`     |
+| ----------- | -------------------- | --------------------------------- |
+| `[0]` | LCD rendering              | `LCD_VSYNC`                       |
+| `[1]` | memory subsystem           | `rd_data_valid_0 \| cmd_en_0`     |
+| `[2]` | OV7670 frame capture       | `cam_vsync`                       |
+
+Each heartbeat enters through a `CDC_Bit_Synchronizer` (FPGADesignElements) and
+is edge-detected; any transition resets that subsystem's timeout counter. After
+a startup grace (`STARTUP` ≈ 2 s — covers reset, PSRAM calibration and the first
+frame) a subsystem with no activity for `TIMEOUT` (≈ 0.5 s) latches a **sticky**
+per-subsystem hang. Outputs:
+
+- `blink` — a free-running ~1.6 Hz heartbeat;
+- `hang` — OR of the sticky per-subsystem flags;
+- `subsystem_hang[2:0]` / `monitoring` — exported.
+
+`VGA_timing` drives the active-low debug LED `debug_led = ~(hang | blink)` (blink
+when healthy, solid-on on a hang) and packs `wd_health = {monitoring, hang,
+subsystem_hang}` out to `camera_control` → `modbus_cam_backend`, which serves it
+on Modbus register `0xF9` (see
+[host_control.md](host_control.md#board-health-watchdog)). Everything is on
+`sys_clk`, so the path to the Modbus bridge needs no further CDC.
