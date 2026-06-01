@@ -13,7 +13,7 @@ import time
 import serial  # pyserial
 
 # Reserved bridge registers above the OV7670 0x00..0xC9 range (see
-# src/modbus_cam_backend.sv). The frame-grab feature captures a camera frame
+# src/modbus/modbus_cam_backend.sv). The frame-grab feature captures a camera frame
 # into PSRAM channel 1 and streams it back over FC03.
 REG_GRAB    = 0x00F3   # write 1 = arm a grab; read bit0 = busy, bit1 = ch1 calibrated
 REG_STREAM  = 0x00F8   # write = rewind the download stream to pixel 0

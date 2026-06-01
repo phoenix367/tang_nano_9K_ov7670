@@ -135,7 +135,11 @@
 //
  
 // synopsys translate_off
+`ifdef __ICARUS__
 `include "timescale.v"
+`else
+`include "../timescale.v"
+`endif
 // synopsys translate_on
  
 `include "i2c_master_defines.v"

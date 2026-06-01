@@ -1,5 +1,10 @@
+`ifdef __ICARUS__
 `include "timescale.v"
 `include "camera_control_defs.vh"
+`else
+`include "../timescale.v"
+`include "../camera_control_defs.vh"
+`endif
 
 `default_nettype wire
 

@@ -48,8 +48,8 @@ the FPGA. This document covers that interface end-to-end and a quick-start guide
 
 ## Modbus server
 
-A Modbus RTU **slave/server** ([`src/modbus_rtu_slave.sv`](../src/modbus_rtu_slave.sv))
-sits on the 1 Mbaud 8-E-1 UART ([`src/uart.sv`](../src/uart.sv)) wired to the
+A Modbus RTU **slave/server** ([`src/modbus/modbus_rtu_slave.sv`](../src/modbus/modbus_rtu_slave.sv))
+sits on the 1 Mbaud 8-E-1 UART ([`src/modbus/uart.sv`](../src/modbus/uart.sv)) wired to the
 FT2232H channel B.
 
 | Parameter        | Value                                            |
@@ -64,7 +64,7 @@ FT2232H channel B.
 
 Instead of an internal register file, the server runs with `EXTERNAL_BACKEND=1`:
 every holding-register access is handed to
-[`src/modbus_cam_backend.sv`](../src/modbus_cam_backend.sv), which performs **one
+[`src/modbus/modbus_cam_backend.sv`](../src/modbus/modbus_cam_backend.sv), which performs **one
 live SCCB transaction** on the shared `i2c_control_fsm`. The bridge stays idle
 until power-on camera init has finished (`cam_init_complete`), so the default
 configuration loads undisturbed ("block until init done"); a request that lands

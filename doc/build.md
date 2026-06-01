@@ -245,8 +245,8 @@ IO_PORT "uart_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP BANK_VCCIO=3.3;
 Note `DRIVE` is an output-only attribute — leave it off the `uart_rx`
 input or place-and-route rejects the constraint (`CT1108`).
 
-`CameraControl_TOP` instantiates [`src/uart.sv`](../src/uart.sv) (1 Mbaud,
-8-E-1) feeding a [`src/modbus_rtu_slave.sv`](../src/modbus_rtu_slave.sv)
+`CameraControl_TOP` instantiates [`src/modbus/uart.sv`](../src/modbus/uart.sv) (1 Mbaud,
+8-E-1) feeding a [`src/modbus/modbus_rtu_slave.sv`](../src/modbus/modbus_rtu_slave.sv)
 **Modbus RTU slave** (slave id 7). The slave maps **1:1 to the live OV7670
 registers** — the holding-register address is the camera register number
 (`0x00`–`0xC9`) — so a Modbus master reads/writes the camera over SCCB in real

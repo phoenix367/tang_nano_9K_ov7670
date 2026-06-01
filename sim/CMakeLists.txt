@@ -16,13 +16,13 @@ set(VIDEO_BUFFER_TEST_SOURCES
     "${SRC_FOLDER}/DownloadRowCache.sv"
     "${SRC_FOLDER}/cam_pixel_processor.sv"
     "${SRC_FOLDER}/lcd_controller.sv"
-    "${SRC_FOLDER}/debug_pattern_generator.sv"
-    "${SRC_FOLDER}/debug_pattern_generator2.sv"
+    "${SRC_FOLDER}/debug/debug_pattern_generator.sv"
+    "${SRC_FOLDER}/debug/debug_pattern_generator2.sv"
     "${SRC_FOLDER}/BufferController.sv"
     "${SRC_FOLDER}/sdpb_1kx32/sdpb_1kx32.v"
-    "${SRC_FOLDER}/PositionScaler_horz.sv"
-    "${SRC_FOLDER}/HorizontalResizer.sv"
-    "${SRC_FOLDER}/PositionScaler_vert.sv"
+    "${SRC_FOLDER}/resize/PositionScaler_horz.sv"
+    "${SRC_FOLDER}/resize/HorizontalResizer.sv"
+    "${SRC_FOLDER}/resize/PositionScaler_vert.sv"
     "${SRC_FOLDER}/device_delay.sv"
     "${FPGA_ELEMENTS_FOLDER}/Register.v"
     "${FPGA_ELEMENTS_FOLDER}/Register_Toggle.v"
@@ -110,6 +110,10 @@ function(register_test SCOPE TEST_PATH)
         COMMAND "${VERILOG_BUILDER}"
                 -g2012
                 -I "${SRC_FOLDER}"
+                -I "${SRC_FOLDER}/i2c"
+                -I "${SRC_FOLDER}/modbus"
+                -I "${SRC_FOLDER}/resize"
+                -I "${SRC_FOLDER}/debug"
                 -I "${SIM_SRC_FOLDER}"
                 -I "${SIM_COMMON_FOLDER}"
                 -s main
@@ -169,25 +173,25 @@ foreach (TEST_PATH IN LISTS INTEGRATION_TESTS)
     register_test(integration "${TEST_PATH}")
 endforeach()
 
-# UART module test (src/uart.sv is not part of VIDEO_BUFFER_TEST_SOURCES).
-register_test(unit "uart/frame" "${SRC_FOLDER}/uart.sv")
+# UART module test (src/modbus/uart.sv is not part of VIDEO_BUFFER_TEST_SOURCES).
+register_test(unit "uart/frame" "${SRC_FOLDER}/modbus/uart.sv")
 
 # Modbus RTU slave test (UART byte layer + the slave).
 register_test(integration "modbus/rtu_slave"
-    "${SRC_FOLDER}/uart.sv"
-    "${SRC_FOLDER}/modbus_rtu_slave.sv"
+    "${SRC_FOLDER}/modbus/uart.sv"
+    "${SRC_FOLDER}/modbus/modbus_rtu_slave.sv"
 )
 
 # Modbus -> OV7670 register bridge: the slave (external backend) + the SCCB
 # bridge + the full i2c controller/master stack against the behavioural slave.
 register_test(integration "modbus/cam_bridge"
-    "${SRC_FOLDER}/uart.sv"
-    "${SRC_FOLDER}/modbus_rtu_slave.sv"
-    "${SRC_FOLDER}/modbus_cam_backend.sv"
-    "${SRC_FOLDER}/i2c_master.v"
-    "${SRC_FOLDER}/i2c_master_bit_ctrl.v"
-    "${SRC_FOLDER}/i2c_master_byte_ctrl.v"
-    "${SRC_FOLDER}/i2c_control_fsm.v"
+    "${SRC_FOLDER}/modbus/uart.sv"
+    "${SRC_FOLDER}/modbus/modbus_rtu_slave.sv"
+    "${SRC_FOLDER}/modbus/modbus_cam_backend.sv"
+    "${SRC_FOLDER}/i2c/i2c_master.v"
+    "${SRC_FOLDER}/i2c/i2c_master_bit_ctrl.v"
+    "${SRC_FOLDER}/i2c/i2c_master_byte_ctrl.v"
+    "${SRC_FOLDER}/i2c/i2c_control_fsm.v"
     "${SIM_COMMON_FOLDER}/i2c_slave_model.sv"
 )
 
@@ -195,27 +199,27 @@ register_test(integration "modbus/cam_bridge"
 # and the behavioural slave model -- none are in VIDEO_BUFFER_TEST_SOURCES, so
 # pass them as per-test extra sources.
 register_test(integration "i2c/register_write"
-    "${SRC_FOLDER}/i2c_master.v"
-    "${SRC_FOLDER}/i2c_master_bit_ctrl.v"
-    "${SRC_FOLDER}/i2c_master_byte_ctrl.v"
-    "${SRC_FOLDER}/i2c_control_fsm.v"
+    "${SRC_FOLDER}/i2c/i2c_master.v"
+    "${SRC_FOLDER}/i2c/i2c_master_bit_ctrl.v"
+    "${SRC_FOLDER}/i2c/i2c_master_byte_ctrl.v"
+    "${SRC_FOLDER}/i2c/i2c_control_fsm.v"
     "${SIM_COMMON_FOLDER}/i2c_slave_model.sv"
 )
 
 # Register read exercises the i2c_master_top SCCB read path directly via a
 # WISHBONE BFM, so it does not need i2c_control_fsm.
 register_test(integration "i2c/register_read"
-    "${SRC_FOLDER}/i2c_master.v"
-    "${SRC_FOLDER}/i2c_master_bit_ctrl.v"
-    "${SRC_FOLDER}/i2c_master_byte_ctrl.v"
+    "${SRC_FOLDER}/i2c/i2c_master.v"
+    "${SRC_FOLDER}/i2c/i2c_master_bit_ctrl.v"
+    "${SRC_FOLDER}/i2c/i2c_master_byte_ctrl.v"
     "${SIM_COMMON_FOLDER}/i2c_slave_model.sv"
 )
 
 # FSM read exercises the read path added to i2c_control_fsm end to end.
 register_test(integration "i2c/fsm_read"
-    "${SRC_FOLDER}/i2c_master.v"
-    "${SRC_FOLDER}/i2c_master_bit_ctrl.v"
-    "${SRC_FOLDER}/i2c_master_byte_ctrl.v"
-    "${SRC_FOLDER}/i2c_control_fsm.v"
+    "${SRC_FOLDER}/i2c/i2c_master.v"
+    "${SRC_FOLDER}/i2c/i2c_master_bit_ctrl.v"
+    "${SRC_FOLDER}/i2c/i2c_master_byte_ctrl.v"
+    "${SRC_FOLDER}/i2c/i2c_control_fsm.v"
     "${SIM_COMMON_FOLDER}/i2c_slave_model.sv"
 )

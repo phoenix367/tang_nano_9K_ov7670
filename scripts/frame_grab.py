@@ -4,7 +4,7 @@
 The FPGA captures a fresh 640x480 RGB565 frame into ch1 (register 0xF3 = 1),
 then the host streams it back with back-to-back FC03 reads over the stream band
 (>= 0x1000) after rewinding the pointer (register 0xF8). See
-src/modbus_cam_backend.sv and the project memory for the register map.
+src/modbus/modbus_cam_backend.sv and the project memory for the register map.
 
 Saves a binary PPM always; also a PNG if Pillow is installed.
 """
