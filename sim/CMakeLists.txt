@@ -8,7 +8,6 @@ set(VIDEO_BUFFER_TEST_SOURCES
     "${SRC_FOLDER}/gowin_rpll/memory_rpll.v"
     "${SRC_FOLDER}/gowin_sdpb/gowin_sdpb.v"
     "${SRC_FOLDER}/gowin_sdpb_dn/gowin_sdpb_dn.v"
-    "${SRC_FOLDER}/gowin_alu54/gowin_alu54.v"
     "${SRC_FOLDER}/fifo_top/fifo_cam_data.vo"
     "${SRC_FOLDER}/video_controller.sv"
     "${SRC_FOLDER}/fsms/FrameUploader.sv"

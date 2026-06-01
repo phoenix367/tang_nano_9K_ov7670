@@ -55,7 +55,6 @@
         <File path="src/fsms/FrameDownloader.sv" type="file.verilog" enable="1"/>
         <File path="src/fsms/FrameUploader.sv" type="file.verilog" enable="1"/>
         <File path="src/functions.v" type="file.verilog" enable="1"/>
-        <File path="src/gowin_alu54/gowin_alu54.v" type="file.verilog" enable="1"/>
         <File path="src/gowin_rpll/memory_rpll.v" type="file.verilog" enable="1"/>
         <File path="src/gowin_sdpb_dn/gowin_sdpb_dn.v" type="file.verilog" enable="1"/>
         <File path="src/i2c/i2c_control_fsm.v" type="file.verilog" enable="1"/>
