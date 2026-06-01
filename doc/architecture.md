@@ -98,7 +98,10 @@ before wiring anything):
 `arbiter` all live inside
 [`src/video_controller.sv`](../src/video_controller.sv), which is in
 turn wrapped by [`src/VGA_timing.v`](../src/VGA_timing.v) together with
-the PSRAM IP, `cam_pixel_processor` and `lcd_controller`.
+the PSRAM IP, `cam_pixel_processor`, `lcd_controller`, and the channel-1
+frame-grab engine. The module layout inside `VGA_timing`, the four-way
+arbiter, the camera-write DMA, and the frame-download path are documented
+in [video_datapath.md](video_datapath.md).
 
 `BufferController` ([`src/BufferController.sv`](../src/BufferController.sv))
 owns the write / read pointers and decides when each FSM is allowed
@@ -140,17 +143,33 @@ ownership: the init FSM owns it until the ROM load reaches
 `TRANSMIT_COMPLETE`, which latches `cam_init_complete`; from then on the
 bridge owns it. The bridge stays idle until `cam_init_complete`, so the
 default configuration is loaded undisturbed ("block until init done").
-The bridge also answers three reserved addresses directly (no SCCB):
-`0xF0` firmware magic `0xA5`, `0xF1`/`0xF2` a free-running 16-bit uptime
-so a host can detect a hard reset.
+The bridge also answers reserved addresses directly (no SCCB): `0xF0`
+firmware magic `0xA5`, `0xF1`/`0xF2` a free-running 16-bit uptime so a
+host can detect a hard reset, and `0xF3`/`0xF8` plus the stream band
+`≥ 0x1000` that drive the frame grab (see below).
 
-FC03 read bursts are capped by the slave's `MAX_FRAME` (32 → ~13
-registers per request). The bridge runs entirely on the 27 MHz `sys_clk`
-domain. End-to-end coverage: `sim/integration/modbus/cam_bridge`.
+The FC03 *response* payload lives in inferred BSRAM (`MAX_QTY = 127`), so
+a single read can carry the protocol-max 127 registers — this is what
+makes the frame download practical. The slave's `MAX_FRAME` (32) now only
+bounds the *request* buffer (FC10 camera writes). The bridge runs
+entirely on the 27 MHz `sys_clk` domain. End-to-end coverage:
+`sim/integration/modbus/cam_bridge`.
 
-The full host-facing reference — register map, status registers, LEDs,
-the web app, and the CLI client — is in
-[host_control.md](host_control.md).
+The Modbus server's two blocks, their state machines, and all their
+connections are documented in [modbus_server.md](modbus_server.md); the
+full host-facing reference (register map, status registers, LEDs, web
+app, CLI) is in [host_control.md](host_control.md).
+
+### Frame grab and host download
+
+The second PSRAM channel (channel 1) lets a host capture a full 640×480
+frame and download it over the same Modbus link. `psram_ch1` *tees* the
+channel-0 camera-write stream into channel 1 for one frame (armed by
+register `0xF3`), then serves it back as 8-word burst reads;
+`modbus_cam_backend` streams it pixel-by-pixel to FC03 reads of the
+`≥ 0x1000` band. A full frame downloads in ~10 s at 1 Mbaud. The capture
+costs no extra PSRAM read bandwidth and needs no arbiter changes — see
+[video_datapath.md](video_datapath.md#frame-grab-and-host-download).
 
 ## Capture path
 
