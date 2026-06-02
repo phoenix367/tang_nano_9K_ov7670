@@ -812,6 +812,7 @@ async function loadOsdState() {
 
 const OSD_COLS = 60, OSD_ROWS = 17;
 let lastGoodOsd = "";        // last value that fit the grid (for reject-on-overflow)
+let osdCaretBefore = 0;      // caret position captured before the pending edit
 
 function osdLines() {
   return $("#osd-text").value.split("\n").slice(0, OSD_ROWS).map((l) => l.slice(0, OSD_COLS));
@@ -828,9 +829,11 @@ function clampOsd() {
   if (fits) {
     lastGoodOsd = ta.value;
   } else {
-    const pos = ta.selectionStart;
     ta.value = lastGoodOsd;                       // undo the overflowing edit
-    ta.selectionStart = ta.selectionEnd = Math.min(pos, lastGoodOsd.length);
+    // restore the caret to where it was *before* the edit, so a rejected keystroke
+    // on a full row leaves the caret at the row end (not jumped onto the next row).
+    const p = Math.min(osdCaretBefore, lastGoodOsd.length);
+    ta.selectionStart = ta.selectionEnd = p;
   }
   updateOsdCount();
 }
@@ -844,6 +847,7 @@ function updateOsdCount() {
 function insertOsdChar(ch) {
   const ta = $("#osd-text");
   const s = ta.selectionStart, e = ta.selectionEnd;
+  osdCaretBefore = s;                  // if the insert overflows, revert caret to here
   ta.value = ta.value.slice(0, s) + ch + ta.value.slice(e);
   ta.selectionStart = ta.selectionEnd = s + ch.length;
   clampOsd();
@@ -1065,6 +1069,7 @@ async function init() {
   $("#osd-sparrow").addEventListener("click", () => drawArt(OSD_SPARROW));
   $("#osd-car").addEventListener("click", () => drawArt(OSD_CAR));
   $("#osd-enable").addEventListener("change", toggleOsd);
+  $("#osd-text").addEventListener("beforeinput", (e) => { osdCaretBefore = e.target.selectionStart; });
   $("#osd-text").addEventListener("input", clampOsd);
   buildOsdPalette();
   updateOsdCount();
