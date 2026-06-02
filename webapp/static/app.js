@@ -468,7 +468,200 @@ function heatColor(v) {                       // signed -255..255 -> diverging
 }
 const heatText = (v) => (Math.abs(v) / 255 > 0.5 ? "#06121f" : "#d7e0ea");
 
+// ---- CIE 1931 chromaticity diagram ----------------------------------------
+// Spectral locus (2° observer): [wavelength_nm, x, y]. The closing edge back to
+// 380 nm is the (non-spectral) line of purples.
+const SPECTRAL_LOCUS = [
+  [380, 0.1741, 0.0050], [400, 0.1733, 0.0048], [420, 0.1714, 0.0051],
+  [440, 0.1644, 0.0109], [460, 0.1440, 0.0297], [470, 0.1241, 0.0578],
+  [480, 0.0913, 0.1327], [490, 0.0454, 0.2950], [500, 0.0082, 0.5384],
+  [510, 0.0139, 0.7502], [520, 0.0743, 0.8338], [530, 0.1547, 0.8059],
+  [540, 0.2296, 0.7543], [550, 0.3016, 0.6923], [560, 0.3731, 0.6245],
+  [570, 0.4441, 0.5547], [580, 0.5125, 0.4866], [590, 0.5752, 0.4242],
+  [600, 0.6270, 0.3725], [610, 0.6658, 0.3340], [620, 0.6915, 0.3083],
+  [630, 0.7079, 0.2920], [640, 0.7190, 0.2809], [650, 0.7260, 0.2740],
+  [700, 0.7347, 0.2653],
+];
+const SRGB_PRIMARIES = [[0.64, 0.33], [0.30, 0.60], [0.15, 0.06]];  // R, G, B
+const D65 = [0.3127, 0.3290];
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+const srgbToLinear = (c) => (c /= 255, c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+
+function rgbToXy(r, g, b) {                       // sRGB (D65) -> CIE xy
+  const R = srgbToLinear(r), G = srgbToLinear(g), B = srgbToLinear(b);
+  const X = 0.4124 * R + 0.3576 * G + 0.1805 * B;
+  const Y = 0.2126 * R + 0.7152 * G + 0.0722 * B;
+  const Z = 0.0193 * R + 0.1192 * G + 0.9505 * B;
+  const s = X + Y + Z;
+  return s <= 0 ? D65.slice() : [X / s, Y / s];   // black -> white point
+}
+
+function wavelengthToRgb(wl) {                     // Bruton approximation, vivid
+  let r = 0, g = 0, b = 0;
+  if (wl < 440) { r = -(wl - 440) / 60; b = 1; }
+  else if (wl < 490) { g = (wl - 440) / 50; b = 1; }
+  else if (wl < 510) { g = 1; b = -(wl - 510) / 20; }
+  else if (wl < 580) { r = (wl - 510) / 70; g = 1; }
+  else if (wl < 645) { r = 1; g = -(wl - 645) / 65; }
+  else { r = 1; }
+  return [r, g, b].map((c) => Math.round(Math.max(0, Math.min(1, c)) * 255));
+}
+
+function svgEl(tag, attrs, text) {
+  const e = document.createElementNS(SVG_NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+// diagram geometry (viewBox units) and chromaticity <-> pixel mappings
+const CHROMA = { W: 240, H: 240, pad: 22, XMAX: 0.75, YMAX: 0.85 };
+const chromaPx = (x) => CHROMA.pad + (x / CHROMA.XMAX) * (CHROMA.W - 2 * CHROMA.pad);
+const chromaPy = (y) => (CHROMA.H - CHROMA.pad) - (y / CHROMA.YMAX) * (CHROMA.H - 2 * CHROMA.pad);
+const chromaInvX = (sx) => ((sx - CHROMA.pad) / (CHROMA.W - 2 * CHROMA.pad)) * CHROMA.XMAX;
+const chromaInvY = (sy) => ((CHROMA.H - CHROMA.pad - sy) / (CHROMA.H - 2 * CHROMA.pad)) * CHROMA.YMAX;
+const clampCoeff = (v) => Math.max(-255, Math.min(255, v));
+const clamp8 = (v) => Math.max(0, Math.min(255, Math.round(v)));
+
+// JS mirror of ov7670.matrix_apply: 2x3 chroma matrix + BT.601 luma -> sRGB.
+function matrixApply(signed, r, g, b) {
+  const y = 0.299 * r + 0.587 * g + 0.114 * b;
+  const cr = (signed[0] * r + signed[1] * g + signed[2] * b) / 256;
+  const cb = (signed[3] * r + signed[4] * g + signed[5] * b) / 256;
+  return [clamp8(y + 1.402 * cr), clamp8(y - 0.344 * cb - 0.714 * cr), clamp8(y + 1.772 * cb)];
+}
+
+// Draggable primaries: input RGB key -> its [Cr-coeff, Cb-coeff] column indices.
+const PRIMARY_COLS = { "255,0,0": [0, 3], "0,255,0": [1, 4], "0,0,255": [2, 5] };
+let MATRIX_STATE = null;       // last matrix payload (mutated live while dragging)
+let chromaDrag = null;
+
+// A primary's output depends only on its own column, so its chromaticity is a
+// 2->2 function of (Cr-coeff, Cb-coeff). The map has clamped plateaus (the output
+// jams in a cube corner), so a local solver gets stuck; a small grid search over
+// the 2-D coefficient space is robust. A light pull toward the current values
+// (a0,b0) breaks ties on a plateau, keeping the drag stable.
+function solvePrimaryCoeffs(inRgb, target, a0, b0) {
+  const y = 0.299 * inRgb[0] + 0.587 * inRgb[1] + 0.114 * inRgb[2];
+  const ch = Math.max(...inRgb);                    // the 255 channel
+  const fwd = (a, b) => {
+    const cr = (a * ch) / 256, cb = (b * ch) / 256;
+    return rgbToXy(clamp8(y + 1.402 * cr), clamp8(y - 0.344 * cb - 0.714 * cr), clamp8(y + 1.772 * cb));
+  };
+  let best = [a0, b0], bestCost = Infinity;
+  const consider = (a, b) => {
+    const f = fwd(a, b);
+    const cost = (f[0] - target[0]) ** 2 + (f[1] - target[1]) ** 2
+      + 1e-7 * ((a - a0) ** 2 + (b - b0) ** 2);
+    if (cost < bestCost) { bestCost = cost; best = [a, b]; }
+  };
+  for (let a = -255; a <= 255; a += 15) for (let b = -255; b <= 255; b += 15) consider(a, b);
+  const [ca, cb] = best;                            // refine around the coarse best
+  bestCost = Infinity;
+  for (let a = Math.max(-255, ca - 15); a <= Math.min(255, ca + 15); a += 2)
+    for (let b = Math.max(-255, cb - 15); b <= Math.min(255, cb + 15); b += 2) consider(a, b);
+  return [clampCoeff(Math.round(best[0])), clampCoeff(Math.round(best[1]))];
+}
+
+function setCoeffMeta(meta, signed) {
+  meta.signed = signed; meta.raw = Math.abs(signed);
+  meta.neg = signed < 0; meta.value = Math.round((signed / 256) * 1000) / 1000;
+}
+
+function chromaPointerMove(ev) {
+  if (!chromaDrag || !MATRIX_STATE) return;
+  const r = $("#chroma-svg").getBoundingClientRect();
+  const sx = ((ev.clientX - r.left) / r.width) * CHROMA.W;
+  const sy = ((ev.clientY - r.top) / r.height) * CHROMA.H;
+  const tx = Math.max(0, Math.min(CHROMA.XMAX, chromaInvX(sx)));
+  const ty = Math.max(0, Math.min(CHROMA.YMAX, chromaInvY(sy)));
+  const [ci, cj] = chromaDrag.cols;
+  const signed = MATRIX_STATE.coeffs.map((c) => c.signed);
+  const [na, nb] = solvePrimaryCoeffs(chromaDrag.in, [tx, ty], signed[ci], signed[cj]);
+  setCoeffMeta(MATRIX_STATE.coeffs[ci], na);
+  setCoeffMeta(MATRIX_STATE.coeffs[cj], nb);
+  const cur = MATRIX_STATE.coeffs.map((c) => c.signed);
+  MATRIX_STATE.swatches = MATRIX_STATE.swatches.map((s) => ({ ...s, out: matrixApply(cur, ...s.in) }));
+  renderMatrix(MATRIX_STATE);                        // live: grid + diagram follow
+}
+
+async function chromaPointerUp() {
+  window.removeEventListener("pointermove", chromaPointerMove);
+  window.removeEventListener("pointerup", chromaPointerUp);
+  const drag = chromaDrag; chromaDrag = null;
+  if (!drag || !MATRIX_STATE) return;
+  const [ci, cj] = drag.cols;                        // write the two changed coeffs
+  const updates = [[ci, MATRIX_STATE.coeffs[ci].signed], [cj, MATRIX_STATE.coeffs[cj].signed]];
+  try {
+    let payload;
+    for (const [index, value] of updates) payload = await postJSON("/api/matrix/coeff", { index, value });
+    renderMatrix(payload);
+    toast("Matrix updated");
+  } catch (e) { toast(e.message, "error"); loadMatrix(); }
+}
+
+function renderChroma(swatches) {
+  const el = $("#chroma-svg");
+  if (!el) return;
+  el.innerHTML = "";
+  const px = chromaPx, py = chromaPy, { XMAX, YMAX } = CHROMA;
+
+  // faint fill of the visible-gamut horseshoe
+  const locusPts = SPECTRAL_LOCUS.map(([, x, y]) => `${px(x)},${py(y)}`).join(" ");
+  el.appendChild(svgEl("polygon", { points: locusPts, fill: "#11161c" }));
+  // axes
+  el.appendChild(svgEl("line", { x1: px(0), y1: py(0), x2: px(XMAX), y2: py(0), stroke: "#2c3744" }));
+  el.appendChild(svgEl("line", { x1: px(0), y1: py(0), x2: px(0), y2: py(YMAX), stroke: "#2c3744" }));
+  el.appendChild(svgEl("text", { x: px(XMAX), y: py(0) + 12, fill: "#8a97a6", "font-size": 9, "text-anchor": "end" }, "x"));
+  el.appendChild(svgEl("text", { x: px(0) - 6, y: py(YMAX) + 3, fill: "#8a97a6", "font-size": 9, "text-anchor": "end" }, "y"));
+  // spectral locus, coloured by wavelength
+  for (let i = 0; i < SPECTRAL_LOCUS.length - 1; i++) {
+    const [w, x, y] = SPECTRAL_LOCUS[i], [, x2, y2] = SPECTRAL_LOCUS[i + 1];
+    el.appendChild(svgEl("line", {
+      x1: px(x), y1: py(y), x2: px(x2), y2: py(y2),
+      stroke: rgbCss(wavelengthToRgb(w)), "stroke-width": 2,
+    }));
+  }
+  // line of purples
+  const a = SPECTRAL_LOCUS[SPECTRAL_LOCUS.length - 1], b0 = SPECTRAL_LOCUS[0];
+  el.appendChild(svgEl("line", { x1: px(a[1]), y1: py(a[2]), x2: px(b0[1]), y2: py(b0[2]), stroke: "#9a4fd0", "stroke-width": 2 }));
+  // sRGB gamut triangle + white point
+  el.appendChild(svgEl("polygon", {
+    points: SRGB_PRIMARIES.map((p) => `${px(p[0])},${py(p[1])}`).join(" "),
+    fill: "none", stroke: "#8a97a6", "stroke-width": 1, "stroke-dasharray": "3 2",
+  }));
+  el.appendChild(svgEl("path", {
+    d: `M${px(D65[0]) - 3},${py(D65[1])}h6M${px(D65[0])},${py(D65[1]) - 3}v6`,
+    stroke: "#d7e0ea", "stroke-width": 1,
+  }));
+  // each reference colour: before (hollow) -> after (filled); primaries draggable
+  for (const s of swatches) {
+    const [ix, iy] = rgbToXy(...s.in), [ox, oy] = rgbToXy(...s.out);
+    const cols = PRIMARY_COLS[s.in.join(",")];
+    el.appendChild(svgEl("line", { x1: px(ix), y1: py(iy), x2: px(ox), y2: py(oy), stroke: "#d7e0ea", "stroke-width": 1, opacity: 0.45 }));
+    el.appendChild(svgEl("circle", { cx: px(ix), cy: py(iy), r: 3, fill: "none", stroke: rgbCss(s.in), "stroke-width": 1.5 }));
+    const dot = svgEl("circle", {
+      cx: px(ox), cy: py(oy), r: cols ? 4.5 : 3.4, fill: rgbCss(s.out),
+      stroke: cols ? "#d7e0ea" : "#0f1419", "stroke-width": cols ? 1.4 : 0.8,
+    });
+    if (cols) {
+      dot.style.cursor = "grab";
+      dot.setAttribute("data-primary", s.name);
+      dot.addEventListener("pointerdown", (ev) => {
+        ev.preventDefault();
+        chromaDrag = { cols, in: s.in };
+        window.addEventListener("pointermove", chromaPointerMove);
+        window.addEventListener("pointerup", chromaPointerUp);
+      });
+    }
+    dot.appendChild(svgEl("title", {}, `${s.name}: ${s.in} → ${s.out}${cols ? "  (drag to retune)" : ""}`));
+    el.appendChild(dot);
+  }
+}
+
 function renderMatrix(d) {
+  MATRIX_STATE = d;
   $("#matrix-autocc").checked = d.auto_contrast;
 
   const grid = $("#matrix-grid");
@@ -521,6 +714,8 @@ function renderMatrix(d) {
       `<span class="swatch" style="background:${rgbCss(s.out)}" title="${s.out}"></span>`;
     sw.appendChild(row);
   }
+
+  renderChroma(d.swatches);
 }
 
 async function loadMatrix() {
@@ -695,6 +890,53 @@ async function sendOsd() {
   finally { btn.disabled = false; }
 }
 
+// A tree sparrow in line-art style, modelled on a real reference: a plump
+// egg-shaped body, head tucked at the upper-left with a '<' beak and 'o' eye, a
+// dark stippled back/wing (░▒ shading) over a pale open belly, and the
+// characteristic barred tail (\\ feathers) sweeping down to the lower-right,
+// standing on two feet. Drawn only with characters the OSD font renders.
+const OSD_SPARROW = [
+  "             _.-\"\"-._",
+  "           .'     ░░░ `.",
+  "          /    ░░▒▒▒▒▒  `.",
+  "         <  o ░▒▒▒▒▒▒▒▒   `.",
+  "          \\ .   ░▒▒▒▒▒▒▒▒▒   `.",
+  "          |    ░▒▒▒▒▒▒▒▒▒▒▒   `._",
+  "          |     ░▒▒▒▒▒▒▒▒▒▒▒░    `-._",
+  "           \\    ░▒▒▒▒▒▒▒▒▒░ \\\\\\\\\\   `-._",
+  "            \\     ░▒▒▒▒▒▒░ \\\\\\\\\\\\\\\\\\\\\\   `-._",
+  "             \\     ░░▒▒░  \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\   `-._",
+  "              `.    ░░  \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\  `>",
+  "                `._    \\\\\\\\\\\\\\\\\\\\\\\\______,,..--''`",
+  "                  `--..___,,..--'``",
+  "                   |    |",
+  "                   |    |",
+  "                  _/\\__/\\_",
+].join("\n");
+
+// A car (side view) in line-art style: cabin with windshield pillars, body, and
+// two wheels tucked into arches. Drawn only with characters the OSD font renders.
+const OSD_CAR = [
+  "                  ______",
+  "               __/      \\___",
+  "           ___/   |  |      \\____",
+  "          /       |  |           \\",
+  "    _____/    _________________    \\_____",
+  "   |         /                 \\         |",
+  "   |    ____/                   \\____     |",
+  "   |   /    \\                   /    \\    |",
+  "   '--|  ()  |-----------------|  ()  |--'",
+  "       \\____/                   \\____/",
+].join("\n");
+
+// Load a piece of ASCII art into the editor, enable the overlay, and send it.
+async function drawArt(art) {
+  $("#osd-text").value = art;
+  $("#osd-enable").checked = true;
+  clampOsd();
+  await sendOsd();
+}
+
 async function clearOsd() {
   try {
     await postJSON("/api/osd", { clear: true });
@@ -814,6 +1056,8 @@ async function init() {
   $("#grab-cancel").addEventListener("click", cancelGrab);
   $("#osd-send").addEventListener("click", sendOsd);
   $("#osd-clear").addEventListener("click", clearOsd);
+  $("#osd-sparrow").addEventListener("click", () => drawArt(OSD_SPARROW));
+  $("#osd-car").addEventListener("click", () => drawArt(OSD_CAR));
   $("#osd-enable").addEventListener("change", toggleOsd);
   $("#osd-text").addEventListener("input", clampOsd);
   buildOsdPalette();

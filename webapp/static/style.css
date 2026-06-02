@@ -177,6 +177,13 @@ label.inline { flex-direction: row; align-items: center; gap: 6px; color: var(--
 .swatch { width: 30px; height: 18px; border-radius: 4px; border: 1px solid var(--border); }
 .swatch-arrow { color: var(--muted); }
 
+#matrix-chroma { display: flex; flex-direction: column; gap: 6px; }
+#chroma-svg { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; }
+.chroma-legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 11px; color: var(--muted); align-items: center; }
+.chroma-legend .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+.chroma-legend .dot.hollow { border: 1.5px solid var(--text); }
+.chroma-legend .dot.filled { background: var(--text); }
+
 /* OSD text overlay: monospace editor capped at 60x17, with a symbol palette. */
 .osd-body { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; margin-top: 6px; }
 .osd-edit { flex: 1 1 auto; min-width: 0; }
