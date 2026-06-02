@@ -615,8 +615,72 @@ async function loadOsdState() {
   } catch { /* not connected yet — leave the checkbox as-is */ }
 }
 
+const OSD_COLS = 60, OSD_ROWS = 17;
+
 function osdLines() {
-  return $("#osd-text").value.split("\n").slice(0, 17).map((l) => l.slice(0, 60));
+  return $("#osd-text").value.split("\n").slice(0, OSD_ROWS).map((l) => l.slice(0, OSD_COLS));
+}
+
+// Cap the editor to OSD_ROWS lines of OSD_COLS chars, preserving the caret.
+function clampOsd() {
+  const ta = $("#osd-text");
+  const pos = ta.selectionStart;
+  const clamped = osdLines().join("\n");
+  if (clamped !== ta.value) {
+    ta.value = clamped;
+    const p = Math.min(pos, clamped.length);
+    ta.selectionStart = ta.selectionEnd = p;
+  }
+  updateOsdCount();
+}
+
+function updateOsdCount() {
+  const lines = $("#osd-text").value.split("\n");
+  const longest = lines.reduce((m, l) => Math.max(m, l.length), 0);
+  $("#osd-count").textContent = `${Math.min(lines.length, OSD_ROWS)}/${OSD_ROWS} rows · ${longest}/${OSD_COLS} cols`;
+}
+
+function insertOsdChar(ch) {
+  const ta = $("#osd-text");
+  const s = ta.selectionStart, e = ta.selectionEnd;
+  ta.value = ta.value.slice(0, s) + ch + ta.value.slice(e);
+  ta.selectionStart = ta.selectionEnd = s + ch.length;
+  clampOsd();
+  ta.focus();
+}
+
+// Box-drawing / block pseudographics — keep in sync with webapp/osd_charset.py
+// (the font ROM carries these in the C1 range; the server encodes them to bytes).
+const OSD_PSEUDO = [
+  "─", "│", "┌", "┐", "└", "┘", "├", "┤", "┬", "┴", "┼",
+  "═", "║", "╔", "╗", "╚", "╝", "╠", "╣", "╦", "╩", "╬",
+  "█", "▀", "▄", "▌", "▐", "░", "▒", "▓", "■", "·",
+];
+
+function addGlyphButton(grid, ch, title) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "glyph";
+  b.textContent = ch;
+  b.title = title;
+  b.addEventListener("click", () => insertOsdChar(ch));
+  grid.appendChild(b);
+}
+
+// Palettes of glyphs the OSD font can render but are awkward/impossible to type:
+// special Latin-1 symbols (0xA1..0xFF) and box-drawing/block pseudographics.
+function buildOsdPalette() {
+  const sym = $("#osd-symbols");
+  if (sym && !sym.childElementCount) {
+    for (let code = 0xA1; code <= 0xFF; code++) {
+      const ch = String.fromCharCode(code);
+      addGlyphButton(sym, ch, `0x${code.toString(16).toUpperCase()} (${code})`);
+    }
+  }
+  const ps = $("#osd-pseudo");
+  if (ps && !ps.childElementCount) {
+    for (const ch of OSD_PSEUDO) addGlyphButton(ps, ch, ch);
+  }
 }
 
 async function sendOsd() {
@@ -635,6 +699,7 @@ async function clearOsd() {
   try {
     await postJSON("/api/osd", { clear: true });
     $("#osd-text").value = "";
+    updateOsdCount();
     $("#osd-status").textContent = "Overlay cleared.";
     toast("Overlay cleared");
   } catch (e) { toast(e.message, "error"); }
@@ -750,6 +815,9 @@ async function init() {
   $("#osd-send").addEventListener("click", sendOsd);
   $("#osd-clear").addEventListener("click", clearOsd);
   $("#osd-enable").addEventListener("change", toggleOsd);
+  $("#osd-text").addEventListener("input", clampOsd);
+  buildOsdPalette();
+  updateOsdCount();
   $("#matrix-autocc").addEventListener("change", async (e) => {
     try { renderMatrix(await postJSON("/api/matrix/contrast_center", { on: e.target.checked })); }
     catch (err) { toast(err.message, "error"); loadMatrix(); }

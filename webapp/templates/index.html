@@ -141,15 +141,29 @@
         <label class="inline"><input type="checkbox" id="osd-enable"> Show overlay</label>
       </div>
       <p class="hint">8&times;16 white font on a 60&times;17 character grid (480&times;272 LCD).
-        Each input line maps to one screen row; characters past column&nbsp;60 wrap onto
-        the next row. Latin-1 (0x00&ndash;0xFF) characters are supported.</p>
-      <textarea id="osd-text" rows="6" spellcheck="false" maxlength="1020"
-        placeholder="Type overlay text — one screen row per line…"></textarea>
-      <div class="row">
-        <button id="osd-send" class="primary">Send to display</button>
-        <button id="osd-clear" class="ghost">Clear</button>
+        Each line is one screen row; the editor is capped at 60&nbsp;columns &times; 17&nbsp;rows.
+        Click a glyph to insert a special Latin-1 symbol or a box-drawing/block
+        pseudographic at the cursor.</p>
+      <div class="osd-body">
+        <div class="osd-edit">
+          <textarea id="osd-text" cols="60" rows="17" wrap="off" spellcheck="false"
+            placeholder="Type overlay text — one screen row per line…"></textarea>
+          <div class="row between">
+            <div class="row">
+              <button id="osd-send" class="primary">Send to display</button>
+              <button id="osd-clear" class="ghost">Clear</button>
+            </div>
+            <span id="osd-count" class="hint mono"></span>
+          </div>
+          <div id="osd-status" class="status">Text is composited over the live video on the LCD.</div>
+        </div>
+        <div class="osd-palette">
+          <div class="palette-title">Special symbols</div>
+          <div id="osd-symbols" class="osd-grid"></div>
+          <div class="palette-title">Pseudographics</div>
+          <div id="osd-pseudo" class="osd-grid"></div>
+        </div>
       </div>
-      <div id="osd-status" class="status">Text is composited over the live video on the LCD.</div>
     </section>
   </div>
 

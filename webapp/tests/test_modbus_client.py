@@ -192,3 +192,21 @@ def test_osd_clear_blanks_buffer(rtu):
     c.osd_clear()
     assert set(slave.osd_cells) == {0}
     assert slave.osd_cursor == 0
+
+
+def test_osd_byte_maps_latin1_and_pseudographics():
+    import osd_charset
+    assert osd_charset.osd_byte("A") == 0x41          # ASCII
+    assert osd_charset.osd_byte("°") == 0xB0     # ° Latin-1 passes through
+    assert osd_charset.osd_byte("─") == 0x80     # ─ box-drawing -> C1 code
+    assert osd_charset.osd_byte("╬") == 0x95     # ╬ double cross
+    assert osd_charset.osd_byte("█") == 0x96     # █ full block
+    assert osd_charset.osd_byte("€") == 0x3F     # € (> 0xFF, not mapped) -> '?'
+
+
+def test_osd_write_text_encodes_pseudographics(rtu):
+    c, slave = rtu
+    c.osd_write_text(0, 0, "┌─┐")      # ┌─┐
+    assert slave.osd_cells[0] == 0x82                 # ┌
+    assert slave.osd_cells[1] == 0x80                 # ─
+    assert slave.osd_cells[2] == 0x83                 # ┐

@@ -274,9 +274,11 @@ unchanged) whenever the overlay is disabled or a cell is blank.
 - **Grid & font** — 8×16 pixel glyphs on a **60 col × 17 row** character grid
   (480×272). The font is a 256-glyph ROM (`reg [7:0] font[0:4095]`, one byte per
   glyph row, MSB = leftmost pixel) initialised from `src/font8x16_init.vh`, which
-  `scripts/font_generator.py` renders from DejaVu Sans Mono. The init uses
-  `` `include `` (not `$readmemh`) so the path resolves under both Icarus (`-I
-  src`) and Gowin.
+  `scripts/font_generator.py` extracts from the IBM-VGA 8×16 console bitmap
+  (a `kbd` PSF font). Codes `0x00`–`0xFF` are Latin-1; the C1 range `0x80`–`0x9F`
+  is overlaid with 32 box-drawing / block **pseudographics** (mapping in
+  `webapp/osd_charset.py`). The init uses `` `include `` (not `$readmemh`) so the
+  path resolves under both Icarus (`-I src`) and Gowin.
 - **Pixel position** — rather than tap `LCD_Controller`'s internal counters, the
   overlay reconstructs the active `(x, y)` from the controller's `DE`/`VSYNC`
   (x counts during DE and resets on its fall; y increments on each DE falling

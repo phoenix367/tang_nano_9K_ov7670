@@ -191,9 +191,15 @@ scripts/modbus_test.py --port /dev/ttyGowin --read 0xF9 1   # 0x0010 = healthy
 The LCD output carries an **on-screen-display** text layer composited over the
 live video by `src/osd_overlay.sv` (see [the datapath
 doc](video_datapath.md#osd-text-overlay)). Text is drawn in a built-in **8×16
-font**, white, over a **60 columns × 17 rows** character grid (480×272 LCD). The
-host fills a character buffer over Modbus; the overlay paints lit glyph pixels
-white and passes the video through everywhere else.
+font** (the IBM-VGA bitmap), white, over a **60 columns × 17 rows** character
+grid (480×272 LCD). The host fills a character buffer over Modbus; the overlay
+paints lit glyph pixels white and passes the video through everywhere else.
+
+The font ROM is indexed by the raw byte sent: `0x00`–`0xFF` are the Latin-1
+glyphs, and the otherwise-unused C1 range `0x80`–`0x9F` is overlaid with 32
+**box-drawing / block pseudographics** (`─ │ ┌ ┐ … ═ ║ ╔ ╗ … █ ▀ ▄ ░ ▒ ▓ ■ ·`).
+The byte each pseudographic maps to is defined once in `webapp/osd_charset.py`
+and shared by the font generator and the host encoder.
 
 Three reserved registers drive it (all served without an SCCB cycle):
 
@@ -201,7 +207,7 @@ Three reserved registers drive it (all served without an SCCB cycle):
 | ----- | ------ | -------------------------------------------------------------- |
 | `0xFB`| R/W    | Control — write bit0 = show overlay, bit1 = clear the whole buffer; read bit0 = currently shown |
 | `0xFC`| R/W    | Write cursor — character cell `row*60 + col` (`0`–`1019`)      |
-| `0xFD`| W      | Character code (Latin-1, `0x00`–`0xFF`) at the cursor; the cursor then **auto-increments** (wrapping at cell 1020) |
+| `0xFD`| W      | Character code at the cursor (Latin-1 `0x00`–`0xFF`, or `0x80`–`0x9F` for a pseudographic); the cursor then **auto-increments** (wrapping at cell 1020) |
 
 To write a string: set the cursor (`0xFC`) to `row*60 + col`, then write each
 character's code to `0xFD` in turn — the auto-increment lets a whole line stream
@@ -219,7 +225,8 @@ scripts/modbus_test.py --port /dev/ttyGowin --write 0xFB 1      # show overlay
 The character buffer crosses from the Modbus (`sys_clk`) domain to the LCD pixel
 (`screen_clk`) domain through a dual-clock RAM; the show/hide bit crosses through
 a `CDC_Bit_Synchronizer`. The web app exposes the same feature on its **OSD
-overlay** tab.
+overlay** tab, which caps the editor at 60×17 and offers click-to-insert palettes
+for the special Latin-1 symbols and the box-drawing/block pseudographics.
 
 ## Frame grab and download
 

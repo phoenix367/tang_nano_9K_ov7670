@@ -11,6 +11,7 @@ import struct
 import time
 
 import serial  # pyserial
+from osd_charset import osd_byte
 
 # Reserved bridge registers above the OV7670 0x00..0xC9 range (see
 # src/modbus/modbus_cam_backend.sv). The frame-grab feature captures a camera frame
@@ -232,8 +233,9 @@ class ModbusRTU:
     def osd_write_text(self, row, col, text):
         """Write `text` into the OSD grid starting at (row, col).
 
-        Sets the write cursor to row*OSD_COLS+col, then streams the Latin-1 byte
-        of each character; the device auto-increments the cursor per character.
+        Sets the write cursor to row*OSD_COLS+col, then streams one ROM byte per
+        character (osd_byte: Latin-1 code, or the C1 byte of a box-drawing/block
+        pseudographic); the device auto-increments the cursor per character.
         Characters past the end of the row continue onto the next row (the cursor
         wraps the whole buffer). Raises ValueError if (row, col) is off-grid.
         """
@@ -241,8 +243,7 @@ class ModbusRTU:
             raise ValueError(f"OSD cell ({row}, {col}) out of range")
         self.write_single(REG_OSD_ADDR, row * OSD_COLS + col)
         for ch in text:
-            code = ord(ch)
-            self.write_single(REG_OSD_DATA, code if code <= 0xFF else ord("?"))
+            self.write_single(REG_OSD_DATA, osd_byte(ch))
 
     # ---- frame grab (capture into PSRAM ch1, then stream over FC03) ----------
     def grab_busy(self):

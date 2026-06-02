@@ -177,6 +177,32 @@ label.inline { flex-direction: row; align-items: center; gap: 6px; color: var(--
 .swatch { width: 30px; height: 18px; border-radius: 4px; border: 1px solid var(--border); }
 .swatch-arrow { color: var(--muted); }
 
+/* OSD text overlay: monospace editor capped at 60x17, with a symbol palette. */
+.osd-body { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; margin-top: 6px; }
+.osd-edit { flex: 1 1 auto; min-width: 0; }
+#osd-text {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px; line-height: 1.25; tab-size: 1;
+  max-width: 100%; resize: vertical;
+  color: var(--text); background: var(--panel-2);
+  border: 1px solid var(--border); border-radius: 6px; padding: 8px;
+}
+.osd-edit .row.between { margin-top: 10px; }
+.osd-palette { flex: 0 0 auto; width: 236px; }
+.palette-title { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+.osd-grid {
+  display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px;
+  max-height: 340px; overflow-y: auto; padding: 2px;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--panel-2);
+}
+.osd-grid .glyph {
+  font-family: ui-monospace, monospace; font-size: 15px; line-height: 1;
+  padding: 6px 0; cursor: pointer;
+  color: var(--text); background: var(--panel);
+  border: 1px solid var(--border); border-radius: 4px;
+}
+.osd-grid .glyph:hover { border-color: var(--accent); color: var(--accent); }
+
 .toast {
   position: fixed;
   bottom: 22px;
