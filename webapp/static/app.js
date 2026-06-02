@@ -811,20 +811,26 @@ async function loadOsdState() {
 }
 
 const OSD_COLS = 60, OSD_ROWS = 17;
+let lastGoodOsd = "";        // last value that fit the grid (for reject-on-overflow)
 
 function osdLines() {
   return $("#osd-text").value.split("\n").slice(0, OSD_ROWS).map((l) => l.slice(0, OSD_COLS));
 }
 
-// Cap the editor to OSD_ROWS lines of OSD_COLS chars, preserving the caret.
+// Enforce the OSD_COLS x OSD_ROWS grid. Reject (revert) any edit that would
+// overflow a row or exceed the row count, rather than truncating per line —
+// truncating let a delete that merges two rows (e.g. Del at the end of a full
+// row 1) silently swallow the next row. Valid edits become the new baseline.
 function clampOsd() {
   const ta = $("#osd-text");
-  const pos = ta.selectionStart;
-  const clamped = osdLines().join("\n");
-  if (clamped !== ta.value) {
-    ta.value = clamped;
-    const p = Math.min(pos, clamped.length);
-    ta.selectionStart = ta.selectionEnd = p;
+  const lines = ta.value.split("\n");
+  const fits = lines.length <= OSD_ROWS && lines.every((l) => l.length <= OSD_COLS);
+  if (fits) {
+    lastGoodOsd = ta.value;
+  } else {
+    const pos = ta.selectionStart;
+    ta.value = lastGoodOsd;                       // undo the overflowing edit
+    ta.selectionStart = ta.selectionEnd = Math.min(pos, lastGoodOsd.length);
   }
   updateOsdCount();
 }
@@ -941,7 +947,7 @@ async function clearOsd() {
   try {
     await postJSON("/api/osd", { clear: true });
     $("#osd-text").value = "";
-    updateOsdCount();
+    clampOsd();                          // "" is valid -> resets the baseline too
     $("#osd-status").textContent = "Overlay cleared.";
     toast("Overlay cleared");
   } catch (e) { toast(e.message, "error"); }
