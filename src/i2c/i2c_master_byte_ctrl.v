@@ -335,7 +335,7 @@ module i2c_master_byte_ctrl (
 `endif
                       1'b0;
  
-	      case (c_state) // synopsys full_case parallel_case
+	      case (c_state) // synopsys parallel_case
 	        ST_IDLE:
 	          if (go)
 	            begin

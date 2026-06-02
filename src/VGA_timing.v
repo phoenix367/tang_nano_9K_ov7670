@@ -356,6 +356,12 @@ VideoController #(
     );
 `endif
 
+    // LCD_Controller's outputs feed OSDOverlay (below) instead of the pins
+    // directly; declared here so they are not implicitly inferred as 1-bit nets.
+    wire        lcdc_de, lcdc_hsync, lcdc_vsync;
+    wire [4:0]  lcdc_r, lcdc_b;
+    wire [5:0]  lcdc_g;
+
     LCD_Controller
     #(
     `ifdef __ICARUS__
@@ -390,9 +396,6 @@ VideoController #(
     // so it sits transparently between LCD_Controller and the LCD pins (a constant
     // 3-pixel pipeline delay). The character buffer is a dual-clock RAM written
     // from the sys_clk host side (osd_wr_*); osd_enable crosses via a synchronizer.
-    wire        lcdc_de, lcdc_hsync, lcdc_vsync;
-    wire [4:0]  lcdc_r, lcdc_b;
-    wire [5:0]  lcdc_g;
     OSDOverlay #(
         .SCREEN_WIDTH(480),
         .SCREEN_HEIGHT(272)
