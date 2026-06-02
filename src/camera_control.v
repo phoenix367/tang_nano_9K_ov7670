@@ -216,9 +216,10 @@ typedef enum {
     SEND_INIT_DONE, 
     WAIT_CAMERA_INIT_DONE, 
     CAMERA_INIT_DONE,
-    WAIT_TRANSMIT_COMPLETE, 
-    TRANSMIT_COMPLETE, 
-    CHECK_ROM_DATA, 
+    WAIT_TRANSMIT_COMPLETE,
+    TRANSMIT_COMPLETE,
+    ROM_SETTLE,
+    CHECK_ROM_DATA,
     START_DELAY
 } CONTROL_STATES;
 
@@ -370,7 +371,8 @@ i2c_control_fsm i2c_controller(
 );
 
 ov7670_default settings_rom(
-    .addr_i(rom_addr), 
+    .clk(sys_clk),
+    .addr_i(rom_addr),
     .dout({rom_reg_addr, rom_reg_val})
 );
 
@@ -472,12 +474,17 @@ begin
                 if (transmit_error)
                     controller_state <= `WRAP_SIM(#1) TRANSMIT_COMPLETE;
                 else if (device_ready) begin
-                    controller_state <= `WRAP_SIM(#1) CHECK_ROM_DATA;
+                    // ROM_SETTLE before CHECK_ROM_DATA: the block ROM read is now
+                    // registered, so dout follows the incremented rom_addr one
+                    // clk later. (The START_DELAY path already has WAIT_RDY for this.)
+                    controller_state <= `WRAP_SIM(#1) ROM_SETTLE;
                     rom_addr <= `WRAP_SIM(#1) rom_addr + 1'b1;
 
                     `WRAP_SIM($display("t=%d, DEBUG CameraControl_TOP; Loading next byte...", $time));
                 end
             end
+            ROM_SETTLE:
+                controller_state <= `WRAP_SIM(#1) CHECK_ROM_DATA;
             TRANSMIT_COMPLETE:
                 cam_init_complete <= `WRAP_SIM(#1) 1'b1;   // hand SCCB to the Modbus bridge
         endcase

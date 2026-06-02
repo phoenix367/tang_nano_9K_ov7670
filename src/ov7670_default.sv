@@ -3,6 +3,7 @@
 `include "camera_control_defs.vh"
 
 module ov7670_default(
+    input clk,
     input [7:0] addr_i,
     output reg [15:0] dout
 )/*synthesis syn_romstyle="block_rom"*/;
@@ -11,7 +12,10 @@ module ov7670_default(
         make_setting_value = { reg_addr, reg_value };
     endfunction
 
-    always @(addr_i) begin
+    // Synchronous read so the table infers a Gowin block ROM (BSRAM) instead of
+    // LUT/distributed-ROM fabric. Costs one clk of read latency, which the camera
+    // init FSM absorbs via a ROM_SETTLE state after each address increment.
+    always @(posedge clk) begin
         case(addr_i) 
 /*
             0:  dout <= `WRAP_SIM(#1) make_setting_value(`OV7670_REG_COM7, `OV7670_COM7_RESET);//16'h12_80; //reset
