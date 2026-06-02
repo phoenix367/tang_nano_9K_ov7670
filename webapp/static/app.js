@@ -838,10 +838,14 @@ function clampOsd() {
   updateOsdCount();
 }
 
+// Show the caret's position on the 60x17 grid: row (1-based) and column (chars
+// before the caret on its row, 0..60 — i.e. the grid column the next char lands in).
 function updateOsdCount() {
-  const lines = $("#osd-text").value.split("\n");
-  const longest = lines.reduce((m, l) => Math.max(m, l.length), 0);
-  $("#osd-count").textContent = `${Math.min(lines.length, OSD_ROWS)}/${OSD_ROWS} rows · ${longest}/${OSD_COLS} cols`;
+  const ta = $("#osd-text");
+  const before = ta.value.slice(0, ta.selectionStart);
+  const row = before.split("\n").length;                  // 1..OSD_ROWS
+  const col = before.length - (before.lastIndexOf("\n") + 1);   // 0..OSD_COLS
+  $("#osd-count").textContent = `Row ${row}/${OSD_ROWS} · Col ${col}/${OSD_COLS}`;
 }
 
 function insertOsdChar(ch) {
@@ -1071,6 +1075,10 @@ async function init() {
   $("#osd-enable").addEventListener("change", toggleOsd);
   $("#osd-text").addEventListener("beforeinput", (e) => { osdCaretBefore = e.target.selectionStart; });
   $("#osd-text").addEventListener("input", clampOsd);
+  // keep the caret-position caption live as the cursor moves (arrows, click, ...)
+  document.addEventListener("selectionchange", () => {
+    if (document.activeElement === $("#osd-text")) updateOsdCount();
+  });
   buildOsdPalette();
   updateOsdCount();
   $("#matrix-autocc").addEventListener("change", async (e) => {
