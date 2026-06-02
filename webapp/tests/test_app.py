@@ -1,8 +1,6 @@
 """Tests for the Flask API: routes, control/gamma/matrix endpoints, and the
 error-classification paths (not-connected, Modbus exception, disconnect)."""
 
-import pytest
-
 
 def _connect(tc):
     return tc.post("/api/connect", json={"port": "fake"}).get_json()
@@ -170,12 +168,11 @@ def test_device_lost_returns_503_and_tears_down(client):
     assert tc.get("/api/state").get_json()["connected"] is False   # client torn down
 
 
-def test_termios_error_returns_503(client):
+def test_settings_io_error_returns_503(client):
     tc, fake = client
     _connect(tc)
-    termios = pytest.importorskip("termios")
-    fake["slave"].fail_on_reset = termios.error(5, "Input/output error")
-    r = tc.get("/api/settings")
+    fake["slave"].fail_on_io = OSError(5, "Input/output error")
+    r = tc.get("/api/settings")                       # multi-register read path
     assert r.status_code == 503                       # not a 500 crash
     assert tc.get("/api/state").get_json()["connected"] is False
 

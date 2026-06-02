@@ -119,6 +119,39 @@ land under `build/sim/tests/<scope>/<path>/`:
 To debug a failing test: re-configure with `-D DUMP_SIM_VARIABLES=ON`,
 rerun it, then open the resulting `dump.vcd` in GtkWave.
 
+## Host-side hardware tests (pytest)
+
+Separate from the iverilog/ctest simulations, two host-in-the-loop pytest
+suites open the **real UART** and exercise a connected board:
+
+- `webapp/tests/test_device_hw.py` — drives the device through the project's
+  `webapp/modbus_client.py` (a thin wrapper over **pymodbus**, the same path the
+  web app uses): firmware magic, OV7670 identity, the free-running uptime,
+  register read/write (8-bit, reversible), the illegal-address exception, the
+  health watchdog, the OSD overlay (enable/cursor/clear), plus the slow frame
+  grab and re-init.
+- `webapp/tests/test_device_conformance.py` — drives the device with a **vanilla
+  pymodbus `ModbusSerialClient`** (no project wrapper), confirming the FPGA slave
+  interoperates with a reference-grade RTU master at the protocol level (FC03/06,
+  register values, exception code 2, multi-register bursts, wrong-slave silence).
+
+The tests **skip** unless `OV7670_PORT` names a connected board, so they're
+inert in the normal `pytest` run. To run them against hardware:
+
+```sh
+# both suites (the frame download + re-init take ~10 s)
+OV7670_PORT=/dev/ttyGowin .venv/bin/python -m pytest \
+    webapp/tests/test_device_hw.py webapp/tests/test_device_conformance.py -v
+
+# or by marker: all hardware tests, skipping the slow/disruptive ones
+OV7670_PORT=/dev/ttyGowin .venv/bin/python -m pytest webapp/tests -m "hardware and not slow" -v
+```
+
+Optional env: `OV7670_BAUD` (default 1000000), `OV7670_SLAVE` (default 7). Each
+test restores any register it changes, except the `slow` re-init test which
+deliberately reloads the ROM defaults. The fixture skips with a clear message
+if the port can't open or the firmware magic (`0xF0` → `0xA5`) doesn't match.
+
 ## CTest labels
 
 `register_test()` attaches two labels to every test: the scope

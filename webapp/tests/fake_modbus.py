@@ -48,8 +48,11 @@ def default_registers():
 
 class FakeModbusSlave:
     def __init__(self, port=None, baudrate=9600, bytesize=8, parity="E",
-                 stopbits=1, timeout=1.0, slave=7, reg_count=REG_COUNT):
+                 stopbits=1, timeout=1.0, slave=7, reg_count=REG_COUNT, **kwargs):
+        # **kwargs absorbs the extra args pymodbus passes to serial.serial_for_url
+        # (e.g. exclusive=True); they don't affect the behavioural model.
         self.port = port
+        self.inter_byte_timeout = None   # pymodbus sets this on the socket
         self.slave_addr = slave
         self.reg_count = reg_count
         self.regs = default_registers()
@@ -68,7 +71,11 @@ class FakeModbusSlave:
         self.fail_on_reset = None      # exception raised by reset_input_buffer
         self.fail_on_io = None         # exception raised by write/read
 
-    # ---- pyserial Serial surface ----
+    # ---- pyserial Serial surface (what pymodbus's ModbusSerialClient uses) ----
+    @property
+    def in_waiting(self):
+        return len(self._rx)
+
     def reset_input_buffer(self):
         if self.fail_on_reset is not None:
             raise self.fail_on_reset

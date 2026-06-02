@@ -49,20 +49,31 @@ a user in the `dialout` group or pick the right `/dev/ttyUSB*`.
 
 ## Tests
 
-A pytest suite under `tests/` runs without hardware — a fake in-memory Modbus
-slave (`tests/fake_modbus.py`) stands in for the FPGA, so the real `ModbusRTU`
-client and the Flask routes are exercised end-to-end.
+The `ModbusRTU` client is backed by [pymodbus](https://pymodbus.readthedocs.io)
+(`ModbusSerialClient`, RTU framer) so framing/CRC come from a spec-compliant
+library; this module is a thin device-specific wrapper around it.
+
+A pytest suite under `tests/` runs **without hardware** — a fake in-memory Modbus
+slave (`tests/fake_modbus.py`) is wired in as pymodbus's serial transport (it
+emits real RTU frames), so the pymodbus-backed client and the Flask routes are
+exercised end-to-end.
 
 ```bash
 pip install -r webapp/requirements-dev.txt
 cd webapp && python -m pytest tests -q
 ```
 
-Coverage: `test_modbus_client.py` (CRC, framing, FC03/06/10, exceptions,
-retries, the termios.error→OSError normalization), `test_ov7670.py` (register
-set, decode, gamma-curve math, color-matrix decode/transform), and
-`test_app.py` (every API route plus the not-connected / Modbus-exception /
-device-lost error paths).
+Coverage:
+
+- `test_modbus_client.py` — FC03/06, exceptions, comms-fault → error mapping,
+  frame-grab loop, OSD, register R/W.
+- `test_ov7670.py` — register set, decode, gamma-curve math, color-matrix
+  decode/transform.
+- `test_app.py` — every API route plus the not-connected / Modbus-exception /
+  device-lost (503) error paths.
+- `test_device_hw.py` and `test_device_conformance.py` — **host-in-the-loop**
+  tests against a real board (the wrapper, and a vanilla-pymodbus conformance
+  check). Skipped unless `OV7670_PORT` is set; see [doc/testing.md](../doc/testing.md).
 
 ## Linting
 
