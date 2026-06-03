@@ -44,6 +44,7 @@
     <button class="tab active" data-tab="basic">Basic controls</button>
     <button class="tab" data-tab="color">Color</button>
     <button class="tab" data-tab="capture">Capture</button>
+    <button class="tab" data-tab="overlay">OSD overlay</button>
   </nav>
 
   <div class="tab-content" id="tab-basic" hidden>
@@ -106,10 +107,24 @@
       <div class="matrix-body">
         <div id="matrix-grid"></div>
         <div id="matrix-swatches"></div>
+        <div id="matrix-chroma">
+          <svg id="chroma-svg" viewBox="0 0 240 240" width="240" height="240"
+               role="img" aria-label="CIE 1931 chromaticity diagram"></svg>
+          <div class="chroma-legend">
+            <span><span class="dot hollow"></span>before</span>
+            <span><span class="dot filled"></span>after</span>
+            <span>△ sRGB gamut</span>
+            <span>+ D65</span>
+          </div>
+        </div>
       </div>
       <p class="hint">Each output chroma row = a weighted sum of R,G,B (coefficient
         ÷256, sign from MTXS). Swatches apply the matrix to reference colors
-        (BT.601 luma + the generated Cr/Cb) — approximate, exact at the default.</p>
+        (BT.601 luma + the generated Cr/Cb) — approximate, exact at the default. The
+        CIE 1931 diagram plots each reference color before→after the matrix over the
+        spectral locus and sRGB gamut, so the arrows show the hue/saturation shift.
+        Drag the ringed <b>R/G/B</b> dots to retune the matrix — each primary maps
+        back to its own coefficient column; changes are written on release.</p>
     </section>
     </div>
   </div>
@@ -130,6 +145,41 @@
       <p class="hint">The FPGA captures a fresh camera frame into PSRAM channel&nbsp;1,
         then streams all 640&times;480 RGB565 pixels back over Modbus FC03
         (~10&nbsp;s at 1&nbsp;Mbaud). The bus is busy for the whole download.</p>
+    </section>
+  </div>
+
+  <div class="tab-content" id="tab-overlay" hidden>
+    <section class="panel" id="osd-panel">
+      <div class="row between">
+        <h2>OSD text overlay</h2>
+        <label class="inline"><input type="checkbox" id="osd-enable"> Show overlay</label>
+      </div>
+      <p class="hint">8&times;16 white font on a 60&times;17 character grid (480&times;272 LCD).
+        Each line is one screen row; the editor is capped at 60&nbsp;columns &times; 17&nbsp;rows.
+        Click a glyph to insert a special Latin-1 symbol or a box-drawing/block
+        pseudographic at the cursor.</p>
+      <div class="osd-body">
+        <div class="osd-edit">
+          <textarea id="osd-text" cols="60" rows="17" wrap="off" spellcheck="false"
+            placeholder="Type overlay text — one screen row per line…"></textarea>
+          <div class="row between">
+            <div class="row">
+              <button id="osd-send" class="primary">Send to display</button>
+              <button id="osd-clear" class="ghost">Clear</button>
+              <button id="osd-sparrow" class="ghost" title="Draw a sparrow">Draw sparrow</button>
+              <button id="osd-car" class="ghost" title="Draw a car">Draw car</button>
+            </div>
+            <span id="osd-count" class="hint mono"></span>
+          </div>
+          <div id="osd-status" class="status">Text is composited over the live video on the LCD.</div>
+        </div>
+        <div class="osd-palette">
+          <div class="palette-title">Special symbols</div>
+          <div id="osd-symbols" class="osd-grid"></div>
+          <div class="palette-title">Pseudographics</div>
+          <div id="osd-pseudo" class="osd-grid"></div>
+        </div>
+      </div>
     </section>
   </div>
 

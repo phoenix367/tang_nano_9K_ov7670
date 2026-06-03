@@ -3,7 +3,7 @@ termios.error -> OSError normalization."""
 
 import modbus_client
 import pytest
-from modbus_client import CRCError, ModbusError
+from modbus_client import ModbusError
 
 
 def test_crc16_known_vector():
@@ -58,7 +58,9 @@ def test_timeout_raises(rtu):
 def test_bad_crc_retried_then_raises(rtu):
     c, slave = rtu
     slave.bad_crc = True
-    with pytest.raises(CRCError):
+    # pymodbus's RTU framer drops every bad-CRC frame; after its retries there is
+    # no valid response, which the wrapper surfaces as a comms TimeoutError.
+    with pytest.raises(TimeoutError):
         c.read_reg(0x0A)
 
 
@@ -77,23 +79,15 @@ def test_bad_crc_recovers_within_retries(rtu):
     assert c.read_reg(0x0A) == 0x76             # retry succeeds
 
 
-def test_termios_error_normalized_to_oserror(rtu):
-    c, slave = rtu
-    termios = pytest.importorskip("termios")
-    slave.fail_on_reset = termios.error(5, "Input/output error")
-    with pytest.raises(OSError):                # NOT termios.error escaping as a 500
-        c.read_reg(0x0A)
-
-
 def test_serial_oserror_propagates(rtu):
     c, slave = rtu
-    slave.fail_on_io = OSError("device gone")
-    with pytest.raises(OSError):
+    slave.fail_on_io = OSError("device gone")    # a dead port during a transfer
+    with pytest.raises(OSError):                 # -> classified as a disconnect (503)
         c.read_reg(0x0A)
 
 
 # ----------------------------------------------------- frame grab + conversion
-def test_grab_frame_pattern(rtu):
+def test_grab_frame_pattern(rtu, small_frame):
     c, _ = rtu
     pix = c.grab_frame()
     assert len(pix) == modbus_client.FRAME_PIXELS
@@ -102,7 +96,7 @@ def test_grab_frame_pattern(rtu):
     assert pix[-1] == (modbus_client.FRAME_PIXELS - 1) & 0xFFFF
 
 
-def test_grab_frame_rewinds_each_time(rtu):
+def test_grab_frame_rewinds_each_time(rtu, small_frame):
     c, _ = rtu
     assert c.grab_frame() == c.grab_frame()      # 0xF8 rewind -> identical frames
 
@@ -153,3 +147,60 @@ def test_dump_registers(rtu):
     assert len(regs) == 0xCA          # 0x00..0xC9 inclusive = 202 registers
     assert regs[0x0A] == 0x76         # PID from the fake's defaults
     assert 0x00 in regs and 0xC9 in regs
+
+
+def test_osd_set_enabled(rtu):
+    c, slave = rtu
+    assert c.osd_enabled() is False
+    c.osd_set_enabled(True)
+    assert slave.osd_enabled is True
+    assert c.osd_enabled() is True
+    c.osd_set_enabled(False)
+    assert c.osd_enabled() is False
+
+
+def test_osd_write_text_lands_in_cells(rtu):
+    c, slave = rtu
+    c.osd_write_text(0, 0, "Hi")
+    assert slave.osd_cells[0] == ord("H")
+    assert slave.osd_cells[1] == ord("i")
+    assert slave.osd_cursor == 2          # cursor advanced past the two chars
+
+
+def test_osd_write_text_honours_row_col(rtu):
+    c, slave = rtu
+    c.osd_write_text(2, 5, "X")
+    cell = 2 * modbus_client.OSD_COLS + 5
+    assert slave.osd_cells[cell] == ord("X")
+
+
+def test_osd_write_text_off_grid_raises(rtu):
+    c, _ = rtu
+    with pytest.raises(ValueError):
+        c.osd_write_text(modbus_client.OSD_ROWS, 0, "x")
+
+
+def test_osd_clear_blanks_buffer(rtu):
+    c, slave = rtu
+    c.osd_write_text(0, 0, "ABC")
+    c.osd_clear()
+    assert set(slave.osd_cells) == {0}
+    assert slave.osd_cursor == 0
+
+
+def test_osd_byte_maps_latin1_and_pseudographics():
+    import osd_charset
+    assert osd_charset.osd_byte("A") == 0x41          # ASCII
+    assert osd_charset.osd_byte("°") == 0xB0     # ° Latin-1 passes through
+    assert osd_charset.osd_byte("─") == 0x80     # ─ box-drawing -> C1 code
+    assert osd_charset.osd_byte("╬") == 0x95     # ╬ double cross
+    assert osd_charset.osd_byte("█") == 0x96     # █ full block
+    assert osd_charset.osd_byte("€") == 0x3F     # € (> 0xFF, not mapped) -> '?'
+
+
+def test_osd_write_text_encodes_pseudographics(rtu):
+    c, slave = rtu
+    c.osd_write_text(0, 0, "┌─┐")      # ┌─┐
+    assert slave.osd_cells[0] == 0x82                 # ┌
+    assert slave.osd_cells[1] == 0x80                 # ─
+    assert slave.osd_cells[2] == 0x83                 # ┐

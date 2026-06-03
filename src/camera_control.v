@@ -71,6 +71,12 @@ wire        be_busy;
 // pulse from the Modbus bridge (reg 0xFA write) -> re-run camera init
 wire        cam_reinit;
 
+// OSD text overlay (Modbus bridge -> VGA_timing -> OSDOverlay on the LCD side)
+wire        osd_enable;
+wire        osd_wr_en;
+wire [10:0] osd_wr_addr;
+wire [7:0]  osd_wr_data;
+
 // channel-1 PSRAM bring-up loopback (Modbus backend <-> VGA_timing/psram_ch1)
 wire        grab_arm;
 wire        grab_rd_req;
@@ -156,6 +162,10 @@ modbus_cam_backend cam_bridge (
     .i2c_dout(i2c_data_out),
     .busy(be_busy),
     .cam_reinit(cam_reinit),
+    .osd_enable(osd_enable),
+    .osd_wr_en(osd_wr_en),
+    .osd_wr_addr(osd_wr_addr),
+    .osd_wr_data(osd_wr_data),
     .grab_arm(grab_arm),
     .grab_rd_req(grab_rd_req),
     .grab_rd_addr(grab_rd_addr),
@@ -206,9 +216,10 @@ typedef enum {
     SEND_INIT_DONE, 
     WAIT_CAMERA_INIT_DONE, 
     CAMERA_INIT_DONE,
-    WAIT_TRANSMIT_COMPLETE, 
-    TRANSMIT_COMPLETE, 
-    CHECK_ROM_DATA, 
+    WAIT_TRANSMIT_COMPLETE,
+    TRANSMIT_COMPLETE,
+    ROM_SETTLE,
+    CHECK_ROM_DATA,
     START_DELAY
 } CONTROL_STATES;
 
@@ -307,7 +318,13 @@ VGA_timing	VGA_timing_inst(
     .grab_busy(grab_busy),
     .grab_rd_data(grab_rd_data),
     .grab_calib(grab_calib),
-    .wd_health(wd_health)
+    .wd_health(wd_health),
+    // OSD text overlay: enable bit + char-buffer write port (sys_clk side)
+    .osd_enable(osd_enable),
+    .osd_wr_clk(sys_clk),
+    .osd_wr_en(osd_wr_en),
+    .osd_wr_addr(osd_wr_addr),
+    .osd_wr_data(osd_wr_data)
 );
 
 i2c_master_top i2c_master(
@@ -354,7 +371,8 @@ i2c_control_fsm i2c_controller(
 );
 
 ov7670_default settings_rom(
-    .addr_i(rom_addr), 
+    .clk(sys_clk),
+    .addr_i(rom_addr),
     .dout({rom_reg_addr, rom_reg_val})
 );
 
@@ -456,12 +474,17 @@ begin
                 if (transmit_error)
                     controller_state <= `WRAP_SIM(#1) TRANSMIT_COMPLETE;
                 else if (device_ready) begin
-                    controller_state <= `WRAP_SIM(#1) CHECK_ROM_DATA;
+                    // ROM_SETTLE before CHECK_ROM_DATA: the block ROM read is now
+                    // registered, so dout follows the incremented rom_addr one
+                    // clk later. (The START_DELAY path already has WAIT_RDY for this.)
+                    controller_state <= `WRAP_SIM(#1) ROM_SETTLE;
                     rom_addr <= `WRAP_SIM(#1) rom_addr + 1'b1;
 
                     `WRAP_SIM($display("t=%d, DEBUG CameraControl_TOP; Loading next byte...", $time));
                 end
             end
+            ROM_SETTLE:
+                controller_state <= `WRAP_SIM(#1) CHECK_ROM_DATA;
             TRANSMIT_COMPLETE:
                 cam_init_complete <= `WRAP_SIM(#1) 1'b1;   // hand SCCB to the Modbus bridge
         endcase

@@ -30,19 +30,22 @@ flowchart TB
     VC["VideoController<br/>ch0 brains: arbiter + 2 FSMs + scalers"]
     SF["FIFO_cam<br/>store queue (async)"]
     LCDC["LCD_Controller<br/>(screen_clk)"]
+    OSD["OSDOverlay<br/>(screen_clk) composite text"]
     LCD["LCD panel<br/>DE/HSYNC/VSYNC/RGB"]
     PIPE["ch0 1-cycle pipeline reg<br/>cmd_0_p … wr_data0_p"]
     PHY["Video_frame_buffer<br/>psram_…_2ch IP (HyperRAM PHY)"]
     CH1["psram_ch1<br/>ch1 engine: grab-mirror + burst reads"]
     MB["grab_arm / grab_rd_*<br/>(from Modbus, sys_clk)"]
+    OSDW["osd_enable / osd_wr_*<br/>(from Modbus, sys_clk)"]
 
     subgraph VGA_timing
         OV --> CPP -->|load queue| VC
-        VC -->|store queue| SF -->|lcd_read_clk| LCDC --> LCD
+        VC -->|store queue| SF -->|lcd_read_clk| LCDC --> OSD --> LCD
         VC -->|"ch0 cmd/cmd_en/addr/wr_data"| PIPE --> PHY
         PIPE -. tee ch0 writes .-> CH1
         MB --> CH1
         CH1 -->|ch1 pins| PHY
+        OSDW --> OSD
     end
 ```
 
@@ -71,7 +74,10 @@ flowchart TB
   "load queue" that `FrameUploader` drains. (`DebugPatternGenerator2` can replace
   it under ``DEBUG_CAM_INPUT`` for bring-up.)
 - **`LCD_Controller`** — generates the 480×272 VGA timing on `screen_clk`, pulls
-  pixels from the store FIFO, and drives `LCD_DE/HSYNC/VSYNC/R/G/B`.
+  pixels from the store FIFO, and drives `DE/HSYNC/VSYNC/R/G/B` — which now feed
+  `OSDOverlay` rather than the pins directly.
+- **`OSDOverlay`** — composites a text layer over the LCD stream on `screen_clk`;
+  see [OSD text overlay](#osd-text-overlay). Transparent when disabled.
 - **`psram_ch1`** — the channel-1 engine: the grab-mirror, the ch1 burst reader,
   and the `sys_clk ↔ fb_clk` CDC. Detailed under
   [frame grab](#frame-grab-and-host-download).
@@ -257,6 +263,37 @@ sequenceDiagram
     VC->>BC: finalize → advance read pointer
     Note over OUT: LCD_Controller pulls from the store FIFO at<br/>screen_clk (async), driving DE/HSYNC/VSYNC/RGB
 ```
+
+## OSD text overlay
+
+`OSDOverlay` (`src/osd_overlay.sv`) sits between `LCD_Controller` and the LCD
+pins and paints a white text layer over the live video. It runs on `screen_clk`
+and is transparent (a constant 3-pixel pipeline delay, pixels passed through
+unchanged) whenever the overlay is disabled or a cell is blank.
+
+- **Grid & font** — 8×16 pixel glyphs on a **60 col × 17 row** character grid
+  (480×272). The font is a 256-glyph ROM (`reg [7:0] font[0:4095]`, one byte per
+  glyph row, MSB = leftmost pixel) initialised from `src/font8x16_init.vh`, which
+  `scripts/font_generator.py` extracts from the IBM-VGA 8×16 console bitmap
+  (a `kbd` PSF font). Codes `0x00`–`0xFF` are Latin-1; the C1 range `0x80`–`0x9F`
+  is overlaid with 32 box-drawing / block **pseudographics** (mapping in
+  `webapp/osd_charset.py`). The init uses `` `include `` (not `$readmemh`) so the
+  path resolves under both Icarus (`-I src`) and Gowin.
+- **Pixel position** — rather than tap `LCD_Controller`'s internal counters, the
+  overlay reconstructs the active `(x, y)` from the controller's `DE`/`VSYNC`
+  (x counts during DE and resets on its fall; y increments on each DE falling
+  edge; both reset on VSYNC). This keeps the controller untouched.
+- **Lookup pipeline** — three `screen_clk` stages: ① read the character cell from
+  the buffer (`char_addr = crow*60 + col`); ② read the glyph row from the font
+  ROM (`font[{char, y[3:0]}]`); ③ composite — if the overlay is enabled, the
+  pixel is active, and the glyph bit `font_q[7 - x[2:0]]` is set, drive white,
+  else pass the delayed source RGB through.
+- **CDC** — the character buffer is a **dual-clock** simple-dual-port RAM written
+  from the Modbus/`sys_clk` side (`wr_clk = sys_clk`, `osd_wr_*`) and read on
+  `screen_clk`; it *is* the data crossing. The `osd_enable` bit crosses through a
+  `CDC_Bit_Synchronizer`. The write/clear sequencing and register decode live in
+  [modbus_server.md](modbus_server.md) and the host-facing register doc is in
+  [host_control.md](host_control.md#osd-text-overlay).
 
 ## Frame grab and host download
 

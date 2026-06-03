@@ -10,6 +10,7 @@ the FPGA. This document covers that interface end-to-end and a quick-start guide
 - [Camera register map](#camera-register-map)
 - [Reserved registers (above the OV7670 map)](#reserved-registers-above-the-ov7670-map)
 - [Board health (watchdog)](#board-health-watchdog)
+- [OSD text overlay](#osd-text-overlay)
 - [Frame grab and download](#frame-grab-and-download)
 - [Status LEDs](#status-leds)
 - [Web app](#web-app)
@@ -118,10 +119,11 @@ low bits are scaling values — preserve them (defaults `0x3A`/`0x35`), e.g. wri
 
 ## Reserved registers (above the OV7670 map)
 
-Addresses `0xF0`–`0xFA` are **bridge** registers, answered directly (no SCCB
+Addresses `0xF0`–`0xFD` are **bridge** registers, answered directly (no SCCB
 cycle, served even during camera init) so a host can identify the firmware,
-detect a hard reset, drive the [frame grab](#frame-grab-and-download), and read
-[board health](#board-health-watchdog). The download stream band (`≥ 0x1000`) is
+detect a hard reset, drive the [frame grab](#frame-grab-and-download), read
+[board health](#board-health-watchdog), and write the [OSD text
+overlay](#osd-text-overlay). The download stream band (`≥ 0x1000`) is
 covered in [Frame grab and download](#frame-grab-and-download).
 
 | Addr  | Access | Meaning                                                        |
@@ -135,6 +137,9 @@ covered in [Frame grab and download](#frame-grab-and-download).
 | `0xF8`| W      | Rewind the [download stream](#frame-grab-and-download) to pixel 0 |
 | `0xF9`| R      | [Watchdog board health](#board-health-watchdog) (bit-field, below) |
 | `0xFA`| W      | Write `1` = reset to defaults — re-run the power-on camera init (reloads every OV7670 register from ROM) |
+| `0xFB`| R/W    | [OSD overlay](#osd-text-overlay) control: write bit0 = show, bit1 = clear buffer; read bit0 = currently shown |
+| `0xFC`| R/W    | OSD write cursor (character cell `row*60 + col`, `0`–`1019`)    |
+| `0xFD`| W      | OSD character code at the cursor; the cursor auto-increments (wraps at 1020) |
 
 The 16-bit uptime (`0xF1`/`0xF2`) is `0` at reset and free-runs (~1 Hz); read the
 high byte first (it latches the low byte for a coherent pair). A host that sees
@@ -180,6 +185,48 @@ live; the CLI can read them directly:
 ```sh
 scripts/modbus_test.py --port /dev/ttyGowin --read 0xF9 1   # 0x0010 = healthy
 ```
+
+## OSD text overlay
+
+The LCD output carries an **on-screen-display** text layer composited over the
+live video by `src/osd_overlay.sv` (see [the datapath
+doc](video_datapath.md#osd-text-overlay)). Text is drawn in a built-in **8×16
+font** (the IBM-VGA bitmap), white, over a **60 columns × 17 rows** character
+grid (480×272 LCD). The host fills a character buffer over Modbus; the overlay
+paints lit glyph pixels white and passes the video through everywhere else.
+
+The font ROM is indexed by the raw byte sent: `0x00`–`0xFF` are the Latin-1
+glyphs, and the otherwise-unused C1 range `0x80`–`0x9F` is overlaid with 32
+**box-drawing / block pseudographics** (`─ │ ┌ ┐ … ═ ║ ╔ ╗ … █ ▀ ▄ ░ ▒ ▓ ■ ·`).
+The byte each pseudographic maps to is defined once in `webapp/osd_charset.py`
+and shared by the font generator and the host encoder.
+
+Three reserved registers drive it (all served without an SCCB cycle):
+
+| Addr  | Access | Meaning                                                        |
+| ----- | ------ | -------------------------------------------------------------- |
+| `0xFB`| R/W    | Control — write bit0 = show overlay, bit1 = clear the whole buffer; read bit0 = currently shown |
+| `0xFC`| R/W    | Write cursor — character cell `row*60 + col` (`0`–`1019`)      |
+| `0xFD`| W      | Character code at the cursor (Latin-1 `0x00`–`0xFF`, or `0x80`–`0x9F` for a pseudographic); the cursor then **auto-increments** (wrapping at cell 1020) |
+
+To write a string: set the cursor (`0xFC`) to `row*60 + col`, then write each
+character's code to `0xFD` in turn — the auto-increment lets a whole line stream
+with back-to-back FC06 writes. Control codes and space render blank. Clearing
+(`0xFB` bit1) sweeps all 1020 cells to blank in hardware and homes the cursor.
+
+```sh
+# show "HI" at the top-left, then enable the overlay
+scripts/modbus_test.py --port /dev/ttyGowin --write 0xFC 0      # cursor -> (0,0)
+scripts/modbus_test.py --port /dev/ttyGowin --write 0xFD 0x48   # 'H'
+scripts/modbus_test.py --port /dev/ttyGowin --write 0xFD 0x49   # 'I'
+scripts/modbus_test.py --port /dev/ttyGowin --write 0xFB 1      # show overlay
+```
+
+The character buffer crosses from the Modbus (`sys_clk`) domain to the LCD pixel
+(`screen_clk`) domain through a dual-clock RAM; the show/hide bit crosses through
+a `CDC_Bit_Synchronizer`. The web app exposes the same feature on its **OSD
+overlay** tab, which caps the editor at 60×17 and offers click-to-insert palettes
+for the special Latin-1 symbols and the box-drawing/block pseudographics.
 
 ## Frame grab and download
 
@@ -242,6 +289,10 @@ Capabilities:
   per-cell sliders, an auto-contrast toggle, and before→after color swatches).
 - **Capture tab** — grabs a full 640×480 frame into PSRAM channel 1, streams it
   back over Modbus (~10 s), draws it to a canvas, and offers a PNG download.
+- **OSD overlay tab** — a text box (one line per screen row, 60 columns) with
+  **Send to display** / **Clear** buttons and a **Show overlay** toggle; the text
+  is composited over the live video on the LCD (see [OSD text
+  overlay](#osd-text-overlay)).
 - **Board health** — the Connection panel shows a health row, refreshed by the
   heartbeat, with an overall chip (Healthy / HANG / starting…) plus per-subsystem
   LCD / Memory / Camera chips decoded from the [watchdog](#board-health-watchdog)

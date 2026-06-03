@@ -69,6 +69,12 @@ module modbus_cam_backend
     // pulse: re-run the power-on camera initialization (reset to defaults)
     output reg         cam_reinit,
 
+    // OSD text overlay (LCD): enable bit + character-buffer write port
+    output reg         osd_enable,      // held: 1 = OSD visible
+    output reg         osd_wr_en,       // 1-cycle write strobe into the char buffer
+    output reg [10:0]  osd_wr_addr,     // character cell (row*COLS + col)
+    output reg [7:0]   osd_wr_data,     // glyph/char code
+
     // channel-1 PSRAM bring-up loopback (to/from psram_ch1 via VGA_timing)
     output reg         grab_arm,        // pulse: capture the next frame into ch1
     output reg         grab_rd_req,     // pulse: read the ch1 burst at grab_rd_addr
@@ -121,7 +127,22 @@ module modbus_cam_backend
                       ADDR_STREAM     = 16'h00F8,    // write: reset the download stream to ch1 addr 0
                       ADDR_HEALTH     = 16'h00F9,    // read: watchdog health bits (see wd_health)
                       ADDR_REINIT     = 16'h00FA,    // write 1: re-run camera init (reset to defaults)
+                      ADDR_OSD_CTRL   = 16'h00FB,    // write bit0=enable, bit1=clear; read bit0=enable
+                      ADDR_OSD_ADDR   = 16'h00FC,    // write: char-cell write cursor (row*COLS + col)
+                      ADDR_OSD_DATA   = 16'h00FD,    // write: char code at the cursor, cursor auto-increments
                       STREAM_BASE     = 16'h1000;    // any read >= here returns the next frame pixel
+
+    localparam integer OSD_CELLS = 60 * 17;          // 60x17 character grid (must match OSDOverlay)
+
+    // ---- OSD write cursor + clear sweep (drives the char-buffer write port) ----
+    reg [10:0] osd_cursor;
+    reg        osd_addr_we;       // pulse: load cursor from osd_addr_val
+    reg [10:0] osd_addr_val;
+    reg        osd_data_we;       // pulse: write osd_data_val at the cursor, then cursor++
+    reg [7:0]  osd_data_val;
+    reg        osd_clear_pulse;   // pulse: blank the whole buffer
+    reg        osd_clear_busy;
+    reg [10:0] osd_clear_addr;
 
     localparam [20:0] BSTEP = 21'd16;                // ch1 burst-address increment (matches the grab)
 
@@ -157,6 +178,12 @@ module modbus_cam_backend
             uptime_latch <= `WRAP_SIM(#1) 16'h0000;
             uptime_div   <= `WRAP_SIM(#1) 32'h0;
             cam_reinit   <= `WRAP_SIM(#1) 1'b0;
+            osd_enable      <= `WRAP_SIM(#1) 1'b0;
+            osd_addr_we     <= `WRAP_SIM(#1) 1'b0;
+            osd_addr_val    <= `WRAP_SIM(#1) 11'd0;
+            osd_data_we     <= `WRAP_SIM(#1) 1'b0;
+            osd_data_val    <= `WRAP_SIM(#1) 8'd0;
+            osd_clear_pulse <= `WRAP_SIM(#1) 1'b0;
             grab_arm     <= `WRAP_SIM(#1) 1'b0;
             grab_rd_req  <= `WRAP_SIM(#1) 1'b0;
             grab_rd_addr <= `WRAP_SIM(#1) 21'd0;
@@ -167,6 +194,9 @@ module modbus_cam_backend
             s_burst      <= `WRAP_SIM(#1) 256'd0;
         end else begin
             cam_reinit  <= `WRAP_SIM(#1) 1'b0;      // 1-cycle pulse defaults
+            osd_addr_we     <= `WRAP_SIM(#1) 1'b0;
+            osd_data_we     <= `WRAP_SIM(#1) 1'b0;
+            osd_clear_pulse <= `WRAP_SIM(#1) 1'b0;
             grab_arm    <= `WRAP_SIM(#1) 1'b0;
             grab_rd_req <= `WRAP_SIM(#1) 1'b0;
             // free-running uptime tick (independent of the SCCB FSM)
@@ -241,6 +271,30 @@ module modbus_cam_backend
                                     // write 1 = re-run camera init (reset to defaults)
                                     be_rdata <= `WRAP_SIM(#1) 16'd0;
                                     if (be_we && be_wdata[0]) cam_reinit <= `WRAP_SIM(#1) 1'b1;
+                                end
+                                ADDR_OSD_CTRL: begin
+                                    // write bit0 = enable, bit1 = clear; read bit0 = enable
+                                    be_rdata <= `WRAP_SIM(#1) {15'd0, osd_enable};
+                                    if (be_we) begin
+                                        osd_enable      <= `WRAP_SIM(#1) be_wdata[0];
+                                        osd_clear_pulse <= `WRAP_SIM(#1) be_wdata[1];
+                                    end
+                                end
+                                ADDR_OSD_ADDR: begin
+                                    // write = set the char-cell write cursor
+                                    be_rdata <= `WRAP_SIM(#1) {5'd0, osd_cursor};
+                                    if (be_we) begin
+                                        osd_addr_we  <= `WRAP_SIM(#1) 1'b1;
+                                        osd_addr_val <= `WRAP_SIM(#1) be_wdata[10:0];
+                                    end
+                                end
+                                ADDR_OSD_DATA: begin
+                                    // write = char code at the cursor (cursor auto-increments)
+                                    be_rdata <= `WRAP_SIM(#1) 16'd0;
+                                    if (be_we) begin
+                                        osd_data_we  <= `WRAP_SIM(#1) 1'b1;
+                                        osd_data_val <= `WRAP_SIM(#1) be_wdata[7:0];
+                                    end
                                 end
                                 default:
                                     be_rdata <= `WRAP_SIM(#1) 16'h0000;
@@ -351,6 +405,45 @@ module modbus_cam_backend
 
                 default: state <= `WRAP_SIM(#1) IDLE;
             endcase
+        end
+    end
+
+    // ---- OSD character-buffer write port + clear sweep ----
+    // Consumes the 1-cycle pulses set by the main FSM (osd_addr_we / osd_data_we
+    // / osd_clear_pulse) and drives the dual-clock char-buffer write side in
+    // OSDOverlay. A clear walks all cells writing 0x00 (blank glyph); a data
+    // write deposits one char code at the cursor and auto-increments it.
+    always @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
+            osd_wr_en      <= `WRAP_SIM(#1) 1'b0;
+            osd_wr_addr    <= `WRAP_SIM(#1) 11'd0;
+            osd_wr_data    <= `WRAP_SIM(#1) 8'd0;
+            osd_cursor     <= `WRAP_SIM(#1) 11'd0;
+            osd_clear_busy <= `WRAP_SIM(#1) 1'b0;
+            osd_clear_addr <= `WRAP_SIM(#1) 11'd0;
+        end else begin
+            osd_wr_en <= `WRAP_SIM(#1) 1'b0;          // default: no write this cycle
+            if (osd_clear_busy) begin
+                osd_wr_en   <= `WRAP_SIM(#1) 1'b1;
+                osd_wr_addr <= `WRAP_SIM(#1) osd_clear_addr;
+                osd_wr_data <= `WRAP_SIM(#1) 8'h00;
+                if (osd_clear_addr == OSD_CELLS - 1) begin
+                    osd_clear_busy <= `WRAP_SIM(#1) 1'b0;
+                    osd_cursor     <= `WRAP_SIM(#1) 11'd0;   // home the cursor after a clear
+                end else
+                    osd_clear_addr <= `WRAP_SIM(#1) osd_clear_addr + 1'b1;
+            end else if (osd_clear_pulse) begin
+                osd_clear_busy <= `WRAP_SIM(#1) 1'b1;
+                osd_clear_addr <= `WRAP_SIM(#1) 11'd0;
+            end else if (osd_addr_we) begin
+                osd_cursor <= `WRAP_SIM(#1) osd_addr_val;
+            end else if (osd_data_we) begin
+                osd_wr_en   <= `WRAP_SIM(#1) 1'b1;
+                osd_wr_addr <= `WRAP_SIM(#1) osd_cursor;
+                osd_wr_data <= `WRAP_SIM(#1) osd_data_val;
+                osd_cursor  <= `WRAP_SIM(#1) (osd_cursor == OSD_CELLS - 1)
+                                              ? 11'd0 : osd_cursor + 1'b1;
+            end
         end
     end
 

@@ -3,14 +3,17 @@
 Speaks Modbus RTU over the FT2232H channel-B UART (1 Mbaud 8-E-1, slave id 7 by
 default). The FPGA's modbus_rtu_slave maps each holding-register address 1:1 to
 an OV7670 register (0x00..0xC9): a write uses the low byte of the value, a read
-returns {0x00, reg_byte}. The RTU framing and CRC-16 are the same as
-scripts/modbus_test.py; only pyserial is required.
+returns {0x00, reg_byte}. The RTU framing/CRC come from pymodbus
+(ModbusSerialClient); this module is a thin device-specific wrapper that maps
+pymodbus responses/exceptions to the small API the app and tests use.
 """
 
-import struct
 import time
 
-import serial  # pyserial
+from osd_charset import osd_byte
+from pymodbus import FramerType
+from pymodbus.client import ModbusSerialClient
+from pymodbus.exceptions import ConnectionException, ModbusException
 
 # Reserved bridge registers above the OV7670 0x00..0xC9 range (see
 # src/modbus/modbus_cam_backend.sv). The frame-grab feature captures a camera frame
@@ -20,32 +23,28 @@ REG_GRAB    = 0x00F3   # write 1 = arm a grab; read bit0 = busy, bit1 = ch1 cali
 REG_STREAM  = 0x00F8   # write = rewind the download stream to pixel 0
 REG_HEALTH  = 0x00F9   # read = watchdog health bits (see read_health)
 REG_REINIT  = 0x00FA   # write 1 = re-run camera init (reset all registers to defaults)
+REG_OSD_CTRL = 0x00FB  # write bit0 = enable, bit1 = clear; read bit0 = enable
+REG_OSD_ADDR = 0x00FC  # write = OSD char-cell write cursor (row*OSD_COLS + col)
+REG_OSD_DATA = 0x00FD  # write = char code at the cursor (cursor auto-increments)
 STREAM_BASE = 0x1000   # any FC03 read >= here returns the next frame pixel(s)
 FRAME_W, FRAME_H = 640, 480
 FRAME_PIXELS = FRAME_W * FRAME_H
 
-# pyserial's low-level POSIX calls (tcflush/tcdrain in reset_input_buffer etc.)
-# raise termios.error on a vanished port, which is NOT an OSError subclass and
-# would otherwise escape the disconnect handling. Normalize it to OSError.
-try:
-    import termios
-    _PORT_GONE = (termios.error,)
-except ImportError:        # non-POSIX backend
-    _PORT_GONE = ()
-
+# OSD text overlay grid (480x272 screen, 8x16 glyphs); matches OSDOverlay/backend.
+OSD_COLS, OSD_ROWS = 60, 17
+OSD_CELLS = OSD_COLS * OSD_ROWS
 
 def crc16(data: bytes) -> int:
-    """CRC-16/Modbus (poly 0xA001, init 0xFFFF). Appended little-endian."""
+    """CRC-16/Modbus (poly 0xA001, init 0xFFFF). Appended little-endian.
+
+    Kept for the test harness (the fake slave builds RTU frames with it); the
+    live client's framing/CRC are handled by pymodbus."""
     crc = 0xFFFF
     for b in data:
         crc ^= b
         for _ in range(8):
             crc = (crc >> 1) ^ 0xA001 if (crc & 1) else (crc >> 1)
     return crc
-
-
-class CRCError(ValueError):
-    """A response with a bad CRC (transient — worth retrying)."""
 
 
 class GrabCancelled(Exception):
@@ -70,7 +69,12 @@ class ModbusError(Exception):
 
 
 class ModbusRTU:
-    """A thin RTU master over a pyserial port. One transaction at a time."""
+    """RTU master backed by pymodbus (ModbusSerialClient), 1 Mbaud 8-E-1.
+
+    A thin device-specific wrapper: it forwards FC03/FC06 to pymodbus and maps
+    its responses/exceptions to this project's small API and error model
+    (ModbusError for protocol exceptions, OSError for a lost port, TimeoutError
+    for no/garbled response after retries)."""
 
     def __init__(self, port, baud=1000000, slave=7, timeout=1.0, retries=2):
         if not (0 <= slave <= 247):
@@ -78,95 +82,72 @@ class ModbusRTU:
         self.port = port
         self.slave = slave
         self.retries = retries
-        self.ser = serial.Serial(
-            port=port,
+        self._client = ModbusSerialClient(
+            port,
+            framer=FramerType.RTU,
             baudrate=baud,
-            bytesize=serial.EIGHTBITS,
-            parity=serial.PARITY_EVEN,
-            stopbits=serial.STOPBITS_ONE,
+            bytesize=8,
+            parity="E",
+            stopbits=1,
             timeout=timeout,
+            retries=retries + 1,        # pymodbus re-sends transient failures
         )
+        if not self._client.connect():
+            raise OSError(f"cannot open serial port {port!r}")
 
     def close(self):
         try:
-            self.ser.close()
+            self._client.close()
         except Exception:
             pass
 
-    # -- framing -----------------------------------------------------------
-    def _read_exact(self, n):
-        buf = self.ser.read(n)
-        if len(buf) != n:
-            raise TimeoutError(f"timeout: wanted {n} bytes, got {len(buf)}")
-        return buf
+    # -- pymodbus response/error mapping -----------------------------------
+    def _resolve(self, rr):
+        """Turn a pymodbus reply into success, or raise this project's errors."""
+        if rr is None:
+            raise TimeoutError("no Modbus response")
+        if rr.isError():
+            code = getattr(rr, "exception_code", None)
+            if code is not None:                 # a real Modbus exception response
+                raise ModbusError(code)
+            raise TimeoutError(f"no/garbled Modbus response: {rr}")
+        return rr
 
     @staticmethod
-    def _check_crc(frame):
-        if crc16(frame) != 0:
-            raise CRCError("response CRC mismatch")
-
-    def _txn(self, func, payload):
-        # Retry only transient faults (timeout / bad CRC) — e.g. a request that
-        # lands during the camera's post-reset re-init window, or a byte dropped
-        # mid-frame. A ModbusError is a valid response and is never retried;
-        # serial/OS errors (port gone) propagate immediately.
-        last = None
-        for _ in range(self.retries + 1):
-            try:
-                return self._txn_once(func, payload)
-            except (TimeoutError, CRCError) as e:
-                last = e
-                try:
-                    self.ser.reset_input_buffer()
-                except Exception:
-                    pass
-            except _PORT_GONE as e:
-                # the port vanished (unplug / re-enumerate); fail fast as OSError
-                # so the app classifies it as a disconnect (no point retrying).
-                raise OSError(f"serial port I/O error: {e}") from e
-        raise last
-
-    def _txn_once(self, func, payload):
-        req = bytes([self.slave, func]) + payload
-        req += struct.pack("<H", crc16(req))
-        self.ser.reset_input_buffer()
-        self.ser.write(req)
-
-        head = self._read_exact(2)          # addr, func
-        rfunc = head[1]
-        if rfunc & 0x80:                    # exception response
-            rest = self._read_exact(3)      # code + CRC
-            self._check_crc(head + rest)
-            raise ModbusError(rest[0])
-        if rfunc == 0x03:
-            bc = self._read_exact(1)
-            rest = bc + self._read_exact(bc[0] + 2)
-        elif rfunc in (0x06, 0x10):
-            rest = self._read_exact(4 + 2)  # echo / ack (4) + CRC
-        else:
-            raise ValueError(f"unexpected function 0x{rfunc:02X} in response")
-        self._check_crc(head + rest)
-        if head[0] != self.slave:
-            raise ValueError(f"response from slave {head[0]}, expected {self.slave}")
-        return rest
+    def _comms_error(exc):
+        """Map a pymodbus transport exception to OSError (port gone, ->disconnect)
+        or TimeoutError (transient no-response). Returns the exception to raise."""
+        if isinstance(exc, ConnectionException):
+            return OSError(f"serial port I/O error: {exc}")
+        return TimeoutError(str(exc))
 
     # -- public API --------------------------------------------------------
     def read_holding(self, addr, count=1):
         if not (1 <= count <= 125):
             raise ValueError(f"read count {count} out of range 1..125")
-        rest = self._txn(0x03, struct.pack(">HH", addr, count))
-        bc = rest[0]
-        if bc != 2 * count:
-            raise ValueError(f"byte count {bc} != expected {2 * count}")
-        data = rest[1:1 + bc]
-        return list(struct.unpack(">" + "H" * count, data))
+        try:
+            rr = self._client.read_holding_registers(addr, count=count, device_id=self.slave)
+        except ConnectionException as e:
+            raise self._comms_error(e) from e
+        except ModbusException as e:
+            raise self._comms_error(e) from e
+        regs = self._resolve(rr).registers
+        if len(regs) != count:
+            raise ValueError(f"got {len(regs)} registers, expected {count}")
+        return list(regs)
 
     def read_reg(self, addr):
         """Read a single OV7670 register; returns the low byte (0..255)."""
         return self.read_holding(addr, 1)[0] & 0xFF
 
     def write_single(self, addr, value):
-        self._txn(0x06, struct.pack(">HH", addr, value & 0xFFFF))
+        try:
+            rr = self._client.write_register(addr, value & 0xFFFF, device_id=self.slave)
+        except ConnectionException as e:
+            raise self._comms_error(e) from e
+        except ModbusException as e:
+            raise self._comms_error(e) from e
+        self._resolve(rr)
 
     def write_reg(self, addr, value):
         """Write a single OV7670 register (low byte is what reaches SCCB)."""
@@ -208,6 +189,34 @@ class ModbusRTU:
         to its ROM default). The device reloads its config over the next tens of
         ms; re-read the settings afterwards to reflect the reverted state."""
         self.write_single(REG_REINIT, 1)
+
+    # ---- OSD text overlay (8x16 font, 60x17 char grid on the LCD) ------------
+    def osd_enabled(self):
+        """True if the OSD text overlay is currently shown on the LCD."""
+        return bool(self.read_holding(REG_OSD_CTRL, 1)[0] & 0x01)
+
+    def osd_set_enabled(self, on):
+        """Show (True) or hide (False) the OSD text overlay on the LCD."""
+        self.write_single(REG_OSD_CTRL, 0x01 if on else 0x00)
+
+    def osd_clear(self):
+        """Blank the whole OSD character buffer (the firmware sweeps all cells)."""
+        self.write_single(REG_OSD_CTRL, 0x02)
+
+    def osd_write_text(self, row, col, text):
+        """Write `text` into the OSD grid starting at (row, col).
+
+        Sets the write cursor to row*OSD_COLS+col, then streams one ROM byte per
+        character (osd_byte: Latin-1 code, or the C1 byte of a box-drawing/block
+        pseudographic); the device auto-increments the cursor per character.
+        Characters past the end of the row continue onto the next row (the cursor
+        wraps the whole buffer). Raises ValueError if (row, col) is off-grid.
+        """
+        if not (0 <= row < OSD_ROWS and 0 <= col < OSD_COLS):
+            raise ValueError(f"OSD cell ({row}, {col}) out of range")
+        self.write_single(REG_OSD_ADDR, row * OSD_COLS + col)
+        for ch in text:
+            self.write_single(REG_OSD_DATA, osd_byte(ch))
 
     # ---- frame grab (capture into PSRAM ch1, then stream over FC03) ----------
     def grab_busy(self):

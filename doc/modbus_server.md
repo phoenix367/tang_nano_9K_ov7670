@@ -25,13 +25,15 @@ flowchart TB
     I2C["i2c_control_fsm → OV7670 (SCCB)"]
     RES["served inline<br/>(no bus access)"]
     CH1["grab_arm / grab_rd_* → VGA_timing<br/>→ psram_ch1 (PSRAM ch1)"]
+    OSD["osd_wr_* / osd_enable → VGA_timing<br/>→ OSDOverlay char buffer"]
 
     HOST <-->|"USB / FT2232H ch B"| UART
     UART <-->|"rx/tx bytes"| SLAVE
     SLAVE <-->|"be_* handshake"| BE
     BE -->|"camera reg 0x00..0xC9"| I2C
-    BE -->|"reserved/status 0xF0..0xFA"| RES
+    BE -->|"reserved/status 0xF0..0xFD"| RES
     BE -->|"stream pixel ≥0x1000 / grab arm 0xF3"| CH1
+    BE -->|"OSD text 0xFB..0xFD"| OSD
 ```
 
 The init FSM inside `camera_control.v` owns the SCCB controller during power-on
@@ -146,7 +148,7 @@ Drives the existing `i2c_control_fsm` exactly the way the power-on init FSM does
 Camera accesses are **gated by `cam_init_complete`** — they wait in `IDLE` until
 power-on init has released the SCCB bus.
 
-### 2. Reserved / status register (`0xF0..0xFA`) → served inline
+### 2. Reserved / status register (`0xF0..0xFD`) → served inline
 
 Answered directly in `IDLE` (no SCCB, no bus access), so the host can poll them
 even during camera init:
@@ -161,6 +163,13 @@ even during camera init:
 | `0xF8`      | write = rewind the download stream pointer to pixel 0           |
 | `0xF9`      | read = watchdog board health `{monitoring, any_hang, cam, mem, lcd}` (from `wd_health`, see [video_datapath.md](video_datapath.md#health-watchdog)) |
 | `0xFA`      | write 1 = reset to defaults — pulse `cam_reinit`, restarting the camera init FSM in `camera_control.v` (re-walks the ROM like power-on) |
+| `0xFB`      | OSD control — write bit0 = `osd_enable`, bit1 = clear-buffer sweep; read bit0 = enable (see [video_datapath.md](video_datapath.md#osd-text-overlay)) |
+| `0xFC`      | OSD write cursor (`row*60 + col`); a separate always block drives the char-buffer write port |
+| `0xFD`      | OSD character code at the cursor; cursor auto-increments (wraps at 1020) |
+
+The OSD registers feed a small write-port FSM that drives `osd_wr_en/addr/data`
+to the dual-clock character buffer in `OSDOverlay`; a `0xFB` clear pulse triggers
+a hardware sweep that blanks all 1020 cells.
 
 ### 3. Stream pixel (`be_addr ≥ 0x1000`) → frame download
 
@@ -202,7 +211,10 @@ slave's `S_RD_CAP` / `S_WR_WAIT` expect.
 | `be_req/we/addr/wdata` → `be_ready/rdata`               | `modbus_rtu_slave` ↔ `modbus_cam_backend`|
 | `store_data/send_data/recv_data/i2c_din` → `device_rdy/data_valid/i2c_dout` | `modbus_cam_backend` ↔ `i2c_control_fsm` (muxed with the init FSM by `cam_init_complete`) |
 | `grab_arm/grab_rd_req/grab_rd_addr` → `grab_busy/grab_rd_data[255:0]/grab_calib` | `modbus_cam_backend` ↔ `VGA_timing` → `psram_ch1` |
+| `osd_enable/osd_wr_en/osd_wr_addr/osd_wr_data` | `modbus_cam_backend` → `VGA_timing` → `OSDOverlay` |
 
 All of the above are on `sys_clk`. The grab signals cross into the PSRAM
 `fb_clk` domain inside `psram_ch1` via toggle handshakes (req toggle + 2–3-FF
-sync + edge detect), so the backend never sees the crossing.
+sync + edge detect), so the backend never sees the crossing. The OSD char-buffer
+write port crosses into `screen_clk` through `OSDOverlay`'s dual-clock RAM, and
+`osd_enable` through a `CDC_Bit_Synchronizer`.
