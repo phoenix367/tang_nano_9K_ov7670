@@ -22,8 +22,8 @@ Pick the serial **Port** (auto-detected, plus the `/dev/ttyGowin` symlink), set
 **Baud** (1000000) and **Slave id** (7), and press **Connect**. The connect step
 sanity-reads the Product ID, so a successful connect confirms the link end-to-end.
 
-Once connected, three tabs appear (**Basic controls**, **Color**, **Capture**)
-and a **Board health** row is shown under the connection status.
+Once connected, four tabs appear (**Basic controls**, **Color**, **Capture**,
+**OSD overlay**) and a **Board health** row is shown under the connection status.
 
 ![Basic controls tab](images/webapp_basic.png)
 
@@ -58,7 +58,13 @@ See [host_control.md](host_control.md#board-health-watchdog) for the bit layout.
 - **Color matrix** — the 2×3 chroma matrix (MTX1–6 with signs from MTXS) as a
   signed heat-map grid with per-cell sliders and an *auto contrast-center*
   toggle. The reference-color swatches show each input color mapped through the
-  current matrix (approximate; exact at the default).
+  current matrix (approximate; exact at the default). Beside them is a **CIE 1931
+  chromaticity diagram** (spectral-locus horseshoe + sRGB gamut triangle + D65)
+  that plots every reference color *before → after* the matrix, so the arrows
+  show the hue/saturation shift. The diagram is **interactive**: drag the ringed
+  **R / G / B** dots to retune the matrix — each primary maps back to its own
+  coefficient column, and the changed coefficients are written to the camera on
+  release.
 
 ## Capture
 
@@ -70,6 +76,29 @@ with a **Cancel** button; when it finishes the frame is drawn to the canvas and 
 **Save PNG** link appears. The bus is busy for the whole download. See
 [video_datapath.md](video_datapath.md#frame-grab-and-host-download) for how the
 capture/stream works in hardware.
+
+## OSD overlay
+
+![OSD overlay tab](images/webapp_osd.png)
+
+The on-screen-display layer paints white **8×16 font** text over the live video
+on the LCD (see [host_control.md](host_control.md#osd-text-overlay)). The tab is
+a small editor for it:
+
+- **Text editor** — one input line per screen row, capped at the **60 columns ×
+  17 rows** of the grid (overflowing edits are rejected rather than truncated, so
+  a delete that would merge two full rows can't swallow the next one). The
+  caption shows the cursor's grid position (**Row R/17 · Col C/60**).
+- **Special symbols** / **Pseudographics** palettes — click a glyph to insert it
+  at the cursor: Latin-1 symbols (°, ±, µ, ©, …) and box-drawing / block
+  characters (─ │ ┌ ═ █ ░ …) that are awkward or impossible to type.
+- **Send to display** writes the text (and the **Show overlay** toggle controls
+  whether it's visible); **Clear** blanks the buffer.
+- **Draw sparrow** / **Draw car** drop in ready-made ASCII-art pictures as a
+  one-click demo of the font and pseudographics.
+
+The character buffer crosses to the LCD clock domain in hardware, so the text
+appears composited over the camera image in real time.
 
 ## Resilience
 
