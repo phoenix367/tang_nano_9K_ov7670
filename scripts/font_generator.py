@@ -95,12 +95,14 @@ def read_font(path):
     if has_tab:
         gi, i = 0, 0
         while gi < len(glyphs) and i < len(rest):
-            cp = int.from_bytes(rest[i:i + unit], "little"); i += unit
+            cp = int.from_bytes(rest[i:i + unit], "little")
+            i += unit
             if cp == sep:
                 gi += 1
             elif cp == startseq:
                 while i < len(rest):
-                    nxt = int.from_bytes(rest[i:i + unit], "little"); i += unit
+                    nxt = int.from_bytes(rest[i:i + unit], "little")
+                    i += unit
                     if nxt in (sep, startseq):
                         if nxt == sep:
                             gi += 1
