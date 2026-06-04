@@ -6,6 +6,24 @@ resized on the fly to fit the 480×272 LCD with full aspect-preserving
 (pillarbox) output: a vertical downscale plus a horizontal downscale of
 the whole row, centred with black side borders.
 
+> **A significant upgrade of the classic Tang Nano 9K OV7670 camera demo.**
+> This version was developed with the help of the
+> [Claude Code](https://claude.com/claude-code) AI assistant and goes well
+> beyond the original "capture and display" demo, adding:
+>
+> - **Host integration via Modbus** — a Modbus RTU server (over a Wishbone bus
+>   on the FPGA) lets a PC read/write live camera registers and download full
+>   frames over USB; a companion web app drives it.
+> - **Runtime camera control** — tune OV7670 registers on the fly (exposure,
+>   colour, test patterns, …) without rebuilding the bitstream.
+> - **On-the-fly frame resizing** — aspect-preserving 640×480 → 480×272
+>   downscale with pillarbox borders, done in hardware in the video path.
+> - **On-screen display (OSD)** — a host-controlled text overlay rendered on
+>   the LCD (60×17 character grid): the host enables it and writes characters
+>   over Modbus, with a hardware clear sweep.
+> - **Device health checking** — an on-chip watchdog monitors the camera,
+>   memory and LCD subsystems and reports health to the host (and a status LED).
+
 The frame geometry (input/screen size, emit row size) is configured in
 [`platform.json`](platform.json), from which CMake generates the
 SystemVerilog header `src/platform_config.vh` used by the design.
