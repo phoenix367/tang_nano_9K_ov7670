@@ -6,4 +6,6 @@ sim/Testing/
 .venv/
 __pycache__/
 node_modules/
+sby/*/
+*.bkp
 

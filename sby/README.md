@@ -8,8 +8,14 @@ properties themselves live in the RTL behind `` `ifdef FORMAL `` so synthesis
 
 ## Toolchain
 
-SBY ships in the **OSS CAD Suite** (bundles `yosys`, `sby`, `sv2v`, and SMT
-solvers — `yices`, `boolector`, `z3`). Download a release for your platform from
+`sby`'s default `smtbmc` engine needs an **SMT solver** on `PATH` (yices, z3,
+boolector, …). Installing `sby` alone is not enough — and the solver-free `abc`
+engine is *not* a reliable substitute (it currently crashes on this yosys/sby
+combo and does not support `cover` mode). If you don't have a solver, use the
+yosys built-in SAT path below instead.
+
+The simplest way to get everything is the **OSS CAD Suite** (bundles `yosys`,
+`sby`, `sv2v`, and the SMT solvers). Download a release for your platform from
 <https://github.com/YosysHQ/oss-cad-suite-build/releases>, extract it, and add it
 to `PATH`:
 
