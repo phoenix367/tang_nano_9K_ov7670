@@ -32,6 +32,10 @@ MODBUS_DEVICE_ID = _modbus["device_id"]
 _addr_limit = _modbus["addr_limit"]
 MODBUS_ADDR_LIMIT = int(_addr_limit, 0) if isinstance(_addr_limit, str) else int(_addr_limit)
 MODBUS_MAX_READ_QTY = _modbus["max_read_qty"]
+# Gateware-internal sizing (no host consumer); mirrored here so this module
+# stays a complete view of platform.json.
+MODBUS_MAX_FRAME = _modbus["max_frame"]
+MODBUS_REG_COUNT = _modbus["reg_count"]
 
 # --- uart ---
 _uart = _CFG["uart"]

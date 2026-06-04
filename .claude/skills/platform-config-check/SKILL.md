@@ -52,6 +52,7 @@ by the parameter's kind, so part of this job is judgment, not just grep.
    | **clock** | `sys_clk_hz` | RTL, host-loader, docs | sim-tests | webapp-front, web-tests, device-tests, scripts |
    | **connection identity / link** | `device_id`, `baud` | RTL, host-loader, webapp, webapp-front (connect form), web-tests, device-tests, scripts, docs | sim-tests | — |
    | **Modbus protocol limit** | `addr_limit`, `max_read_qty` | RTL, host-loader, webapp, docs | web-tests, device-tests, scripts | webapp-front |
+   | **gateware-internal sizing** | `max_frame`, `reg_count` | RTL, host-loader, docs | sim-tests | webapp, webapp-front, web-tests, device-tests, scripts |
    | **UART framing** | `data_bits`, `parity`, `stop_bits` | RTL, host-loader, webapp, device-tests, scripts, docs | web-tests, sim-tests | webapp-front |
 
    Rationale for the common `N/A`s:
@@ -64,6 +65,10 @@ by the parameter's kind, so part of this job is judgment, not just grep.
    - **`max_read_qty` is RTL-side** in practice: a spec-compliant master caps
      FC03 at 125 < the device's 127 ceiling, so there's no host request that
      exercises it — a host test for it is impossible, not missing.
+   - **gateware-internal sizing** (`max_frame`, `reg_count`) has no host
+     *consumer* — it sizes RTL buffers only — but is still mirrored in the host
+     loader so `platform_config.py` stays a complete view of `platform.json`; it
+     is N/A everywhere else on the host.
    - **sim-tests** legitimately use their own small local geometries (e.g.
      23×17) and hardcoded params rather than the platform header, so a `—` there
      is expected; only add a sim reference if a test genuinely needs to track the

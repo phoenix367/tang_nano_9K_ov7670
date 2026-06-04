@@ -150,6 +150,8 @@ platform_json_int("sys_clk_hz"         PLATFORM_SYS_CLK_HZ)
 platform_json_int("device_id"          PLATFORM_MODBUS_DEVICE_ID)
 platform_json_hex("addr_limit"         PLATFORM_MODBUS_ADDR_LIMIT)
 platform_json_int("max_read_qty"       PLATFORM_MODBUS_MAX_READ_QTY)
+platform_json_int("max_frame"          PLATFORM_MODBUS_MAX_FRAME)
+platform_json_int("reg_count"          PLATFORM_MODBUS_REG_COUNT)
 # uart
 platform_json_int("baud"               PLATFORM_UART_BAUD)
 platform_json_int("data_bits"          PLATFORM_UART_DATA_BITS)

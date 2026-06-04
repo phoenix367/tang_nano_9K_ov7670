@@ -12,7 +12,9 @@
   "modbus": {
     "device_id": 7,
     "addr_limit": "0x1100",
-    "max_read_qty": 127
+    "max_read_qty": 127,
+    "max_frame": 32,
+    "reg_count": 16
   },
   "uart": {
     "baud": 1000000,

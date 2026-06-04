@@ -123,9 +123,9 @@ modbus_rtu_slave #(
     .CLK_FREQ(`PLATFORM_SYS_CLK_HZ),
     .BAUD(`PLATFORM_UART_BAUD),
     .SLAVE_ADDR(`PLATFORM_MODBUS_DEVICE_ID),
-    .REG_COUNT(16),         // external backend: no internal register file, keep reg_o tiny
+    .REG_COUNT(`PLATFORM_MODBUS_REG_COUNT),  // external backend: no internal register file, keep reg_o tiny
     .ADDR_LIMIT(MODBUS_ADDR_LIMIT),  // bounds check spans the OV7670 + stream band
-    .MAX_FRAME(32),         // request buffer: FC10 camera writes stay small
+    .MAX_FRAME(`PLATFORM_MODBUS_MAX_FRAME),  // request buffer: FC10 camera writes stay small
     .MAX_QTY(`PLATFORM_MODBUS_MAX_READ_QTY),  // FC03 download burst ceiling; payload in BSRAM
     .EXTERNAL_BACKEND(1)
 ) modbus_inst (
