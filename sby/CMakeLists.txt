@@ -44,3 +44,11 @@ register_formal(wb_interconnect wb_interconnect
 register_formal(arbiter arbiter_formal
     "${SRC_FOLDER}/arbiter.v"
     "${CMAKE_CURRENT_SOURCE_DIR}/arbiter_formal.sv")
+
+# Health watchdog (sequential): hang stickiness + consistency + arm ordering,
+# proven by k-induction on a small-parameter instance (the wrapper shrinks the
+# huge STARTUP/TIMEOUT counters). Pulls in the CDC_Bit_Synchronizer it uses.
+register_formal(watchdog watchdog_formal
+    "${SRC_FOLDER}/watchdog.sv"
+    "${FPGA_ELEMENTS_FOLDER}/CDC_Bit_Synchronizer.v"
+    "${CMAKE_CURRENT_SOURCE_DIR}/watchdog_formal.sv")
