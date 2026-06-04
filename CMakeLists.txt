@@ -84,16 +84,20 @@ set(FPGA_ELEMENTS_FOLDER "${CMAKE_CURRENT_SOURCE_DIR}/FPGADesignElements")
 
 # ---------------------------------------------------------------------------
 # Platform configuration: platform.json is the single source of truth for the
-# frame geometry, and CMake turns it into the SystemVerilog header
-# src/platform_config.vh (a set of `define macros) that VGA_timing.v includes
-# and feeds to VideoController. JSON is parsed with a regex (no string(JSON),
-# to keep cmake_minimum_required(3.8)). Editing platform.json re-runs cmake.
+# frame geometry, clock, Modbus identity and UART framing, and CMake turns it
+# into the SystemVerilog header src/platform_config.vh (a set of `define macros)
+# that VGA_timing.v / camera_control.v include and feed to their submodules.
+# JSON is parsed with a regex (no string(JSON), to keep
+# cmake_minimum_required(3.8)); the regex matches each key at any nesting depth,
+# so the "geometry"/"clock"/"modbus"/"uart" sections are purely cosmetic to
+# CMake and the keys must stay globally unique. Editing platform.json re-runs
+# cmake.
 # ---------------------------------------------------------------------------
 set(PLATFORM_JSON "${CMAKE_CURRENT_SOURCE_DIR}/platform.json")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${PLATFORM_JSON}")
 file(READ "${PLATFORM_JSON}" _PLATFORM_JSON_CONTENT)
 
-# Extract an integer-valued key from the (flat) JSON into a cmake variable.
+# Extract an integer-valued key from the JSON into a cmake variable.
 macro(platform_json_int key outvar)
     if (_PLATFORM_JSON_CONTENT MATCHES "\"${key}\"[ \t\r\n]*:[ \t\r\n]*([0-9]+)")
         set(${outvar} "${CMAKE_MATCH_1}")
@@ -102,15 +106,49 @@ macro(platform_json_int key outvar)
     endif()
 endmacro()
 
+# Extract a string-valued key and map it to a numeric code via a lookup list of
+# "name=value" pairs (used for the UART parity enum: none=0, odd=1, even=2).
+macro(platform_json_enum key outvar)
+    if (_PLATFORM_JSON_CONTENT MATCHES "\"${key}\"[ \t\r\n]*:[ \t\r\n]*\"([A-Za-z]+)\"")
+        set(_enum_name "${CMAKE_MATCH_1}")
+        set(${outvar} "")
+        foreach(_pair ${ARGN})
+            string(REPLACE "=" ";" _kv "${_pair}")
+            list(GET _kv 0 _n)
+            list(GET _kv 1 _v)
+            if (_enum_name STREQUAL _n)
+                set(${outvar} "${_v}")
+            endif()
+        endforeach()
+        if (${outvar} STREQUAL "")
+            message(FATAL_ERROR "platform.json: key '${key}' has unsupported value '${_enum_name}'")
+        endif()
+    else()
+        message(FATAL_ERROR "platform.json: key '${key}' is missing or not a string")
+    endif()
+endmacro()
+
+# geometry
 platform_json_int("input_frame_width"  PLATFORM_INPUT_FRAME_WIDTH)
 platform_json_int("input_frame_height" PLATFORM_INPUT_FRAME_HEIGHT)
 platform_json_int("screen_width"       PLATFORM_SCREEN_WIDTH)
 platform_json_int("screen_height"      PLATFORM_SCREEN_HEIGHT)
 platform_json_int("emit_row_size"      PLATFORM_EMIT_ROW_SIZE)
+# clock
+platform_json_int("sys_clk_hz"         PLATFORM_SYS_CLK_HZ)
+# modbus
+platform_json_int("device_id"          PLATFORM_MODBUS_DEVICE_ID)
+# uart
+platform_json_int("baud"               PLATFORM_UART_BAUD)
+platform_json_int("data_bits"          PLATFORM_UART_DATA_BITS)
+platform_json_int("stop_bits"          PLATFORM_UART_STOP_BITS)
+platform_json_enum("parity"            PLATFORM_UART_PARITY  none=0 odd=1 even=2)
 
 message(STATUS "Platform: ${PLATFORM_INPUT_FRAME_WIDTH}x${PLATFORM_INPUT_FRAME_HEIGHT} in, "
                "${PLATFORM_SCREEN_WIDTH}x${PLATFORM_SCREEN_HEIGHT} screen, "
                "emit_row_size=${PLATFORM_EMIT_ROW_SIZE}")
+message(STATUS "Platform: ${PLATFORM_SYS_CLK_HZ} Hz sys_clk, Modbus id ${PLATFORM_MODBUS_DEVICE_ID}, "
+               "UART ${PLATFORM_UART_BAUD} ${PLATFORM_UART_DATA_BITS}-parity${PLATFORM_UART_PARITY}-${PLATFORM_UART_STOP_BITS}")
 
 configure_file("${SRC_FOLDER}/platform_config.vh.in"
                "${SRC_FOLDER}/platform_config.vh" @ONLY)

@@ -23,8 +23,15 @@
 
 module uart
 #(
-    parameter integer CLK_FREQ = 27_000_000,
-    parameter integer BAUD     = 9600
+    parameter integer CLK_FREQ  = 27_000_000,
+    parameter integer BAUD      = 9600,
+    // Framing. The transmit/receive state machines below implement 8-E-1 only;
+    // these parameters exist so platform.json stays the single source of truth
+    // and a mismatch is caught at elaboration (see the __ICARUS__ check below),
+    // not so the framing can actually be re-shaped. PARITY: 0=none 1=odd 2=even.
+    parameter integer DATA_BITS = 8,
+    parameter integer PARITY    = 2,
+    parameter integer STOP_BITS = 1
 )
 (
     input  wire       clk,
@@ -46,6 +53,16 @@ module uart
 
     localparam integer CLKS_PER_BIT = CLK_FREQ / BAUD;
     localparam integer HALF_BIT     = CLKS_PER_BIT / 2;
+
+`ifdef __ICARUS__
+    // The framing is wired in from platform.json but only 8-E-1 is implemented;
+    // fail loudly in simulation if the config asks for anything else.
+    initial begin
+        if (DATA_BITS != 8 || PARITY != 2 || STOP_BITS != 1)
+            $error("uart: only 8-E-1 framing is implemented (got DATA_BITS=%0d PARITY=%0d STOP_BITS=%0d)",
+                   DATA_BITS, PARITY, STOP_BITS);
+    end
+`endif
 
     localparam [2:0] T_IDLE = 3'd0, T_START = 3'd1, T_DATA = 3'd2,
                      T_PAR  = 3'd3, T_STOP  = 3'd4;

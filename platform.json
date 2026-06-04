@@ -1,7 +1,21 @@
 {
-  "input_frame_width": 640,
-  "input_frame_height": 480,
-  "screen_width": 480,
-  "screen_height": 272,
-  "emit_row_size": 640
+  "geometry": {
+    "input_frame_width": 640,
+    "input_frame_height": 480,
+    "screen_width": 480,
+    "screen_height": 272,
+    "emit_row_size": 640
+  },
+  "clock": {
+    "sys_clk_hz": 27000000
+  },
+  "modbus": {
+    "device_id": 7
+  },
+  "uart": {
+    "baud": 1000000,
+    "data_bits": 8,
+    "parity": "even",
+    "stop_bits": 1
+  }
 }
