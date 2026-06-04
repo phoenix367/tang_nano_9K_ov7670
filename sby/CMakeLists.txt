@@ -52,3 +52,10 @@ register_formal(watchdog watchdog_formal
     "${SRC_FOLDER}/watchdog.sv"
     "${FPGA_ELEMENTS_FOLDER}/CDC_Bit_Synchronizer.v"
     "${CMAKE_CURRENT_SOURCE_DIR}/watchdog_formal.sv")
+
+# wb_sysregs bus slave (sequential): single-cycle ack + full read-decode
+# correctness, uptime monotonicity, uptime_latch capture, and cam_reinit pulse.
+# Properties are embedded behind `ifdef FORMAL; the uptime invariants are
+# inductive for any UPTIME_DIV, so no parameter shrink is needed for the proof.
+register_formal(wb_sysregs wb_sysregs
+    "${SRC_FOLDER}/modbus/wb_sysregs.sv")

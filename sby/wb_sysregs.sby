@@ -1,0 +1,28 @@
+# Cover-reachability for the wb_sysregs bus slave (src/modbus/wb_sysregs.sv) via
+# SBY + an SMT solver. The SAFETY invariants (ack/decode correctness, uptime
+# monotonicity, uptime_latch capture, cam_reinit pulse) are proven by k-induction
+# under yosys's built-in SAT as `ctest -L formal` (formal_wb_sysregs); this .sby
+# confirms the interesting states are reachable so that proof isn't vacuous:
+# cam_reinit fires, the uptime counter ticks, and a high-byte read latches it.
+#
+# The shipped UPTIME_DIV is 27e6 (a tick every 27M cycles) -- far out of BMC
+# reach -- so the cover run shrinks it with chparam. The k-induction proof needs
+# no such shrink (its uptime property is inductive for any divider).
+#
+# Requires an SMT solver on PATH (z3 in this dev env). From the repo root:
+#     sby -f sby/wb_sysregs.sby
+
+[options]
+mode cover
+depth 14
+
+[engines]
+smtbmc z3
+
+[script]
+read_verilog -sv -formal -DFORMAL -DSBY_COVER wb_sysregs.sv
+chparam -set UPTIME_DIV 4 wb_sysregs   # tick every 4 cycles so a tick is reachable
+prep -top wb_sysregs -flatten
+
+[files]
+src/modbus/wb_sysregs.sv

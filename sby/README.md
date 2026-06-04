@@ -78,11 +78,13 @@ will genuinely need SBY (BMC / k-induction), where SMT is the right tool.
 | `arbiter.sby` (SBY+z3) | same | cover reachability | each lane can be granted; the arbiter hands off between lanes (round-robin progress) |
 | `formal_watchdog` (ctest, yosys SAT) | `src/watchdog.sv` (small-param via `watchdog_formal.sv`) | sequential, k-induction | `hang == OR(subsystem_hang)`; each subsystem-hang bit is sticky (no flapping); `monitoring` is sticky once armed; no hang before `monitoring` |
 | `watchdog.sby` (SBY+z3) | same | cover reachability | `monitoring` arms, a subsystem actually times out (hang), and `blink` toggles — reached through a real reset→arm→timeout path |
+| `formal_wb_sysregs` (ctest, yosys SAT) | `src/modbus/wb_sysregs.sv` | sequential, k-induction | single-cycle `ack == stb&cyc`; read decode correct for every address (magic / uptime hi/lo / health / default-0); uptime is monotonic (+1 or hold, any `UPTIME_DIV`); `uptime_latch` captures live uptime only on a hi-byte read; `cam_reinit` pulses only on a 0xFA write with bit0 |
+| `wb_sysregs.sby` (SBY+z3) | same | cover reachability | `cam_reinit` fires (real 0xFA write), the uptime counter ticks, and a hi-byte read latches it — reached from a real reset (UPTIME_DIV shrunk via chparam) |
 
 The CTest targets are gated on `yosys` being found (see the top-level
 `CMakeLists.txt`); `ctest -L formal` runs them all.
 
-Good next candidates (single-clock, no Gowin IP): the FSM bus slaves
-`wb_sysregs` / `wb_osd` / `wb_grab`. Modules that instantiate Gowin IP or cross
-clock domains (`psram_ch1`, the video path) need the IP black-boxed and clock
-abstraction first.
+Good next candidates (single-clock, no Gowin IP): the remaining FSM bus slaves
+`wb_osd` and `wb_grab` (the latter needs an `assume` that `grab_busy` eventually
+drops). Modules that instantiate Gowin IP or cross clock domains (`psram_ch1`,
+the video path) need the IP black-boxed and clock abstraction first.

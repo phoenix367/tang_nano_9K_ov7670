@@ -1,6 +1,11 @@
 `ifdef __ICARUS__
 `include "timescale.v"
 `include "camera_control_defs.vh"
+`elsif FORMAL
+// formal (SymbiYosys/yosys): the only thing this module needs from the project
+// headers is WRAP_SIM, which is a no-op outside Icarus -- define it empty so the
+// read is self-contained (no include-path juggling under sby's flat file copy).
+`define WRAP_SIM(x)
 `else
 `include "../timescale.v"
 `include "../camera_control_defs.vh"
@@ -106,5 +111,66 @@ module wb_sysregs
             end
         end
     end
+
+`ifdef FORMAL
+    // ---- Formal verification (yosys k-induction; see sby/CMakeLists.txt and
+    // sby/wb_sysregs.sby). Properties reference the internal uptime/uptime_latch.
+    reg f_past_valid = 1'b0;
+    always @(posedge clk) f_past_valid <= 1'b1;
+
+`ifdef SBY_COVER
+    // Cover-only (SBY): start from a genuine reset so the covers are reached
+    // through real operation (a 0xFA write, the counter ticking) rather than a
+    // hand-picked initial state. Kept OUT of the k-induction proof: a start-only
+    // assumption is unsound in the inductive step.
+    always @(posedge clk)
+        if (!f_past_valid)
+            assume (!reset_n);
+`endif
+
+    always @(posedge clk) begin
+        // --- combinational read decode: correct for EVERY address, whether or
+        // not this slave is selected (the interconnect muxes on the strobe) ---
+        assert (wb_ack_o == (wb_stb_i & wb_cyc_i));     // single-cycle ack
+        if (wb_adr_i == ADDR_MAGIC)
+            assert (wb_dat_o == {8'h00, STATUS_MAGIC});
+        if (wb_adr_i == ADDR_UPTIME_HI)
+            assert (wb_dat_o == {8'h00, uptime[15:8]});
+        if (wb_adr_i == ADDR_UPTIME_LO)
+            assert (wb_dat_o == {8'h00, uptime_latch[7:0]});
+        if (wb_adr_i == ADDR_HEALTH)
+            assert (wb_dat_o == {11'd0, wd_health});
+        if (wb_adr_i != ADDR_MAGIC && wb_adr_i != ADDR_UPTIME_HI &&
+            wb_adr_i != ADDR_UPTIME_LO && wb_adr_i != ADDR_HEALTH)
+            assert (wb_dat_o == 16'h0000);              // incl 0xFA + unowned
+
+        // --- sequential invariants (only while running, i.e. no reset edge) ---
+        if (f_past_valid && reset_n && $past(reset_n)) begin
+            // uptime is monotonic: it can only hold or step by exactly one
+            // (so a host that sees it move never sees a spurious jump/backstep,
+            // except the genuine wrap, which is +1 mod 2^16). Inductive for any
+            // UPTIME_DIV -- no need to unroll to a tick.
+            assert (uptime == $past(uptime) || uptime == ($past(uptime) + 16'd1));
+
+            // uptime_latch only changes on a high-byte read, capturing live uptime
+            if (uptime_latch != $past(uptime_latch)) begin
+                assert ($past(sel) && !$past(wb_we_i) && $past(wb_adr_i) == ADDR_UPTIME_HI);
+                assert (uptime_latch == $past(uptime));
+            end
+
+            // cam_reinit pulses ONLY in response to a 0xFA write with bit0 set
+            if (cam_reinit)
+                assert ($past(sel) && $past(wb_we_i) &&
+                        $past(wb_adr_i) == ADDR_REINIT && $past(wb_dat_i[0]));
+        end
+    end
+
+    // reachability (cover task; run with a small UPTIME_DIV so a tick is in reach)
+    always @(posedge clk) begin
+        cover (cam_reinit);
+        cover (uptime != 16'h0000);        // the uptime counter actually ticked
+        cover (uptime_latch != 16'h0000);  // a high-byte read latched a value
+    end
+`endif
 
 endmodule
