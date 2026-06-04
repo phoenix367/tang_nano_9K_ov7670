@@ -59,3 +59,10 @@ register_formal(watchdog watchdog_formal
 # inductive for any UPTIME_DIV, so no parameter shrink is needed for the proof.
 register_formal(wb_sysregs wb_sysregs
     "${SRC_FOLDER}/modbus/wb_sysregs.sv")
+
+# wb_osd bus slave (sequential): decode correctness + the clear-sweep invariants
+# (bounded sweep address, blanks each cell, ends + homes the cursor at the last
+# cell) + cursor auto-increment/wrap + osd_enable control. k-induction proves the
+# 1020-cell sweep correct WITHOUT unrolling 1020 cycles.
+register_formal(wb_osd wb_osd
+    "${SRC_FOLDER}/modbus/wb_osd.sv")

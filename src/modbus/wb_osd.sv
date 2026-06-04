@@ -1,6 +1,10 @@
 `ifdef __ICARUS__
 `include "timescale.v"
 `include "camera_control_defs.vh"
+`elsif FORMAL
+// formal (SymbiYosys/yosys): only WRAP_SIM is needed from the project headers and
+// it is a no-op outside Icarus -- define it empty so the read is self-contained.
+`define WRAP_SIM(x)
 `else
 `include "../timescale.v"
 `include "../camera_control_defs.vh"
@@ -145,5 +149,58 @@ module wb_osd (
             end
         end
     end
+
+`ifdef FORMAL
+    // ---- Formal verification (yosys k-induction; see sby/CMakeLists.txt and
+    // sby/wb_osd.sby). The clear-sweep invariants are INDUCTIVE, so the whole
+    // 1020-cell sweep is proven correct without unrolling 1020 cycles.
+    reg f_past_valid = 1'b0;
+    always @(posedge clk) f_past_valid <= 1'b1;
+
+    always @(posedge clk) begin
+        // --- combinational read decode (correct for every address) ---
+        assert (wb_ack_o == (wb_stb_i & wb_cyc_i));
+        if (wb_adr_i == ADDR_OSD_CTRL) assert (wb_dat_o == {15'd0, osd_enable});
+        if (wb_adr_i == ADDR_OSD_ADDR) assert (wb_dat_o == {5'd0, osd_cursor});
+        if (wb_adr_i != ADDR_OSD_CTRL && wb_adr_i != ADDR_OSD_ADDR)
+            assert (wb_dat_o == 16'h0000);   // 0xFD + any unowned address
+
+        // --- clear sweep is bounded: the sweep address never leaves the grid ---
+        assert (osd_clear_addr <= (OSD_CELLS - 1));
+
+        if (f_past_valid && reset_n && $past(reset_n)) begin
+            // while a sweep is busy it blanks the current cell (writes 0x00) ...
+            if ($past(osd_clear_busy)) begin
+                assert (osd_wr_en);
+                assert (osd_wr_data == 8'h00);
+                assert (osd_wr_addr == $past(osd_clear_addr));
+            end
+            // ... and on reaching the last cell the sweep ends and homes the cursor
+            if ($past(osd_clear_busy) && $past(osd_clear_addr) == (OSD_CELLS - 1)) begin
+                assert (!osd_clear_busy);
+                assert (osd_cursor == 11'd0);
+            end
+
+            // osd_enable only changes on a 0xFB write, to the written bit0
+            if (osd_enable != $past(osd_enable)) begin
+                assert ($past(wb_stb_i) && $past(wb_cyc_i) && $past(wb_we_i) &&
+                        $past(wb_adr_i) == ADDR_OSD_CTRL);
+                assert (osd_enable == $past(wb_dat_i[0]));
+            end
+
+            // a data write advances the cursor by one, wrapping at the last cell
+            // (only the consumer's data-write branch runs: not clearing/addr-loading)
+            if ($past(osd_data_we) && !$past(osd_clear_busy) &&
+                !$past(osd_clear_pulse) && !$past(osd_addr_we))
+                assert (osd_cursor == (($past(osd_cursor) == (OSD_CELLS - 1))
+                                       ? 11'd0 : $past(osd_cursor) + 11'd1));
+        end
+    end
+
+    // No cover task here: z3's word-level BMC can't handle this model's 1020-cell
+    // comparisons (times out even at step 0), while yosys's bit-level SAT proves
+    // the asserts above in ~0.2 s. Reachability of enable / cursor advance / the
+    // full clear sweep is demonstrated concretely by sim/unit/wb_osd/cursor.sv.
+`endif
 
 endmodule

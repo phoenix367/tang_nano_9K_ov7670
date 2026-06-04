@@ -80,11 +80,17 @@ will genuinely need SBY (BMC / k-induction), where SMT is the right tool.
 | `watchdog.sby` (SBY+z3) | same | cover reachability | `monitoring` arms, a subsystem actually times out (hang), and `blink` toggles — reached through a real reset→arm→timeout path |
 | `formal_wb_sysregs` (ctest, yosys SAT) | `src/modbus/wb_sysregs.sv` | sequential, k-induction | single-cycle `ack == stb&cyc`; read decode correct for every address (magic / uptime hi/lo / health / default-0); uptime is monotonic (+1 or hold, any `UPTIME_DIV`); `uptime_latch` captures live uptime only on a hi-byte read; `cam_reinit` pulses only on a 0xFA write with bit0 |
 | `wb_sysregs.sby` (SBY+z3) | same | cover reachability | `cam_reinit` fires (real 0xFA write), the uptime counter ticks, and a hi-byte read latches it — reached from a real reset (UPTIME_DIV shrunk via chparam) |
+| `formal_wb_osd` (ctest, yosys SAT) | `src/modbus/wb_osd.sv` | sequential, k-induction | decode correctness; the clear-sweep address stays in-grid, blanks each cell, and ends + homes the cursor at the last cell; cursor auto-increment/wrap on a data write; `osd_enable` changes only on a 0xFB write. The 1020-cell sweep is proven correct **without unrolling 1020 cycles**. |
 
 The CTest targets are gated on `yosys` being found (see the top-level
 `CMakeLists.txt`); `ctest -L formal` runs them all.
 
-Good next candidates (single-clock, no Gowin IP): the remaining FSM bus slaves
-`wb_osd` and `wb_grab` (the latter needs an `assume` that `grab_busy` eventually
-drops). Modules that instantiate Gowin IP or cross clock domains (`psram_ch1`,
-the video path) need the IP black-boxed and clock abstraction first.
+`wb_osd` has **no SBY cover task**: z3's word-level BMC can't handle this model's
+1020-cell comparisons (it times out even at step 0), whereas yosys's bit-level
+SAT proves the asserts in ~0.2 s. Reachability (enable / cursor advance / the full
+clear sweep) is demonstrated concretely by `sim/unit/wb_osd/cursor.sv` instead.
+
+Good next candidate (single-clock, no Gowin IP): the last FSM bus slave `wb_grab`
+(needs an `assume` that `grab_busy` eventually drops). Modules that instantiate
+Gowin IP or cross clock domains (`psram_ch1`, the video path) need the IP
+black-boxed and clock abstraction first.
