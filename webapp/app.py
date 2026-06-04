@@ -125,7 +125,10 @@ def _classify(e):
 # --------------------------------------------------------------------------- #
 @app.route("/")
 def index():
-    return render_template("index.html")
+    # Pre-fill the connect form from platform.json (same source as the gateware)
+    # so the form defaults can't drift from what the device actually uses.
+    return render_template("index.html",
+                           default_baud=DEFAULT_BAUD, default_slave=DEFAULT_SLAVE)
 
 
 @app.route("/api/ports")

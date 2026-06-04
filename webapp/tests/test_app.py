@@ -13,6 +13,18 @@ def test_ports(client):
     assert r["ok"] and isinstance(r["ports"], list)
 
 
+def test_index_form_defaults_from_platform(client):
+    """The connect form pre-fills baud/slave from platform.json, so the UI
+    defaults can't drift from the gateware (regression guard for the hardcoded
+    value="1000000"/value="7" the template used to carry)."""
+    import platform_config as pc
+
+    tc, _ = client
+    html = tc.get("/").get_data(as_text=True)
+    assert f'id="baud" type="number" value="{pc.UART_BAUD}"' in html
+    assert f'id="slave" type="number" value="{pc.MODBUS_DEVICE_ID}"' in html
+
+
 def test_state_disconnected(client):
     tc, _ = client
     r = tc.get("/api/state").get_json()
