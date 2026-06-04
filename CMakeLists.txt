@@ -241,3 +241,72 @@ if (GOWIN_PROGRAMMER)
         USES_TERMINAL
     )
 endif()
+
+# ---------------------------------------------------------------------------
+# SERV soft-core bring-up (standalone, optional). Gated on a RISC-V toolchain
+# and the serv/ submodule. Builds the blinky firmware into a BSRAM-preload hex,
+# generates the serv_blink top with that hex path baked in, and registers
+# hw_serv_* Gowin targets driving the ISOLATED serv_soc/serv_blink.gprj (its own
+# impl/ dir). The camera design is completely untouched. See doc/serv.md.
+# Provide RISCV_PATH if riscv*-elf-gcc isn't on PATH (e.g. a Vitis gnu/riscv bin).
+# ---------------------------------------------------------------------------
+find_program(RISCV_GCC NAMES riscv64-unknown-elf-gcc riscv32-unknown-elf-gcc
+             HINTS ${RISCV_PATH})
+set(SERV_DIR "${CMAKE_CURRENT_SOURCE_DIR}/serv")
+if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
+    message(STATUS "Found RISC-V gcc at ${RISCV_GCC} - SERV bring-up targets enabled (hw_serv_*)")
+    string(REPLACE "gcc" "objcopy" RISCV_OBJCOPY "${RISCV_GCC}")
+    set(SERV_SOC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/serv_soc")
+    set(SERV_FW_DIR  "${CMAKE_CURRENT_BINARY_DIR}/serv_fw")
+    file(MAKE_DIRECTORY "${SERV_FW_DIR}")
+    set(SERV_BLINK_DELAY "0x40000" CACHE STRING "blinky busy-loop delay (~1.5 s/toggle at 27 MHz)")
+
+    # Firmware: blinky.S -> elf -> bin -> 32-bit-word hex for servant_ram.
+    set(SERV_FW_HEX "${SERV_FW_DIR}/blinky.hex")
+    add_custom_command(
+        OUTPUT  ${SERV_FW_HEX}
+        COMMAND ${RISCV_GCC} -nostartfiles -nostdlib -march=rv32i_zicsr -mabi=ilp32
+                -Wl,--build-id=none -T ${SERV_DIR}/sw/link.ld
+                -DGPIO_BASE=0x40000000 -DDELAY=${SERV_BLINK_DELAY}
+                ${SERV_DIR}/sw/blinky.S -o ${SERV_FW_DIR}/blinky.elf
+        COMMAND ${RISCV_OBJCOPY} -O binary ${SERV_FW_DIR}/blinky.elf ${SERV_FW_DIR}/blinky.bin
+        COMMAND python3 ${SERV_SOC_DIR}/bin2hex.py ${SERV_FW_DIR}/blinky.bin ${SERV_FW_HEX}
+        DEPENDS ${SERV_DIR}/sw/blinky.S ${SERV_DIR}/sw/link.ld ${SERV_SOC_DIR}/bin2hex.py
+        COMMENT "Building SERV blinky firmware (RV32I)"
+        VERBATIM
+    )
+    add_custom_target(serv_firmware DEPENDS ${SERV_FW_HEX})
+
+    # Generate serv_blink.v with the absolute hex path baked in for $readmemh.
+    set(SERV_MEMFILE "${SERV_FW_HEX}")
+    configure_file("${SERV_SOC_DIR}/serv_blink.v.in" "${SERV_SOC_DIR}/serv_blink.v" @ONLY)
+
+    set(SERV_GPRJ "${SERV_SOC_DIR}/serv_blink.gprj")
+    add_custom_target(hw_serv_synth
+        COMMAND ${CMAKE_COMMAND} -E env GOWIN_PATH=${GOWIN_ROOT} GPRJ=${SERV_GPRJ}
+                TOP=serv_blink STAGE=syn ${HW_WRAPPER}
+        DEPENDS serv_firmware
+        COMMENT "Gowin synthesis (SERV blinky)" USES_TERMINAL)
+    add_custom_target(hw_serv_impl
+        COMMAND ${CMAKE_COMMAND} -E env GOWIN_PATH=${GOWIN_ROOT} GPRJ=${SERV_GPRJ}
+                TOP=serv_blink STAGE=pnr ${HW_WRAPPER}
+        COMMENT "Gowin PnR + bitstream (SERV blinky)" USES_TERMINAL)
+    add_custom_target(hw_serv_all
+        COMMAND ${CMAKE_COMMAND} -E env GOWIN_PATH=${GOWIN_ROOT} GPRJ=${SERV_GPRJ}
+                TOP=serv_blink STAGE=all ${HW_WRAPPER}
+        DEPENDS serv_firmware
+        COMMENT "Gowin synth + PnR + bitstream (SERV blinky)" USES_TERMINAL)
+
+    if (GOWIN_PROGRAMMER)
+        set(SERV_BITSTREAM "${SERV_SOC_DIR}/impl/pnr/serv_blink.fs")
+        add_custom_target(hw_serv_program
+            COMMAND ${GOWIN_PROGRAMMER} --device GW1NR-9C --run 2 --fsFile ${SERV_BITSTREAM}
+            COMMENT "Loading SERV blinky into SRAM (volatile)" USES_TERMINAL)
+        add_custom_target(hw_serv_program_flash
+            COMMAND ${GOWIN_PROGRAMMER} --device GW1NR-9C --run 6 --fsFile ${SERV_BITSTREAM}
+            COMMENT "Programming SERV blinky to embedded flash (persistent)" USES_TERMINAL)
+    endif()
+else()
+    message(STATUS "RISC-V gcc or serv/ submodule not found - SERV bring-up targets "
+                   "disabled (set -D RISCV_PATH=<...> and run git submodule update --init serv)")
+endif()
