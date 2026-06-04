@@ -74,14 +74,13 @@ will genuinely need SBY (BMC / k-induction), where SMT is the right tool.
 | --------------- | --- | ------ | ---------- |
 | `formal_wb_interconnect` (ctest, yosys SAT) | `src/modbus/wb_interconnect.sv` | combinational, exhaustive | decode matches the register map; strobes mutually exclusive; every active access claimed by exactly one path (no bus hang); default-ack with 0 for unmapped addresses; ack/data routed from the selected slave |
 | `wb_interconnect.sby` (SBY+z3) | same | cover reachability | every routing path (sccb / sysregs / grab-reg / stream / osd / unmapped) is reachable |
+| `formal_arbiter` (ctest, yosys SAT) | `src/arbiter.v` (width-4 via `arbiter_formal.sv`) | sequential, k-induction | `grant` always one-hot (mutual exclusion, even mid-transition); a grant lane was requested last cycle; no grant unless `enable` was high; `select` indexes the granted lane |
+| `arbiter.sby` (SBY+z3) | same | cover reachability | each lane can be granted; the arbiter hands off between lanes (round-robin progress) |
 
-This is the pilot. Good next candidates (single-clock, no Gowin IP): `arbiter`
-(round-robin mutual exclusion + fairness), `watchdog` (sticky hang, bounded
-timeout), and the FSM bus slaves `wb_sysregs` / `wb_osd` / `wb_grab`. Modules that
-instantiate Gowin IP or cross clock domains (`psram_ch1`, the video path) need the
-IP black-boxed and clock abstraction first.
+The CTest targets are gated on `yosys` being found (see the top-level
+`CMakeLists.txt`); `ctest -L formal` runs them all.
 
-> Note: these targets are not yet wired into CTest (the toolchain isn't assumed
-> present). Once OSS CAD Suite is on the CI/dev path, a `formal` CTest label gated
-> on tool detection — mirroring how `Gowin_PATH` gates the `hw_*` targets — is the
-> natural next step.
+Good next candidates (single-clock, no Gowin IP): `watchdog` (sticky hang,
+bounded timeout), and the FSM bus slaves `wb_sysregs` / `wb_osd` / `wb_grab`.
+Modules that instantiate Gowin IP or cross clock domains (`psram_ch1`, the video
+path) need the IP black-boxed and clock abstraction first.
