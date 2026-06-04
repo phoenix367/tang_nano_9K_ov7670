@@ -26,6 +26,7 @@ REG_REINIT  = 0x00FA   # write 1 = re-run camera init (reset all registers to de
 REG_OSD_CTRL = 0x00FB  # write bit0 = enable, bit1 = clear; read bit0 = enable
 REG_OSD_ADDR = 0x00FC  # OSD char-cell cursor (row*OSD_COLS + col); read or write
 REG_OSD_DATA = 0x00FD  # char at the cursor: write a code or read it back; either auto-increments
+OSD_STREAM_BASE = 0x0800  # FC03 reads in [0x0800..0x0FFF] burst-read consecutive OSD cells
 STREAM_BASE = 0x1000   # any FC03 read >= here returns the next frame pixel(s)
 FRAME_W, FRAME_H = 640, 480
 FRAME_PIXELS = FRAME_W * FRAME_H
@@ -232,30 +233,24 @@ class ModbusRTU:
         self.write_single(REG_OSD_ADDR, row * OSD_COLS + col)
         return [self.read_reg(REG_OSD_DATA) for _ in range(count)]
 
-    def osd_read_text(self, max_blank_runahead=3):
-        """Read the OSD character buffer back and decode it to text.
+    def osd_read_text(self):
+        """Read the whole OSD character buffer back and decode it to text.
 
         Returns a list of strings (each up to OSD_COLS wide), trailing blank cells
         and all-blank rows stripped, so it reflects what is shown on the LCD.
 
-        Each cell is a separate 0xFD read (the read auto-increments the cursor, and
-        FC03 cannot burst it -- the slave walks register addresses, not repeated
-        0xFD), which is slow over UART, so reading all 1020 cells takes ~2.5 s and
-        holds the serial link the whole time. OSD overlays are top-aligned text, so
-        we read row by row from cell 0 and stop after `max_blank_runahead`
-        consecutive blank rows -- the common cases (empty buffer, a few status
-        lines, the built-in drawings) finish in a fraction of a second. Content
-        separated from the top by a larger blank gap is not read back.
+        Uses the burst-read band: set the cursor to 0, then FC03-burst consecutive
+        cells from OSD_STREAM_BASE (each band read returns the cell at the cursor
+        and auto-increments it, so the cursor walks across the burst). The full
+        1020-cell buffer is ~9 transactions instead of 1020 single 0xFD reads.
         """
         self.write_single(REG_OSD_ADDR, 0)
-        rows, blanks = [], 0
-        for _ in range(OSD_ROWS):
-            line = "".join(osd_char(self.read_reg(REG_OSD_DATA))
-                           for _ in range(OSD_COLS)).rstrip()
-            rows.append(line)
-            blanks = blanks + 1 if line == "" else 0
-            if blanks >= max_blank_runahead:
-                break
+        codes = []
+        while len(codes) < OSD_CELLS:
+            n = min(125, OSD_CELLS - len(codes))   # FC03 burst (device MAX_QTY = 127)
+            codes.extend(self.read_holding(OSD_STREAM_BASE, n))
+        rows = ["".join(osd_char(b & 0xFF) for b in codes[r * OSD_COLS:(r + 1) * OSD_COLS]).rstrip()
+                for r in range(OSD_ROWS)]
         while rows and rows[-1] == "":
             rows.pop()
         return rows

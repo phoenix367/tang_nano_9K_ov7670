@@ -189,8 +189,32 @@ initial begin
         logger.error(module_name, str); errors = errors + 1;
     end
 
+    // 6) burst-read band: reads at OSD_STREAM band addresses (>=0x0800) behave
+    // exactly like 0xFD reads (glyph at the cursor + auto-increment), so an FC03
+    // burst over consecutive band addresses walks the buffer. Verify two adjacent
+    // band addresses return consecutive cells.
+    wb_write(16'h00FC, 16'd20);
+    wb_write(16'h00FD, 16'h0058);            // 'X' at 20
+    wb_write(16'h00FD, 16'h0059);            // 'Y' at 21
+    wb_write(16'h00FC, 16'd20);              // rewind to 20
+    wb_read(16'h0800, rd);                   // band read -> 'X', cursor 21
+    if (rd !== 16'h0058) begin
+        $sformat(str, "band read[20] = %h, expected 0058 ('X')", rd);
+        logger.error(module_name, str); errors = errors + 1;
+    end
+    wb_read(16'h0801, rd);                   // next band addr -> 'Y', cursor 22
+    if (rd !== 16'h0059) begin
+        $sformat(str, "band read[21] = %h, expected 0059 ('Y')", rd);
+        logger.error(module_name, str); errors = errors + 1;
+    end
+    wb_read(16'h00FC, rd);
+    if (rd !== 16'd22) begin
+        $sformat(str, "cursor after band reads = %0d, expected 22", rd);
+        logger.error(module_name, str); errors = errors + 1;
+    end
+
     if (errors == 0) begin
-        logger.info(module_name, "wb_osd: enable/cursor/auto-increment/clear/read-back all correct");
+        logger.info(module_name, "wb_osd: enable/cursor/auto-inc/clear/read-back/burst-band all correct");
         `TEST_PASS
     end else
         `TEST_FAIL

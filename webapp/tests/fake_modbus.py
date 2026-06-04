@@ -113,7 +113,10 @@ class FakeModbusSlave:
             return 0x01 if self.osd_enabled else 0x00   # OSD control: bit0 = enable
         if addr == 0xFC:
             return self.osd_cursor   # OSD cursor
-        if addr == 0xFD:             # OSD char at the cursor; read auto-increments
+        # OSD char at the cursor; read auto-increments. 0xFD is the single-cell
+        # register; the burst-read band [0x0800..0x0FFF] behaves identically, so an
+        # FC03 over consecutive band addresses walks the buffer in one transaction.
+        if addr == 0xFD or 0x0800 <= addr < 0x1000:
             val = self.osd_cells[self.osd_cursor]
             self.osd_cursor = (self.osd_cursor + 1) % len(self.osd_cells)
             return val

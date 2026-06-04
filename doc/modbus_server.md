@@ -277,6 +277,15 @@ so it takes one bus wait-state — handled by a small `G_IDLE → G_CAP → G_RE
 in `wb_osd` — then auto-increments the cursor like a write, letting a host read a
 run of cells back to back.
 
+**OSD burst-read band (`0x0800`–`0x0FFF`).** The interconnect routes *reads* in
+this band to `wb_osd`, where they behave exactly like a `0xFD` read (glyph at the
+cursor + auto-increment). Because they are consecutive register *addresses*, a
+single FC03 of up to 127 registers reads 127 cells in one Modbus transaction (the
+address value is ignored; the cursor walks), so a host reads the whole 60×17
+buffer in ~9 transactions instead of 1020 single `0xFD` reads. This mirrors the
+frame-grab stream band (`≥ 0x1000` → `wb_grab`); a write in the band is unowned
+and default-acked.
+
 ## Connections summary
 
 The wrapper's external ports are unchanged, so the connections to the rest of the

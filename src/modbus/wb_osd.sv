@@ -81,19 +81,29 @@ module wb_osd (
     // osd_rd_we to advance the cursor.
     localparam [1:0] G_IDLE = 2'd0, G_CAP = 2'd1, G_RESP = 2'd2;
     reg  [1:0] gstate;
-    wire glyph_rd = sel & ~wb_we_i & (wb_adr_i == ADDR_OSD_DATA);
 
-    // single-cycle ack for everything except a 0xFD glyph read (waits for G_RESP)
+    // A glyph read returns the cell at the cursor and advances it: either a single
+    // 0xFD read, or a read in the OSD burst-read band. The interconnect routes the
+    // band [OSD_STREAM_BASE .. 0x0FFF] (reads) here, so an FC03 burst over
+    // consecutive band addresses reads a run of cells in one Modbus transaction
+    // (the address value is ignored; the cursor walks). Must match wb_interconnect.
+    localparam [15:0] OSD_STREAM_BASE = 16'h0800;
+    wire glyph_rd = sel & ~wb_we_i &
+                    ((wb_adr_i == ADDR_OSD_DATA) | (wb_adr_i >= OSD_STREAM_BASE));
+
+    // single-cycle ack for everything except a glyph read (waits for G_RESP)
     assign wb_ack_o = sel & (~glyph_rd | (gstate == G_RESP));
 
     // combinational read decode
     always @* begin
-        case (wb_adr_i)
-            ADDR_OSD_CTRL: wb_dat_o = {15'd0, osd_enable};
-            ADDR_OSD_ADDR: wb_dat_o = {5'd0, osd_cursor};
-            ADDR_OSD_DATA: wb_dat_o = {8'h00, osd_rb_data};   // glyph at the cursor
-            default:       wb_dat_o = 16'h0000;               // any unowned address
-        endcase
+        if (wb_adr_i == ADDR_OSD_CTRL)
+            wb_dat_o = {15'd0, osd_enable};
+        else if (wb_adr_i == ADDR_OSD_ADDR)
+            wb_dat_o = {5'd0, osd_cursor};
+        else if ((wb_adr_i == ADDR_OSD_DATA) | (wb_adr_i >= OSD_STREAM_BASE))
+            wb_dat_o = {8'h00, osd_rb_data};   // glyph at the cursor (0xFD or band)
+        else
+            wb_dat_o = 16'h0000;               // any unowned address
     end
 
     // ---- bus side: turn writes into the control pulses ----
@@ -205,9 +215,11 @@ module wb_osd (
         // --- combinational read decode (correct for every address) ---
         if (wb_adr_i == ADDR_OSD_CTRL) assert (wb_dat_o == {15'd0, osd_enable});
         if (wb_adr_i == ADDR_OSD_ADDR) assert (wb_dat_o == {5'd0, osd_cursor});
-        if (wb_adr_i == ADDR_OSD_DATA) assert (wb_dat_o == {8'h00, osd_rb_data});
+        // 0xFD and the burst-read band both return the glyph at the cursor
+        if (wb_adr_i == ADDR_OSD_DATA || wb_adr_i >= OSD_STREAM_BASE)
+            assert (wb_dat_o == {8'h00, osd_rb_data});
         if (wb_adr_i != ADDR_OSD_CTRL && wb_adr_i != ADDR_OSD_ADDR &&
-            wb_adr_i != ADDR_OSD_DATA)
+            wb_adr_i != ADDR_OSD_DATA && wb_adr_i < OSD_STREAM_BASE)
             assert (wb_dat_o == 16'h0000);   // any unowned address
 
         // --- the read-back port always presents the current cursor ---

@@ -215,9 +215,15 @@ with back-to-back FC06 writes. Control codes and space render blank. Clearing
 (`0xFB` bit1) sweeps all 1020 cells to blank in hardware and homes the cursor.
 
 **Reading the overlay back:** set the cursor (`0xFC`), then read `0xFD` to get the
-glyph at the cursor; the cursor auto-increments, so back-to-back FC03 reads walk a
-run of cells. (The read is one bus wait-state slower than a write — the character
-buffer's read port is registered — but the host doesn't notice over UART.)
+glyph at the cursor; the cursor auto-increments, so back-to-back single reads walk
+a run of cells. (The read is one bus wait-state slower than a write — the
+character buffer's read port is registered — but the host doesn't notice over
+UART.) To read the *whole* buffer efficiently, use the **burst-read band**:
+addresses `0x0800`–`0x0FFF` (reads only) return successive cells from the cursor,
+so a single FC03 of up to 127 registers fetches 127 cells at once — the full
+60×17 buffer is ~9 reads instead of 1020. Set the cursor (`0xFC`), then FC03-burst
+from `0x0800` (the address is ignored; the cursor walks). A write in this band is
+ignored (reads as 0).
 
 ```sh
 # show "HI" at the top-left, then enable the overlay

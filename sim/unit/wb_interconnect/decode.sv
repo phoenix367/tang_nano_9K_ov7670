@@ -109,12 +109,19 @@ initial begin
     check(16'h2ABC, 1'b0, 3, D_GRAB, "stream read high");
     check(16'h1000, 1'b1, 0, 16'h0000, "0x1000 stream write (unowned)");
 
+    // OSD burst-read band [0x0800..0x0FFF]: read -> osd, write -> unowned
+    check(16'h0800, 1'b0, 4, D_OSD,  "0x0800 osd burst read");
+    check(16'h0BFB, 1'b0, 4, D_OSD,  "osd burst read top cell");
+    check(16'h0FFF, 1'b0, 4, D_OSD,  "osd band high");
+    check(16'h0800, 1'b1, 0, 16'h0000, "0x0800 osd-band write (unowned)");
+
     // unmapped gaps -> no slave, default ack, data 0
     check(16'h00CA, 1'b0, 0, 16'h0000, "0xCA gap");
     check(16'h00EF, 1'b0, 0, 16'h0000, "0xEF gap");
     check(16'h00FE, 1'b0, 0, 16'h0000, "0xFE gap");
     check(16'h00FF, 1'b0, 0, 16'h0000, "0xFF gap");
-    check(16'h0200, 1'b0, 0, 16'h0000, "0x0200 gap");
+    check(16'h0200, 1'b0, 0, 16'h0000, "0x0200 gap (below the OSD band)");
+    check(16'h07FF, 1'b0, 0, 16'h0000, "0x07FF gap (just below the OSD band)");
 
     // cyc low -> no select, no ack
     m_adr = 16'h0000; m_we = 1'b0; m_cyc = 1'b0; m_stb = 1'b1; #1;

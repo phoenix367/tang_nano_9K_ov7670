@@ -57,6 +57,13 @@ module wb_interconnect (
     // write is unowned -> sel_none, matching the old default arm).
     wire stream_rd = active & ~m_we_i & (m_adr_i >= 16'h1000);
 
+    // wb_osd burst-read band [0x0800 .. 0x0FFF], READS only: an FC03 burst over
+    // consecutive addresses reads a run of OSD cells in one transaction (the cell
+    // comes from wb_osd's cursor, not the address). Must match OSD_STREAM_BASE in
+    // wb_osd. (A write in this band is unowned -> default-ack, like the stream.)
+    wire osd_stream_rd = active & ~m_we_i &
+                         (m_adr_i >= 16'h0800) & (m_adr_i < 16'h1000);
+
     wire sel_sccb     = active & (m_adr_i <= 16'h00C9);
     wire sel_sysregs  = active & (   (m_adr_i == 16'h00F0)
                                    | (m_adr_i == 16'h00F1)
@@ -72,7 +79,8 @@ module wb_interconnect (
     wire sel_grab     = sel_grab_reg | stream_rd;
     wire sel_osd      = active & (   (m_adr_i == 16'h00FB)
                                    | (m_adr_i == 16'h00FC)
-                                   | (m_adr_i == 16'h00FD));
+                                   | (m_adr_i == 16'h00FD))
+                      | osd_stream_rd;
     wire sel_none     = active & ~(sel_sccb | sel_sysregs | sel_grab | sel_osd);
 
     assign sccb_stb_o    = sel_sccb;
@@ -103,7 +111,8 @@ module wb_interconnect (
     // (it references only ports, not the implementation's internal sel_* wires),
     // so a decode typo / off-by-one in the RTL is caught as a mismatch.
     wire f_active = m_cyc_i & m_stb_i;
-    wire f_stream = f_active & ~m_we_i & (m_adr_i >= 16'h1000);   // stream READS only
+    wire f_stream = f_active & ~m_we_i & (m_adr_i >= 16'h1000);   // grab stream READS
+    wire f_osd_stream = f_active & ~m_we_i & (m_adr_i >= 16'h0800) & (m_adr_i < 16'h1000);
     wire f_exp_sccb    = f_active & (m_adr_i <= 16'h00C9);
     wire f_exp_sysregs = f_active & ((m_adr_i == 16'h00F0) | (m_adr_i == 16'h00F1)
                                    | (m_adr_i == 16'h00F2) | (m_adr_i == 16'h00F9)
@@ -113,7 +122,8 @@ module wb_interconnect (
                                     | (m_adr_i == 16'h00F7) | (m_adr_i == 16'h00F8))
                                    | f_stream);
     wire f_exp_osd     = f_active & ((m_adr_i == 16'h00FB) | (m_adr_i == 16'h00FC)
-                                   | (m_adr_i == 16'h00FD));
+                                   | (m_adr_i == 16'h00FD))
+                       | f_osd_stream;
     wire f_exp_none    = f_active & ~(f_exp_sccb | f_exp_sysregs | f_exp_grab | f_exp_osd);
 
     always @(*) begin
