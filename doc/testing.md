@@ -54,7 +54,8 @@ sim/
 │   ├── wb_sccb/
 │   │   └── transaction.sv           Wishbone SCCB slave vs i2c stack + slave model: write/read + init gate
 │   ├── wb_sysregs/
-│   │   └── regs.sv                  magic / uptime (coherent pair) / health / cam_reinit pulse
+│   │   ├── regs.sv                  magic / uptime (coherent pair) / health / cam_reinit pulse
+│   │   └── health.sv               wd_health exposed on 0xF9: bit layout sweep + non-destructive / live passthrough
 │   ├── wb_grab/
 │   │   └── stream.sv                grab regs F3..F8 + stream-band ramp walk + rewind (stubbed ch1)
 │   └── wb_osd/

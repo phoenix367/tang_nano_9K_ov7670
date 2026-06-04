@@ -208,6 +208,7 @@ register_test(integration "modbus/cam_bridge"
 # module on the 27 MHz bus; the interconnect test stubs the slaves, so it needs
 # only the decode/mux logic. wb_sccb drives the full SCCB stack like cam_bridge.
 register_test(unit "wb_sysregs/regs"        "${SRC_FOLDER}/modbus/wb_sysregs.sv")
+register_test(unit "wb_sysregs/health"      "${SRC_FOLDER}/modbus/wb_sysregs.sv")
 register_test(unit "wb_osd/cursor"          "${SRC_FOLDER}/modbus/wb_osd.sv")
 register_test(unit "wb_grab/stream"         "${SRC_FOLDER}/modbus/wb_grab.sv")
 register_test(unit "wb_interconnect/decode" "${SRC_FOLDER}/modbus/wb_interconnect.sv")
