@@ -155,6 +155,25 @@ def test_osd_clear_homes_cursor(dev):
     assert dev.read_reg(mc.REG_OSD_ADDR) == 0
 
 
+def test_osd_read_back(dev):
+    """0xFD reads back the glyph stored at the cursor; reads auto-increment."""
+    dev.osd_clear()
+    time.sleep(0.05)
+    codes = [0x48, 0x49, 0x21, 0x2A, 0x7E]   # 'H' 'I' '!' '*' '~'
+    base = 2 * mc.OSD_COLS + 5               # row 2, col 5
+    dev.write_single(mc.REG_OSD_ADDR, base)
+    for c in codes:
+        dev.write_single(mc.REG_OSD_DATA, c)
+
+    # read the run back; each 0xFD read returns the cell at the cursor and advances
+    assert dev.osd_read_cells(2, 5, len(codes)) == codes
+    assert dev.read_reg(mc.REG_OSD_ADDR) == base + len(codes), \
+        "0xFD reads did not auto-increment the cursor"
+
+    # cells past the written run are still blank from the clear above
+    assert dev.osd_read_cells(2, 5 + len(codes), 2) == [0x00, 0x00]
+
+
 # --------------------------------------------------------------- slow capabilities
 @pytest.mark.slow
 def test_frame_grab(dev):

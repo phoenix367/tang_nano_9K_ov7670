@@ -112,7 +112,11 @@ class FakeModbusSlave:
         if addr == 0xFB:
             return 0x01 if self.osd_enabled else 0x00   # OSD control: bit0 = enable
         if addr == 0xFC:
-            return self.osd_cursor   # OSD write cursor
+            return self.osd_cursor   # OSD cursor
+        if addr == 0xFD:             # OSD char at the cursor; read auto-increments
+            val = self.osd_cells[self.osd_cursor]
+            self.osd_cursor = (self.osd_cursor + 1) % len(self.osd_cells)
+            return val
         return self.regs.get(addr, 0) & 0xFF
 
     def _reply(self, func, payload):

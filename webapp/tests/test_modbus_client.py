@@ -180,6 +180,21 @@ def test_osd_write_text_off_grid_raises(rtu):
         c.osd_write_text(modbus_client.OSD_ROWS, 0, "x")
 
 
+def test_osd_read_cells_reads_back_written_glyphs(rtu):
+    c, slave = rtu
+    c.osd_write_text(1, 3, "Hi!")
+    cell = 1 * modbus_client.OSD_COLS + 3
+    assert c.osd_read_cells(1, 3, 3) == [ord("H"), ord("i"), ord("!")]
+    # the three reads auto-incremented the cursor past the run
+    assert slave.osd_cursor == cell + 3
+
+
+def test_osd_read_cells_off_grid_raises(rtu):
+    c, _ = rtu
+    with pytest.raises(ValueError):
+        c.osd_read_cells(modbus_client.OSD_ROWS, 0, 1)
+
+
 def test_osd_clear_blanks_buffer(rtu):
     c, slave = rtu
     c.osd_write_text(0, 0, "ABC")
