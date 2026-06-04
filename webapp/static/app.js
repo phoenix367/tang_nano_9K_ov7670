@@ -193,6 +193,7 @@ async function heartbeat() {
     if (lastUptime !== null && data.uptime < lastUptime - 1) {
       toast("Device was reset — resyncing", "error");
       loadSettings();                        // re-pull the reverted register state
+      loadOsdState();                        // re-read the (now cleared) OSD overlay
     }
     lastUptime = data.uptime;
     if (data.magic_ok === false) toast("Unexpected firmware magic", "error");

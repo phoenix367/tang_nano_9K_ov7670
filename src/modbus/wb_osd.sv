@@ -165,7 +165,12 @@ module wb_osd (
             osd_wr_addr    <= `WRAP_SIM(#1) 11'd0;
             osd_wr_data    <= `WRAP_SIM(#1) 8'd0;
             osd_cursor     <= `WRAP_SIM(#1) 11'd0;
-            osd_clear_busy <= `WRAP_SIM(#1) 1'b0;
+            // Kick off a clear sweep out of reset: the char buffer (a BSRAM in
+            // OSDOverlay) has no reset and survives a logic reset, so without this
+            // the overlay text would persist across a reset button press. The
+            // sweep blanks all cells in ~OSD_CELLS sys_clk cycles, long before the
+            // host connects, so a reset leaves the OSD genuinely empty.
+            osd_clear_busy <= `WRAP_SIM(#1) 1'b1;
             osd_clear_addr <= `WRAP_SIM(#1) 11'd0;
         end else begin
             osd_wr_en <= `WRAP_SIM(#1) 1'b0;          // default: no write this cycle

@@ -107,6 +107,10 @@ initial begin
     #2 reset_n = 0;
     repeat (3) @(posedge clk);
     reset_n = 1;
+    // wb_osd auto-runs a clear sweep out of reset (blanks the char buffer that a
+    // logic reset would otherwise leave intact); wait for it to finish before
+    // driving OSD ops, as the real host does (it connects ms after reset).
+    repeat (OSD_CELLS + 10) @(posedge clk);
     @(negedge clk);
 
     // 1) enable bit
