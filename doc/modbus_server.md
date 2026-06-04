@@ -2,14 +2,14 @@
 
 The board runs a **Modbus RTU slave** on the FT2232H channel-B UART so a host PC
 can read/write live OV7670 registers, poll status, and grab full camera frames.
-This document covers the two RTL blocks that implement it — `modbus_rtu_slave.sv`
-(the protocol engine) and `modbus_cam_backend.sv` (the bridge that turns each
-register access into a real action) — their state machines, and how they connect
-to the rest of the design.
+This document covers the RTL that implements it — `modbus_rtu_slave.sv` (the
+protocol engine) and the **Wishbone bus** behind it (`modbus_cam_backend.sv` as the
+composition root, a `wb_interconnect`, and four peripheral slaves) — their state
+machines, and how they connect to the rest of the design.
 
 For the host-facing register map and usage, see
 [host_control.md](host_control.md). For the channel-1 capture/stream hardware
-the backend drives, see [video_datapath.md](video_datapath.md).
+the bus drives, see [video_datapath.md](video_datapath.md).
 
 ## Block diagram
 
@@ -21,27 +21,48 @@ flowchart TB
     HOST["host PC<br/>pyserial / web app<br/>Modbus RTU @ 1 Mbaud 8-E-1"]
     UART["uart.sv<br/>byte layer (8-E-1, parity)"]
     SLAVE["modbus_rtu_slave.sv<br/>FC03 / FC06 / FC10<br/>CRC-16, exceptions<br/>response payload in BSRAM"]
-    BE["modbus_cam_backend.sv<br/>address decode → one of three actions"]
+    IC["wb_interconnect.sv<br/>address decode + dat/ack mux<br/>(default-ack for gaps)"]
+    SCCB["wb_sccb.sv<br/>0x00..0xC9"]
+    SYS["wb_sysregs.sv<br/>0xF0/F1/F2/F9/FA"]
+    GRAB["wb_grab.sv<br/>0xF3..F8 + ≥0x1000"]
+    WOSD["wb_osd.sv<br/>0xFB/FC/FD"]
     I2C["i2c_control_fsm → OV7670 (SCCB)"]
-    RES["served inline<br/>(no bus access)"]
-    CH1["grab_arm / grab_rd_* → VGA_timing<br/>→ psram_ch1 (PSRAM ch1)"]
-    OSD["osd_wr_* / osd_enable → VGA_timing<br/>→ OSDOverlay char buffer"]
+    CH1["VGA_timing → psram_ch1 (PSRAM ch1)"]
+    OSD["VGA_timing → OSDOverlay char buffer"]
 
     HOST <-->|"USB / FT2232H ch B"| UART
     UART <-->|"rx/tx bytes"| SLAVE
-    SLAVE <-->|"be_* handshake"| BE
-    BE -->|"camera reg 0x00..0xC9"| I2C
-    BE -->|"reserved/status 0xF0..0xFD"| RES
-    BE -->|"stream pixel ≥0x1000 / grab arm 0xF3"| CH1
-    BE -->|"OSD text 0xFB..0xFD"| OSD
+    SLAVE <-->|"be_* = Wishbone master"| IC
+    IC --> SCCB
+    IC --> SYS
+    IC --> GRAB
+    IC --> WOSD
+    SCCB -->|"camera reg 0x00..0xC9"| I2C
+    GRAB -->|"stream pixel ≥0x1000 / grab 0xF3"| CH1
+    WOSD -->|"OSD text 0xFB..0xFD"| OSD
+
+    subgraph WB["modbus_cam_backend.sv — Wishbone B4 classic-standard bus (sys_clk)"]
+        IC
+        SCCB
+        SYS
+        GRAB
+        WOSD
+    end
 ```
+
+`modbus_cam_backend.sv` keeps the same module name and port list it always had,
+but it is now a **thin composition wrapper**: internally it renames the slave's
+`be_*` handshake to a Wishbone master and instantiates the interconnect + four
+slaves. So `camera_control.v` and the integration test
+[`sim/integration/modbus/cam_bridge.sv`](../sim/integration/modbus/cam_bridge.sv)
+are unchanged across the refactor, and that test doubles as a byte-identical
+regression of the register map.
 
 The init FSM inside `camera_control.v` owns the SCCB controller during power-on
 register load; once it reaches `TRANSMIT_COMPLETE` it latches
-`cam_init_complete`, which (a) hands the `i2c_control_fsm` inputs over to the
-backend via an ownership mux, and (b) lets the backend service camera-register
-accesses. Reserved/status and stream accesses are served regardless of init
-state.
+`cam_init_complete`, which (a) hands the `i2c_control_fsm` inputs over to the bus
+via an ownership mux, and (b) lets `wb_sccb` service camera-register accesses.
+Status, grab, stream, and OSD accesses are served regardless of init state.
 
 ## `modbus_rtu_slave.sv` — the protocol engine
 
@@ -72,8 +93,21 @@ be_req, be_we, be_addr, be_wdata   →   (backend)   →   be_ready, be_rdata
 
 - `EXTERNAL_BACKEND = 0` (default): a tiny internal single-cycle RAM backend
   (used by the unit test) — `be_ready` the next cycle.
-- `EXTERNAL_BACKEND = 1` (the real design): `modbus_cam_backend` answers, taking
+- `EXTERNAL_BACKEND = 1` (the real design): the Wishbone bus answers, taking
   as long as it needs (an SCCB cycle, or a PSRAM burst). The FSM simply waits.
+
+This handshake is exactly a **Wishbone B4 classic-standard** single-access cycle —
+one outstanding access, the master stalls until `ack`, wait states are free. So
+`modbus_cam_backend` renames it 1:1 with no adapter logic:
+
+| `be_*` (slave side) | Wishbone master |
+| ------------------- | --------------- |
+| `be_req`            | `cyc & stb`     |
+| `be_we`             | `we`            |
+| `be_addr[15:0]`     | `adr`           |
+| `be_wdata[15:0]`    | `dat_w`         |
+| `be_ready`          | `ack`           |
+| `be_rdata[15:0]`    | `dat_r`         |
 
 ### State machine
 
@@ -129,92 +163,132 @@ This is what lets one FC03 carry 127 pixels of a frame download while the design
 stays well under the fabric budget (the payload maps to one block RAM; see
 [video_datapath.md](video_datapath.md) for why a big burst matters).
 
-## `modbus_cam_backend.sv` — the action bridge
+## The Wishbone bus (`modbus_cam_backend.sv`)
 
-Each `be_*` access is decoded by address into exactly one of three actions.
+`modbus_cam_backend.sv` was once one monolithic FSM that bundled five jobs behind
+the `be_*` handshake. It is now a thin wrapper around a Wishbone B4
+classic-standard bus: the `be_*`-as-master nets feed `wb_interconnect.sv`, which
+address-decodes to **four independent, individually-testable slaves**. Each
+concern lives in its own file, and each has its own unit test (see
+[testing.md](testing.md)).
 
-### 1. Camera register (`be_addr ≤ 0x00C9`) → live SCCB
+### `wb_interconnect.sv` — address decode + muxing
+
+Purely combinational: one master, four slaves. It decodes `wb_adr_i` into one
+mutually-exclusive per-slave strobe and muxes `dat_r` / `ack` back. The register
+map is byte-identical to before, so the decode uses **explicit constants for the
+scattered `0xFx` block** (never ranges — `F0/F1/F2/F9/FA` go to sysregs while
+`F3..F8` go to grab):
+
+| Address(es)                       | Slave         |
+| --------------------------------- | ------------- |
+| `0x0000..0x00C9`                  | `wb_sccb`     |
+| `0xF0, F1, F2, F9, FA`            | `wb_sysregs`  |
+| `0xF3..F8` and (read) `≥ 0x1000`  | `wb_grab`     |
+| `0xFB, FC, FD`                    | `wb_osd`      |
+| anything else (`0xCA..EF`, `FE/FF`, `0x100..0xFFF`, stream-band writes) | **default: ack with `dat_r = 0`** |
+
+The default-ack arm is essential: an unmapped address still acks (returning 0), so
+the master never hangs — preserving the old monolith's `default` behaviour. Since
+the master holds the address stable for the whole access, the combinational decode
+is glitch-free for a classic-standard cycle.
+
+### `wb_sccb.sv` — camera registers (`0x00..0xC9`) → live SCCB
 
 Drives the existing `i2c_control_fsm` exactly the way the power-on init FSM does
 (`store_data` held across the two stores for a write; a single store for a read):
 
-- **Write** (`be_we=1`): `W_STORE_ADDR → W_STORE_VAL → W_STORE_DONE → W_SEND →
+- **Write** (`we=1`): `W_STORE_ADDR → W_STORE_VAL → W_STORE_DONE → W_SEND →
   W_SEND_CLR → W_WAIT_RDY` — store the register index then the value, pulse
-  `send_data`, wait for `device_rdy`, ack.
-- **Read** (`be_we=0`): `R_STORE_ADDR → R_STORE_DONE → R_STORE_WAIT → R_RECV →
+  `send_data`, wait for `device_rdy`.
+- **Read** (`we=0`): `R_STORE_ADDR → R_STORE_DONE → R_STORE_WAIT → R_RECV →
   R_RECV_CLR → R_WAIT_VALID` — store the index, pulse `recv_data`, wait
   `data_valid`, return `{8'h00, data_out}`.
 
-Camera accesses are **gated by `cam_init_complete`** — they wait in `IDLE` until
-power-on init has released the SCCB bus.
+It is **gated by `cam_init_complete`**: a camera access holds `ack` low (the master
+stalls) until power-on init has released the SCCB bus. Because the interconnect
+masks an unselected slave's ack, a status/grab/OSD access still completes during
+init — only the camera access waits. This is a multi-cycle slave; `ack` is a Moore
+output asserted for one cycle in the final `S_RESP` state.
 
-### 2. Reserved / status register (`0xF0..0xFD`) → served inline
+### `wb_sysregs.sv` — status registers (`0xF0/F1/F2/F9/FA`)
 
-Answered directly in `IDLE` (no SCCB, no bus access), so the host can poll them
-even during camera init:
+Single-cycle (`ack = stb & cyc`, combinational `dat_o`). Houses the free-running
+uptime counter, independent of the bus:
 
 | Addr        | Action                                                          |
 | ----------- | --------------------------------------------------------------- |
 | `0xF0`      | read firmware magic `0xA5`                                       |
-| `0xF1/0xF2` | read uptime hi/lo (latched on the hi read for a coherent pair)   |
+| `0xF1/0xF2` | read uptime hi/lo (a hi read latches the counter for a coherent pair) |
+| `0xF9`      | read watchdog health `{monitoring, any_hang, cam, mem, lcd}` (from `wd_health`, see [video_datapath.md](video_datapath.md#health-watchdog)) |
+| `0xFA`      | write 1 = reset to defaults — pulse `cam_reinit`, restarting the camera init FSM in `camera_control.v` (re-walks the ROM like power-on) |
+
+### `wb_grab.sv` — frame grab + stream (`0xF3..F8`, `≥0x1000`)
+
+Two response timings behind one slave. The register accesses (`F3..F8`) are a fixed
+one-wait-state path; a **stream read** (`≥0x1000`) is the
+[frame download](video_datapath.md#frame-grab-and-host-download) fast path, keeping
+a stream pointer and a 256-bit burst buffer:
+
+| Addr        | Action                                                          |
+| ----------- | --------------------------------------------------------------- |
 | `0xF3`      | write 1 = arm a grab; write 2 = single-word ch1 read; read = `{calib,busy}` |
 | `0xF4/0xF5` | write the single-read ch1 address lo/hi (debug)                 |
 | `0xF6/0xF7` | read the single-read ch1 word hi/lo halves (debug)              |
 | `0xF8`      | write = rewind the download stream pointer to pixel 0           |
-| `0xF9`      | read = watchdog board health `{monitoring, any_hang, cam, mem, lcd}` (from `wd_health`, see [video_datapath.md](video_datapath.md#health-watchdog)) |
-| `0xFA`      | write 1 = reset to defaults — pulse `cam_reinit`, restarting the camera init FSM in `camera_control.v` (re-walks the ROM like power-on) |
-| `0xFB`      | OSD control — write bit0 = `osd_enable`, bit1 = clear-buffer sweep; read bit0 = enable (see [video_datapath.md](video_datapath.md#osd-text-overlay)) |
-| `0xFC`      | OSD write cursor (`row*60 + col`); a separate always block drives the char-buffer write port |
-| `0xFD`      | OSD character code at the cursor; cursor auto-increments (wraps at 1020) |
-
-The OSD registers feed a small write-port FSM that drives `osd_wr_en/addr/data`
-to the dual-clock character buffer in `OSDOverlay`; a `0xFB` clear pulse triggers
-a hardware sweep that blanks all 1020 cells.
-
-### 3. Stream pixel (`be_addr ≥ 0x1000`) → frame download
-
-This is the [frame download](video_datapath.md#frame-grab-and-host-download)
-fast path. The backend keeps a stream pointer and a 256-bit burst buffer:
+| `≥0x1000` (read) | return the next 16-bit frame pixel, advance the pointer    |
 
 ```mermaid
 stateDiagram-v2
-    IDLE --> S_STRM: stream read (be_addr ≥ 0x1000)
-    S_STRM --> S_SERVE: burst already buffered
-    S_STRM --> S_FETCH0: need a new burst
+    G_IDLE --> S_RESP: register access (F3..F8), 1 wait state
+    G_IDLE --> S_SERVE: stream read, burst already buffered
+    G_IDLE --> S_FETCH0: stream read, need a new burst
     S_FETCH0 --> S_FETCH1: pulse grab_rd_req @ s_baddr
     S_FETCH1 --> S_FETCH2: grab_busy ↑ (accepted)
     S_FETCH2 --> S_SERVE: grab_busy ↓, latch 256-bit burst
-    S_SERVE --> ACK: return pixel (lo then hi half), advance widx/half
-    ACK --> DRAIN: be_ready pulse
-    DRAIN --> IDLE: be_req dropped
+    S_SERVE --> S_RESP: latch pixel (lo then hi half), advance widx/half
+    S_RESP --> G_IDLE: ack (Moore, 1 cycle)
 ```
 
-At the end of an 8-word burst the pointer advances (`s_baddr += 16`) and the
-buffer is marked empty, so the next pixel triggers a fresh `S_FETCH0`.
+While fetching a burst the slave **holds `ack` low** (classic-standard wait states),
+so the master simply stalls — the same back-pressure the old monolith got from
+withholding `be_ready`. At the end of an 8-word burst the pointer advances
+(`s_baddr += 16`) and the buffer is marked empty, so the next pixel triggers a
+fresh `S_FETCH0`. Each `psram_ch1` read returns a full **8-word (16-pixel) burst**,
+so the slave hits PSRAM once per 16 pixels and serves the rest from `s_burst`; the
+host issues back-to-back FC03s from `0x1000` to pull the whole frame.
 
-Each `psram_ch1` read returns a full **8-word (16-pixel) burst**, so the backend
-only hits PSRAM once per 16 pixels and serves the rest from `s_burst`. An FC03 of
-125 registers therefore walks 125 consecutive frame pixels with at most ~8 ch1
-reads; the host issues back-to-back FC03s from `0x1000` to pull the whole frame.
+### `wb_osd.sv` — OSD text overlay (`0xFB/FC/FD`)
 
-### Handshake tail
+Single-cycle on the bus; a second always block runs the cursor / clear-sweep /
+char-buffer write port (verbatim from the old monolith):
 
-All three paths converge on `ACK` (assert `be_ready`, present `be_rdata`) then
-`DRAIN` (wait for `be_req` to drop) before returning to `IDLE`, matching what the
-slave's `S_RD_CAP` / `S_WR_WAIT` expect.
+| Addr   | Action                                                                |
+| ------ | --------------------------------------------------------------------- |
+| `0xFB` | write bit0 = `osd_enable`, bit1 = clear-buffer sweep; read bit0 = enable (see [video_datapath.md](video_datapath.md#osd-text-overlay)) |
+| `0xFC` | write OSD cursor (`row*60 + col`); read = current cursor              |
+| `0xFD` | write character code at the cursor; cursor auto-increments (wraps at 1020) |
+
+A `0xFB` clear pulse triggers a hardware sweep that blanks all 1020 cells and homes
+the cursor; the write port drives `osd_wr_en/addr/data` into the dual-clock
+character buffer in `OSDOverlay`.
 
 ## Connections summary
+
+The wrapper's external ports are unchanged, so the connections to the rest of the
+design are the same — only the internal owner (which slave) differs:
 
 | Signal group                                            | Between                                  |
 | ------------------------------------------------------- | ---------------------------------------- |
 | `tx_*` / `rx_*`                                         | `uart.sv` ↔ `modbus_rtu_slave`           |
-| `be_req/we/addr/wdata` → `be_ready/rdata`               | `modbus_rtu_slave` ↔ `modbus_cam_backend`|
-| `store_data/send_data/recv_data/i2c_din` → `device_rdy/data_valid/i2c_dout` | `modbus_cam_backend` ↔ `i2c_control_fsm` (muxed with the init FSM by `cam_init_complete`) |
-| `grab_arm/grab_rd_req/grab_rd_addr` → `grab_busy/grab_rd_data[255:0]/grab_calib` | `modbus_cam_backend` ↔ `VGA_timing` → `psram_ch1` |
-| `osd_enable/osd_wr_en/osd_wr_addr/osd_wr_data` | `modbus_cam_backend` → `VGA_timing` → `OSDOverlay` |
+| `be_req/we/addr/wdata` → `be_ready/rdata` (= Wishbone master) | `modbus_rtu_slave` ↔ `modbus_cam_backend` (`wb_interconnect`) |
+| `store_data/send_data/recv_data/i2c_din` → `device_rdy/data_valid/i2c_dout` | `wb_sccb` ↔ `i2c_control_fsm` (muxed with the init FSM by `cam_init_complete`) |
+| `grab_arm/grab_rd_req/grab_rd_addr` → `grab_busy/grab_rd_data[255:0]/grab_calib` | `wb_grab` ↔ `VGA_timing` → `psram_ch1` |
+| `osd_enable/osd_wr_en/osd_wr_addr/osd_wr_data` | `wb_osd` → `VGA_timing` → `OSDOverlay` |
+| `cam_reinit`, `wd_health`                              | `wb_sysregs` ↔ `camera_control.v` / `VGA_timing` |
 
 All of the above are on `sys_clk`. The grab signals cross into the PSRAM
 `fb_clk` domain inside `psram_ch1` via toggle handshakes (req toggle + 2–3-FF
-sync + edge detect), so the backend never sees the crossing. The OSD char-buffer
+sync + edge detect), so the bus never sees the crossing. The OSD char-buffer
 write port crosses into `screen_clk` through `OSDOverlay`'s dual-clock RAM, and
 `osd_enable` through a `CDC_Bit_Synchronizer`.

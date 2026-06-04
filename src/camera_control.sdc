@@ -50,5 +50,28 @@ set_clock_groups -asynchronous -group [get_clocks {fb_clk}] -group [get_clocks {
 // runs once at power-up before any traffic, so these paths are not
 // silicon-real; clearing them would require an IP version that ships
 // its own SDC carve-out.
+//
+// Same vendor-IP class, RECOVERY edge: frame_buffer/u_psram_sync/
+// cs_memsync_3 (base/sys_clk) -> u_psram_top*/...PHY serdes & ck_gen
+// RESET pins (fb_clk). This is the IP's reset-distribution crossing; the
+// de-assertion is a one-time power-up async event and the PHY recalibrates
+// afterward before any traffic, so the recovery slack (worst ~-2.1 ns) is
+// not silicon-real (HW-verified: PSRAM calibrates and frames display).
+// The 27 MHz Wishbone bus enlarged the netlist enough that the placer no
+// longer routes this crossing as short as the smaller pre-bus design did
+// (which met it at +0.753). Unlike the calib cells above, cs_memsync_3 IS
+// reachable from user SDC, so it is correctly false-pathed below (a reset
+// synchronizer on our side only lengthens the path -- tried 2026-06-04,
+// reverted; see memory project_fbclk_ceiling). route_option 2 in
+// scripts/gw_run.tcl independently recovers the fb_clk setup margin.
+
+// Carve out the benign vendor-IP reset-recovery paths described above. All of
+// them launch from the single reset-distribution register cs_memsync_3_s0, so one
+// -from false_path covers every fanout to the PHY serdes / ck_gen RESET pins. This
+// is correct (not masking): the reset de-assertion is a one-time power-up async
+// event and the PHY recalibrates before any traffic (HW-verified). Unlike the
+// calib cells, this register name is reachable (cf. the working clkdiv/CLKOUT pin
+// constraint above); if a future IP regen mangles it, this line simply no-ops.
+set_false_path -from [get_pins {VGA_timing_inst/frame_buffer/u_psram_sync/cs_memsync_3_s0/Q}]
 
 report_high_fanout_nets -max_nets 10

@@ -47,8 +47,18 @@ sim/
 │   │   └── round_robin.sv           grant / hold / mask / round-robin (width 2)
 │   ├── cam_pixel_processor/
 │   │   └── frame_sequence.sv        start / per-row / end command framing
-│   └── uart/
-│       └── frame.sv                 8-E-1 UART: loopback + parity/frame error paths
+│   ├── uart/
+│   │   └── frame.sv                 8-E-1 UART: loopback + parity/frame error paths
+│   ├── wb_interconnect/
+│   │   └── decode.sv                Wishbone address decode → per-slave strobe, dat/ack mux, default-ack
+│   ├── wb_sccb/
+│   │   └── transaction.sv           Wishbone SCCB slave vs i2c stack + slave model: write/read + init gate
+│   ├── wb_sysregs/
+│   │   └── regs.sv                  magic / uptime (coherent pair) / health / cam_reinit pulse
+│   ├── wb_grab/
+│   │   └── stream.sv                grab regs F3..F8 + stream-band ramp walk + rewind (stubbed ch1)
+│   └── wb_osd/
+│       └── cursor.sv                enable / cursor auto-increment / clear sweep over 1020 cells
 │
 └── integration/                     cross-module tests
     ├── frame_roundtrip/
@@ -58,10 +68,18 @@ sim/
     │   ├── register_read.sv         i2c_master_top SCCB reads (WISHBONE BFM) vs seeded slave memory
     │   └── fsm_read.sv              i2c_control_fsm recv_data read path: data_out vs seeded slave memory
     ├── modbus/
-    │   └── rtu_slave.sv             Modbus RTU slave (FC03/06/16 + exceptions + bad-CRC) over 2 cross-wired UARTs
+    │   ├── rtu_slave.sv             Modbus RTU slave (FC03/06/16 + exceptions + bad-CRC) over 2 cross-wired UARTs
+    │   └── cam_bridge.sv            full stack UART→slave→Wishbone bus→i2c→OV7670 model; byte-identical register-map regression
     └── pillarbox/
         └── borders{,_full,_vmap}.sv vertical resize + pillarbox pixel mapping
 ```
+
+The five `wb_*` unit tests cover the Wishbone bus that replaced the monolithic
+backend (see [modbus_server.md](modbus_server.md)). `wb_interconnect/decode`
+stubs the slaves and checks every address routes correctly (including the
+scattered `0xFx` split and the default-ack for unmapped gaps); the per-slave
+tests verify behaviour in isolation. `modbus/cam_bridge` exercises the whole
+composed bus end to end and is the byte-identical guard for the register map.
 
 The I2C test passes per-test extra sources (the opencores I2C core + the
 behavioural `i2c_slave_model`) to `register_test` after the test path —
