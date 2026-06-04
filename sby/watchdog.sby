@@ -1,13 +1,16 @@
 # Cover-reachability for the health watchdog (src/watchdog.sv) via SBY + an SMT
 # solver. The SAFETY invariants (hang stickiness/consistency, arm ordering, by
-# k-induction) run under yosys's built-in SAT as `ctest -L formal`
-# (formal_watchdog); this .sby confirms the interesting states are reachable so
-# that proof isn't vacuous: monitoring arms, a subsystem actually hangs, and the
-# blink heartbeat toggles.
+# k-induction) run under yosys's built-in SAT as `ctest -L formal` (formal_watchdog);
+# this .sby confirms the interesting states are reachable so that proof isn't
+# vacuous: monitoring arms, a subsystem actually times out (hang), and blink toggles.
 #
-# Properties + small-parameter instance live in sby/watchdog_formal.sv (src
-# stays pristine). Requires an SMT solver on PATH (z3 in this dev env). The depth
-# spans the small STARTUP grace + TIMEOUT so a hang is reachable. From repo root:
+# Properties are embedded in src/watchdog.sv behind `ifdef FORMAL (no separate
+# wrapper). The shipped STARTUP/TIMEOUT (54M/13.5M) put a hang far out of BMC
+# reach, so the cover shrinks them via chparam; SBY_COVER starts from a real reset
+# so the covers reflect a genuine reset->arm->timeout path. The k-induction proof
+# needs no shrink (its invariants are scale-invariant).
+#
+# Requires an SMT solver on PATH (z3 in this dev env). From the repo root:
 #     sby -f sby/watchdog.sby
 
 [options]
@@ -18,8 +21,11 @@ depth 24
 smtbmc z3
 
 [script]
-read_verilog -sv -formal -DSBY_COVER watchdog.sv CDC_Bit_Synchronizer.v watchdog_formal.sv
-prep -top watchdog_formal -flatten
+read_verilog -sv -formal -DFORMAL -DSBY_COVER watchdog.sv CDC_Bit_Synchronizer.v
+chparam -set STARTUP 8 watchdog
+chparam -set TIMEOUT 4 watchdog
+chparam -set BLINK 2 watchdog
+prep -top watchdog -flatten
 
 # Copied into <workdir>/src/ by basename; watchdog.sv's `include "timescale.v"`
 # resolves there, so timescale.v must be listed too.
@@ -27,4 +33,3 @@ prep -top watchdog_formal -flatten
 src/watchdog.sv
 src/timescale.v
 FPGADesignElements/CDC_Bit_Synchronizer.v
-sby/watchdog_formal.sv

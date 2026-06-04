@@ -1,13 +1,12 @@
 # Cover-reachability for the round-robin arbiter (src/arbiter.v) via SBY + an SMT
-# solver. The SAFETY assertions (mutual exclusion + grant/req/enable/select
-# invariants, by k-induction) run under yosys's built-in SAT as `ctest -L formal`
-# (formal_arbiter); this .sby confirms the interesting states are reachable so
-# that proof isn't vacuous: each lane can be granted, and the arbiter hands off
-# between lanes (round-robin makes progress).
+# solver. The SAFETY invariants (mutual exclusion + grant/req/enable/select, by
+# k-induction) run under yosys's built-in SAT as `ctest -L formal` (formal_arbiter);
+# this .sby confirms the interesting states are reachable so that proof isn't
+# vacuous: each lane can be granted, and the arbiter hands off between lanes.
 #
-# Properties live in the wrapper sby/arbiter_formal.sv (src/arbiter.v stays
-# pristine). Requires an SMT solver on PATH (z3 in this dev env). From repo root:
-#     sby -f sby/arbiter.sby
+# Properties are embedded in src/arbiter.v behind `ifdef FORMAL (no separate
+# wrapper). width is fixed to 4 via chparam. Requires an SMT solver on PATH (z3 in
+# this dev env). From the repo root:  sby -f sby/arbiter.sby
 
 [options]
 mode cover
@@ -17,12 +16,13 @@ depth 6
 smtbmc z3
 
 [script]
-read_verilog -sv -formal arbiter.v arbiter_formal.sv
-prep -top arbiter_formal -flatten
+read_verilog -sv -formal -DFORMAL arbiter.v
+chparam -set width 4 arbiter
+chparam -set select_width 2 arbiter
+prep -top arbiter -flatten
 
 # Copied into <workdir>/src/ by basename; arbiter.v's `include "functions.v"`
 # resolves there, so functions.v must be listed too.
 [files]
 src/arbiter.v
 src/functions.v
-sby/arbiter_formal.sv
