@@ -212,6 +212,7 @@ register_test(unit "wb_sysregs/health"      "${SRC_FOLDER}/modbus/wb_sysregs.sv"
 register_test(unit "wb_osd/cursor"          "${SRC_FOLDER}/modbus/wb_osd.sv")
 register_test(unit "wb_grab/stream"         "${SRC_FOLDER}/modbus/wb_grab.sv")
 register_test(unit "wb_interconnect/decode" "${SRC_FOLDER}/modbus/wb_interconnect.sv")
+register_test(unit "be_arbiter/two_master"  "${SRC_FOLDER}/modbus/be_arbiter.v")
 register_test(unit "wb_sccb/transaction"
     "${SRC_FOLDER}/modbus/wb_sccb.sv"
     "${SRC_FOLDER}/i2c/i2c_master.v"

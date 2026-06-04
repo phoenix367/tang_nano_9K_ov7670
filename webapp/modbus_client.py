@@ -36,6 +36,9 @@ MODBUS_MAX_READ_QTY = _platform.MODBUS_MAX_READ_QTY
 CAM_REG_MAX = 0x00C9   # highest OV7670 register (the 1:1-mapped camera range is 0x00..0xC9)
 REG_GRAB    = 0x00F3   # write 1 = arm a grab; read bit0 = busy, bit1 = ch1 calibrated
 REG_STREAM  = 0x00F8   # write = rewind the download stream to pixel 0
+REG_HEARTBEAT = 0x00E0 # RW scratch; on a SERV_CONTROL build the SERV co-master
+                       # increments it so the host can confirm the CPU is live
+                       # on the bus. Reads 0 on a default (Modbus-only) build.
 REG_HEALTH  = 0x00F9   # read = watchdog health bits (see read_health)
 REG_REINIT  = 0x00FA   # write 1 = re-run camera init (reset all registers to defaults)
 REG_OSD_CTRL = 0x00FB  # write bit0 = enable, bit1 = clear; read bit0 = enable

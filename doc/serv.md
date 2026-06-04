@@ -64,10 +64,51 @@ The bitstream lands at `serv_soc/impl/pnr/serv_blink.fs`; the timing report is
 `serv_soc/impl/pnr/serv_blink_tr_content.html` (parse with the `hw-check` skill's
 `parse_timing.py --report ...`).
 
+## Phase 2 — SERV as a 2nd Wishbone master in the camera design
+
+Behind the `SERV_CONTROL` build flag, SERV joins the camera's 27 MHz Wishbone bus
+as a **second master** alongside the Modbus host path, and runs firmware that
+increments a **heartbeat register (0x00E0)**. The host reads that register over
+Modbus to confirm the CPU is alive on the bus — while normal host control keeps
+working. This is host-verifiable proof that a soft CPU can drive the real `wb_*`
+peripherals on the live bus.
+
+How it fits together:
+- `src/serv/serv_cpu.v` — `servile` + the 32-bit `servant_ram` (firmware) +
+  `serv_rf_ram`, exposing the Wishbone "ext" master bus.
+- `src/modbus/be_arbiter.v` — 2-master arbiter (host priority, owner-locked for
+  multi-cycle accesses) muxing the Modbus master and SERV onto
+  `modbus_cam_backend`'s `be_*` port. SERV's byte-addressed ext bus maps to a
+  be-style master: `be_addr = adr[15:0]`, word store → data in `dat[15:0]`.
+- `wb_sysregs` gains the heartbeat register at 0x00E0 (host-RW scratch, reads 0
+  on a default build); `wb_interconnect` routes 0x00E0 to it. Both are
+  unconditional and covered by the unit + formal tests.
+- `serv_soc/heartbeat.S` — the firmware (writes an incrementing counter to
+  `0x400000E0`, whose low 16 bits select register 0xE0).
+- `src/build_config.vh` (generated) carries the `SERV_CONTROL` define + firmware
+  path; `camera_ov7670.gprj` is generated from `camera_ov7670.gprj.in` with the
+  SERV files' `enable` tied to the flag, so a default build excludes them
+  entirely (no extra logic, no phantom clocks).
+
+Build + verify the SERV variant:
+
+```sh
+cmake -S . -B build -D IVerilog_PATH=/usr/bin -D Gowin_PATH=/opt/gowin/IDE \
+      -D RISCV_PATH=/path/to/riscv/bin -D SERV_CONTROL=ON
+cmake --build build --target hw_all          # camera bitstream with SERV co-master
+cmake --build build --target hw_program
+# then, on hardware:
+OV7670_PORT=/dev/ttyGowin OV7670_SERV=1 .venv/bin/python -m pytest \
+    webapp/tests/test_device_hw.py::test_serv_heartbeat_advances -v
+```
+
+Measured: the SERV variant fits at ~63% logic / 87% CLS / 77% BSRAM and closes
+timing at 27 MHz (base Fmax ×1.51, all clocks OK); the default build is unchanged
+on real paths (`setup<0 = 0`). Reconfigure with `-D SERV_CONTROL=OFF` (the
+default) for the normal Modbus-only camera.
+
 ## Next steps (not yet implemented)
 
-Wire SERV into the camera design as an alternative Wishbone master behind a build
-flag — replacing the `modbus_rtu_slave` `be_*` master — with firmware that drives
-the real `wb_*` peripherals (sysregs/OSD). See the bus description in
-[modbus_server.md](modbus_server.md); the interconnect already has the right shape
-for a CPU master.
+Full firmware Modbus stack (SERV as the host *interface*, not just a co-master) —
+SERV would parse RTU frames over the UART and bridge to `wb_*`, replacing
+`modbus_rtu_slave`. See [modbus_server.md](modbus_server.md).

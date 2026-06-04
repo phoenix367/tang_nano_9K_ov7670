@@ -2,6 +2,8 @@ build/
 impl/
 *.user
 src/platform_config.vh
+src/build_config.vh
+camera_ov7670.gprj
 serv_soc/serv_blink.v
 serv_soc/impl/
 sim/Testing/

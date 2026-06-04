@@ -168,6 +168,32 @@ message(STATUS "Platform: ${PLATFORM_SYS_CLK_HZ} Hz sys_clk, Modbus id ${PLATFOR
 configure_file("${SRC_FOLDER}/platform_config.vh.in"
                "${SRC_FOLDER}/platform_config.vh" @ONLY)
 
+# ---------------------------------------------------------------------------
+# Build-variant config (src/build_config.vh). SERV_CONTROL=ON adds the SERV soft
+# core as a 2nd Wishbone master in the camera design (Phase 2; see doc/serv.md);
+# the firmware hex it loads is built in the SERV block below. Generated
+# unconditionally so camera_control.v's `include always resolves.
+# ---------------------------------------------------------------------------
+option(SERV_CONTROL "Add the SERV soft core as a 2nd Wishbone master (Phase 2)" OFF)
+set(SERV_HEARTBEAT_HEX "${CMAKE_CURRENT_BINARY_DIR}/serv_fw/heartbeat.hex")
+if (SERV_CONTROL)
+    set(SERV_CONTROL_DEFINE "`define SERV_CONTROL")
+    set(SERV_MEMFILE "${SERV_HEARTBEAT_HEX}")
+    set(SERV_ENABLE "1")
+    message(STATUS "SERV_CONTROL=ON: SERV is a 2nd Wishbone master (heartbeat @0x00E0)")
+else()
+    set(SERV_CONTROL_DEFINE "")
+    set(SERV_MEMFILE "")
+    set(SERV_ENABLE "0")
+endif()
+configure_file("${SRC_FOLDER}/build_config.vh.in"
+               "${SRC_FOLDER}/build_config.vh" @ONLY)
+# The Gowin project file is generated from a template: the SERV files carry
+# enable="${SERV_ENABLE}", so when SERV_CONTROL is off Gowin excludes them from
+# synthesis (they're not parsed, so they add no logic or phantom clocks).
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/camera_ov7670.gprj.in"
+               "${CMAKE_CURRENT_SOURCE_DIR}/camera_ov7670.gprj" @ONLY)
+
 set(CTEST_OUTPUT_ON_FAILURE ON)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
@@ -277,6 +303,26 @@ if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
     )
     add_custom_target(serv_firmware DEPENDS ${SERV_FW_HEX})
 
+    # Phase 2 heartbeat firmware (SERV as a 2nd Wishbone master in the camera
+    # design). Built into the path build_config.vh already points $readmemh at;
+    # when SERV_CONTROL=ON, the camera hw_* builds depend on it.
+    add_custom_command(
+        OUTPUT  ${SERV_HEARTBEAT_HEX}
+        COMMAND ${RISCV_GCC} -nostartfiles -nostdlib -march=rv32i_zicsr -mabi=ilp32
+                -Wl,--build-id=none -T ${SERV_DIR}/sw/link.ld
+                ${SERV_SOC_DIR}/heartbeat.S -o ${SERV_FW_DIR}/heartbeat.elf
+        COMMAND ${RISCV_OBJCOPY} -O binary ${SERV_FW_DIR}/heartbeat.elf ${SERV_FW_DIR}/heartbeat.bin
+        COMMAND python3 ${SERV_SOC_DIR}/bin2hex.py ${SERV_FW_DIR}/heartbeat.bin ${SERV_HEARTBEAT_HEX}
+        DEPENDS ${SERV_SOC_DIR}/heartbeat.S ${SERV_DIR}/sw/link.ld ${SERV_SOC_DIR}/bin2hex.py
+        COMMENT "Building SERV heartbeat firmware (RV32I)"
+        VERBATIM
+    )
+    add_custom_target(serv_heartbeat_firmware DEPENDS ${SERV_HEARTBEAT_HEX})
+    if (SERV_CONTROL)
+        add_dependencies(hw_synth serv_heartbeat_firmware)
+        add_dependencies(hw_all   serv_heartbeat_firmware)
+    endif()
+
     # Generate serv_blink.v with the absolute hex path baked in for $readmemh.
     set(SERV_MEMFILE "${SERV_FW_HEX}")
     configure_file("${SERV_SOC_DIR}/serv_blink.v.in" "${SERV_SOC_DIR}/serv_blink.v" @ONLY)
@@ -307,6 +353,10 @@ if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
             COMMENT "Programming SERV blinky to embedded flash (persistent)" USES_TERMINAL)
     endif()
 else()
+    if (SERV_CONTROL)
+        message(FATAL_ERROR "SERV_CONTROL=ON needs a RISC-V toolchain + the serv/ submodule "
+                            "(set -D RISCV_PATH=<bin> and run git submodule update --init serv)")
+    endif()
     message(STATUS "RISC-V gcc or serv/ submodule not found - SERV bring-up targets "
                    "disabled (set -D RISCV_PATH=<...> and run git submodule update --init serv)")
 endif()

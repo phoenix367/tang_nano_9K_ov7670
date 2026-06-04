@@ -137,8 +137,21 @@ initial begin
         logger.info(module_name, str);
     end
 
+    // 5) heartbeat (0xE0): plain RW scratch (0 at reset, reads back what's written)
+    wb_read(16'h00E0, rd);
+    if (rd !== 16'h0000) begin
+        $sformat(str, "heartbeat 0xE0 = %h at reset, expected 0000", rd);
+        logger.error(module_name, str); errors = errors + 1;
+    end
+    wb_write(16'h00E0, 16'hBEEF);
+    wb_read(16'h00E0, rd);
+    if (rd !== 16'hBEEF) begin
+        $sformat(str, "heartbeat 0xE0 = %h after write, expected BEEF", rd);
+        logger.error(module_name, str); errors = errors + 1;
+    end
+
     if (errors == 0) begin
-        logger.info(module_name, "wb_sysregs: magic/health/reinit/uptime all correct");
+        logger.info(module_name, "wb_sysregs: magic/health/reinit/uptime/heartbeat all correct");
         `TEST_PASS
     end else
         `TEST_FAIL

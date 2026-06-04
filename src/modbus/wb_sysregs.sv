@@ -62,13 +62,19 @@ module wb_sysregs
                       ADDR_UPTIME_HI = 16'h00F1,
                       ADDR_UPTIME_LO = 16'h00F2,
                       ADDR_HEALTH    = 16'h00F9,
-                      ADDR_REINIT    = 16'h00FA;
+                      ADDR_REINIT    = 16'h00FA,
+                      // Scratch/heartbeat register: a co-master (the SERV soft
+                      // core, Phase 2) writes an incrementing counter here and the
+                      // host reads it back to confirm the CPU is live on the bus.
+                      // Reads 0 on a build without SERV. RW, no side effects.
+                      ADDR_HEARTBEAT = 16'h00E0;
 
     wire sel = wb_stb_i & wb_cyc_i;       // this slave is addressed this cycle
 
     reg [15:0] uptime;          // free-running seconds-ish, 0 on reset
     reg [15:0] uptime_latch;    // captured on a high-byte read for a coherent pair
     reg [31:0] uptime_div;
+    reg [15:0] heartbeat;       // co-master scratch (0xE0); 0 until something writes it
 
     // single-cycle slave: acknowledge immediately
     assign wb_ack_o = sel;
@@ -80,6 +86,7 @@ module wb_sysregs
             ADDR_UPTIME_HI: wb_dat_o = {8'h00, uptime[15:8]};
             ADDR_UPTIME_LO: wb_dat_o = {8'h00, uptime_latch[7:0]};
             ADDR_HEALTH:    wb_dat_o = {11'd0, wd_health};
+            ADDR_HEARTBEAT: wb_dat_o = heartbeat;
             default:        wb_dat_o = 16'h0000;     // 0xFA + any unowned address
         endcase
     end
@@ -90,6 +97,7 @@ module wb_sysregs
             uptime       <= `WRAP_SIM(#1) 16'h0000;
             uptime_latch <= `WRAP_SIM(#1) 16'h0000;
             uptime_div   <= `WRAP_SIM(#1) 32'h0;
+            heartbeat    <= `WRAP_SIM(#1) 16'h0000;
         end else begin
             cam_reinit <= `WRAP_SIM(#1) 1'b0;   // 1-cycle pulse default
 
@@ -108,6 +116,9 @@ module wb_sysregs
                 // write 1 to 0xFA bit0 -> re-run camera init
                 if (wb_we_i && wb_adr_i == ADDR_REINIT && wb_dat_i[0])
                     cam_reinit <= `WRAP_SIM(#1) 1'b1;
+                // heartbeat (0xE0) is a plain RW scratch register
+                if (wb_we_i && wb_adr_i == ADDR_HEARTBEAT)
+                    heartbeat <= `WRAP_SIM(#1) wb_dat_i;
             end
         end
     end
@@ -140,9 +151,16 @@ module wb_sysregs
             assert (wb_dat_o == {8'h00, uptime_latch[7:0]});
         if (wb_adr_i == ADDR_HEALTH)
             assert (wb_dat_o == {11'd0, wd_health});
+        if (wb_adr_i == ADDR_HEARTBEAT)
+            assert (wb_dat_o == heartbeat);
         if (wb_adr_i != ADDR_MAGIC && wb_adr_i != ADDR_UPTIME_HI &&
-            wb_adr_i != ADDR_UPTIME_LO && wb_adr_i != ADDR_HEALTH)
+            wb_adr_i != ADDR_UPTIME_LO && wb_adr_i != ADDR_HEALTH &&
+            wb_adr_i != ADDR_HEARTBEAT)
             assert (wb_dat_o == 16'h0000);              // incl 0xFA + unowned
+
+        // heartbeat changes only on a write to its own address
+        if (f_past_valid && reset_n && $past(reset_n) && heartbeat != $past(heartbeat))
+            assert ($past(sel) && $past(wb_we_i) && $past(wb_adr_i) == ADDR_HEARTBEAT);
 
         // --- sequential invariants (only while running, i.e. no reset edge) ---
         if (f_past_valid && reset_n && $past(reset_n)) begin

@@ -114,6 +114,19 @@ def test_illegal_address_raises(dev):
     assert ei.value.code == 2              # illegal data address
 
 
+@pytest.mark.skipif(not os.environ.get("OV7670_SERV"),
+                    reason="set OV7670_SERV=1 for a SERV_CONTROL (co-master) bitstream")
+def test_serv_heartbeat_advances(dev):
+    """On a SERV_CONTROL build the SERV co-master increments the heartbeat
+    register (0xE0); read it twice and confirm it advanced -- proof the soft CPU
+    is executing and driving the real Wishbone bus alongside the Modbus host.
+    (On a default build 0xE0 reads a constant 0, hence the OV7670_SERV gate.)"""
+    a = dev.read_holding(mc.REG_HEARTBEAT, 1)[0]
+    time.sleep(0.1)
+    b = dev.read_holding(mc.REG_HEARTBEAT, 1)[0]
+    assert a != b, f"heartbeat did not advance ({a} -> {b}); is SERV running?"
+
+
 # --------------------------------------------------------------- board health
 def test_board_health(dev):
     """The watchdog reports a healthy, monitoring board with no stuck subsystems."""

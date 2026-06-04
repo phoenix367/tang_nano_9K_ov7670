@@ -222,6 +222,7 @@ uptime counter, independent of the bus:
 | `0xF1/0xF2` | read uptime hi/lo (a hi read latches the counter for a coherent pair) |
 | `0xF9`      | read watchdog health `{monitoring, any_hang, cam, mem, lcd}` (from `wd_health`, see [video_datapath.md](video_datapath.md#health-watchdog)) |
 | `0xFA`      | write 1 = reset to defaults — pulse `cam_reinit`, restarting the camera init FSM in `camera_control.v` (re-walks the ROM like power-on) |
+| `0xE0`      | RW scratch / heartbeat. Reads 0 on a default build; on a `SERV_CONTROL` build the SERV co-master increments it (see [serv.md](serv.md#phase-2--serv-as-a-2nd-wishbone-master-in-the-camera-design)) |
 
 ### `wb_grab.sv` — frame grab + stream (`0xF3..F8`, `≥0x1000`)
 

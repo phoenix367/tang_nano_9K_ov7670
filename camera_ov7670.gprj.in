@@ -37,6 +37,30 @@
         <File path="src/modbus/wb_grab.sv" type="file.verilog" enable="1"/>
         <File path="src/modbus/wb_osd.sv" type="file.verilog" enable="1"/>
         <File path="src/platform_config.vh" type="file.verilog" enable="1"/>
+        <File path="src/build_config.vh" type="file.verilog" enable="1"/>
+        <File path="src/modbus/be_arbiter.v" type="file.verilog" enable="@SERV_ENABLE@"/>
+        <File path="src/serv/serv_cpu.v" type="file.verilog" enable="@SERV_ENABLE@"/>
+        <File path="serv/rtl/serv_bufreg.v" type="file.verilog" enable="@SERV_ENABLE@"/>
+        <File path="serv/rtl/serv_bufreg2.v" type="file.verilog" enable="@SERV_ENABLE@"/>
+        <File path="serv/rtl/serv_alu.v" type="file.verilog" enable="@SERV_ENABLE@"/>
+        <File path="serv/rtl/serv_csr.v" type="file.verilog" enable="@SERV_ENABLE@"/>
+        <File path="serv/rtl/serv_ctrl.v" type="file.verilog" enable="@SERV_ENABLE@"/>
+        <File path="serv/rtl/serv_decode.v" type="file.verilog" enable="@SERV_ENABLE@"/>
+        <File path="serv/rtl/serv_immdec.v" type="file.verilog" enable="@SERV_ENABLE@"/>
+        <File path="serv/rtl/serv_mem_if.v" type="file.verilog" enable="@SERV_ENABLE@"/>
+        <File path="serv/rtl/serv_rf_if.v" type="file.verilog" enable="@SERV_ENABLE@"/>
+        <File path="serv/rtl/serv_rf_ram_if.v" type="file.verilog" enable="@SERV_ENABLE@"/>
+        <File path="serv/rtl/serv_rf_ram.v" type="file.verilog" enable="@SERV_ENABLE@"/>
+        <File path="serv/rtl/serv_state.v" type="file.verilog" enable="@SERV_ENABLE@"/>
+        <File path="serv/rtl/serv_top.v" type="file.verilog" enable="@SERV_ENABLE@"/>
+        <File path="serv/rtl/serv_rf_top.v" type="file.verilog" enable="@SERV_ENABLE@"/>
+        <File path="serv/rtl/serv_aligner.v" type="file.verilog" enable="@SERV_ENABLE@"/>
+        <File path="serv/rtl/serv_compdec.v" type="file.verilog" enable="@SERV_ENABLE@"/>
+        <File path="serv/servile/servile_rf_mem_if.v" type="file.verilog" enable="@SERV_ENABLE@"/>
+        <File path="serv/servile/servile_mux.v" type="file.verilog" enable="@SERV_ENABLE@"/>
+        <File path="serv/servile/servile_arbiter.v" type="file.verilog" enable="@SERV_ENABLE@"/>
+        <File path="serv/servile/servile.v" type="file.verilog" enable="@SERV_ENABLE@"/>
+        <File path="serv/servant/servant_ram.v" type="file.verilog" enable="@SERV_ENABLE@"/>
         <File path="src/debug/debug_pattern_generator.sv" type="file.verilog" enable="1"/>
         <File path="src/debug/debug_pattern_generator2.sv" type="file.verilog" enable="1"/>
         <File path="src/device_delay.sv" type="file.verilog" enable="1"/>

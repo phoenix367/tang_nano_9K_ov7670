@@ -88,6 +88,10 @@ initial begin
     check(16'h0050, 1'b1, 1, D_SCCB, "0x50 camera write");
     check(16'h00C9, 1'b0, 1, D_SCCB, "0xC9 camera top");
 
+    // co-master heartbeat register routes to sysregs
+    check(16'h00E0, 1'b1, 2, D_SYS,  "0xE0 heartbeat write -> sysregs");
+    check(16'h00E0, 1'b0, 2, D_SYS,  "0xE0 heartbeat read -> sysregs");
+
     // the 0xFx split
     check(16'h00F0, 1'b0, 2, D_SYS,  "0xF0 magic");
     check(16'h00F1, 1'b0, 2, D_SYS,  "0xF1 uptime hi");
