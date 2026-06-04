@@ -1,41 +1,36 @@
 # Formal verification of wb_interconnect — the Wishbone address decoder + ack/dat
 # mux on the 27 MHz bus (see src/modbus/wb_interconnect.sv, doc/modbus_server.md).
 #
-# The module is purely combinational, so a depth-1 bounded model check is
-# EXHAUSTIVE: the solver considers every possible
-# {m_adr, m_we, m_cyc, m_stb, per-slave ack/dat} in a single step. The properties
-# (guarded by `ifdef FORMAL in the RTL) prove the decode matches the register-map
-# contract, strobes are mutually exclusive, every active access is claimed by
-# exactly one path (so the bus can't hang), the default path acks unmapped
-# addresses with 0, and ack/data are routed from the selected slave.
+# DIVISION OF LABOUR (both fast, both solver-friendly):
+#   * The SAFETY ASSERTIONS (decode == register map, mutual exclusion, no-hang,
+#     default-ack, ack/data routing) are proven EXHAUSTIVELY by yosys's built-in
+#     SAT solver in ~0.1 s, with no external SMT solver. That is the form wired
+#     into ctest (`ctest -L formal`); see sby/README.md for the one-liner.
+#   * This .sby runs the COVER reachability checks via SBY + an SMT solver,
+#     confirming every routing path (sccb / sysregs / grab-reg / stream / osd /
+#     unmapped) is actually exercisable, so the assertion proof can't be vacuous.
 #
-# Requires the OSS CAD Suite (or any install with an SMT solver on PATH — yices,
-# z3, boolector, ...). With it present, from the REPO ROOT:
-#     sby -f sby/wb_interconnect.sby            # both tasks
-#     sby -f sby/wb_interconnect.sby bmc        # assertions only
-#     sby -f sby/wb_interconnect.sby cover      # reachability covers only
+# Why cover here instead of bmc: for this combinational bit-vector problem,
+# bit-level SAT (yosys `sat`) is ~0.1 s, but word-level SMT assertion-BMC is
+# pathologically slow (z3 4.8.12 did not finish a depth-1 proof in 90 s). cover,
+# however, is instant. So assertions -> yosys SAT, reachability -> SBY cover.
 #
-# NOTE: if you only have a bare `yosys` (no SMT solver, no working sby engine),
-# this same proof runs via yosys's built-in SAT solver — that is the form wired
-# into ctest (`ctest -L formal`); see sby/README.md.
-
-[tasks]
-bmc
-cover
+# Requires an SMT solver on PATH (this repo's dev env has z3; OSS CAD Suite also
+# bundles yices/boolector). From the REPO ROOT:
+#     sby -f sby/wb_interconnect.sby            # the cover task
 
 [options]
-bmc:   mode bmc
-cover: mode cover
+mode cover
 depth 1
 
 [engines]
-smtbmc
+smtbmc z3
 
 [script]
 read_verilog -sv -formal -DFORMAL wb_interconnect.sv
 prep -top wb_interconnect
 
 # Paths are resolved relative to the directory sby is invoked from (the repo
-# root, per the commands above), NOT relative to this .sby file.
+# root, per the command above), NOT relative to this .sby file.
 [files]
 src/modbus/wb_interconnect.sv

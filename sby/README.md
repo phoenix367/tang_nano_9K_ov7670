@@ -28,26 +28,17 @@ yosys --version && sby --version    # sanity check
 
 ## Running
 
-From the repo root:
+`wb_interconnect`'s proof is split across two fast paths (see the header comment
+in `wb_interconnect.sby` for why):
+
+**1. Safety assertions → yosys built-in SAT (the ctest target).** The module is
+purely combinational, so the assertions are proven **exhaustively** by yosys's
+built-in SAT solver in ~0.1 s — no `sby`, no external SMT solver. This is what
+`ctest -L formal` runs:
 
 ```sh
-sby -f sby/wb_interconnect.sby        # run all tasks (bmc + cover)
-sby -f sby/wb_interconnect.sby bmc    # assertions only
-sby -f sby/wb_interconnect.sby cover  # reachability covers only
-```
-
-`-f` overwrites the previous work directory (`sby/wb_interconnect/`). A clean run
-ends with `PASS`; on failure SBY writes a counterexample trace (`.vcd`) under the
-work directory.
-
-### Without SBY — yosys built-in SAT (no SMT solver needed)
-
-`wb_interconnect` is purely combinational, so its assertions can be proven
-**exhaustively** with just `yosys` (no `sby`, no external SMT solver) via the
-built-in SAT solver. This is the form that runs today (verified PASS on
-Yosys 0.33):
-
-```sh
+ctest -L formal                       # via CMake (formal_wb_interconnect)
+# or directly:
 yosys -p "read_verilog -sv -formal -DFORMAL src/modbus/wb_interconnect.sv; \
           prep -top wb_interconnect; \
           chformal -cover -remove; \
@@ -55,20 +46,34 @@ yosys -p "read_verilog -sv -formal -DFORMAL src/modbus/wb_interconnect.sv; \
 ```
 
 `chformal -cover -remove` drops the `cover()` cells (the `sat` pass only consumes
-asserts); `-verify` makes yosys exit non-zero if any property fails, so it slots
-straight into CI. A clean run prints `SAT proof finished - no model found:
-SUCCESS!`. The `cover()` reachability is meanwhile demonstrated concretely by the
-simulation test `sim/unit/wb_interconnect/decode.sv`, which exercises every
-routing path (sccb / sysregs / grab-reg / stream / osd / unmapped).
+asserts); `-verify` makes yosys exit non-zero on failure. A clean run prints
+`SAT proof finished - no model found: SUCCESS!`.
 
-This SAT shortcut works only for combinational (or shallow) properties; the
-sequential FSM slaves below will need `sby` (BMC / k-induction) and a solver.
+**2. Cover reachability → SBY + SMT solver.** Confirms every routing path is
+exercisable (so the assertion proof isn't vacuous). From the repo root:
+
+```sh
+sby -f sby/wb_interconnect.sby        # cover task; PASS in <1 s with z3
+```
+
+`-f` overwrites the work directory. A clean run ends with `DONE (PASS)`; a failure
+writes a `.vcd` trace under the work dir.
+
+### Solver note (SAT vs SMT)
+
+For this combinational bit-vector problem, **bit-level SAT massively outperforms
+word-level SMT**: yosys `sat` proves the assertions in ~0.1 s, but z3 4.8.12's
+assertion BMC did **not finish in 90 s**. Hence assertions go through yosys SAT
+and only the (instant) `cover` reachability runs under SBY+z3. This SAT shortcut
+applies to combinational / shallow properties; the **sequential** FSM slaves below
+will genuinely need SBY (BMC / k-induction), where SMT is the right tool.
 
 ## What's covered
 
-| `.sby` | DUT | Kind | Properties |
-| ------ | --- | ---- | ---------- |
-| `wb_interconnect.sby` | `src/modbus/wb_interconnect.sv` | combinational, depth-1 BMC (exhaustive) | decode matches the register map; strobes mutually exclusive; every active access claimed by exactly one path (no bus hang); default-ack with 0 for unmapped addresses; ack/data routed from the selected slave |
+| `.sby` / target | DUT | Method | Properties |
+| --------------- | --- | ------ | ---------- |
+| `formal_wb_interconnect` (ctest, yosys SAT) | `src/modbus/wb_interconnect.sv` | combinational, exhaustive | decode matches the register map; strobes mutually exclusive; every active access claimed by exactly one path (no bus hang); default-ack with 0 for unmapped addresses; ack/data routed from the selected slave |
+| `wb_interconnect.sby` (SBY+z3) | same | cover reachability | every routing path (sccb / sysregs / grab-reg / stream / osd / unmapped) is reachable |
 
 This is the pilot. Good next candidates (single-clock, no Gowin IP): `arbiter`
 (round-robin mutual exclusion + fairness), `watchdog` (sticky hang, bounded
