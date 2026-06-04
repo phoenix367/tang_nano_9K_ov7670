@@ -55,7 +55,7 @@ module CameraControl_TOP (
 // an FC03 of up to 127 pixels starting at 0x1000 passes the bounds check. This
 // is the *address span*, not a physical register count — the backend is external
 // so there is no internal register file (REG_COUNT stays small).
-localparam integer MODBUS_ADDR_LIMIT = 'h1100;
+localparam integer MODBUS_ADDR_LIMIT = `PLATFORM_MODBUS_ADDR_LIMIT;
 
 wire [7:0] uart_rx_data;
 wire       uart_rx_valid, uart_rx_perr;
@@ -126,7 +126,7 @@ modbus_rtu_slave #(
     .REG_COUNT(16),         // external backend: no internal register file, keep reg_o tiny
     .ADDR_LIMIT(MODBUS_ADDR_LIMIT),  // bounds check spans the OV7670 + stream band
     .MAX_FRAME(32),         // request buffer: FC10 camera writes stay small
-    .MAX_QTY(127),          // FC03 download burst: protocol max, payload in BSRAM
+    .MAX_QTY(`PLATFORM_MODBUS_MAX_READ_QTY),  // FC03 download burst ceiling; payload in BSRAM
     .EXTERNAL_BACKEND(1)
 ) modbus_inst (
     .clk(sys_clk),

@@ -10,7 +10,9 @@
     "sys_clk_hz": 27000000
   },
   "modbus": {
-    "device_id": 7
+    "device_id": 7,
+    "addr_limit": "0x1100",
+    "max_read_qty": 127
   },
   "uart": {
     "baud": 1000000,

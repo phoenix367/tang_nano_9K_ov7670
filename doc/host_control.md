@@ -64,7 +64,8 @@ FT2232H channel B.
 | Exceptions       | `0x01` illegal function, `0x02` illegal address, `0x03` illegal value |
 | Read-burst cap   | a single `0x03` reads ≤ 125 registers (response payload in BSRAM) |
 
-The clock, slave id and UART framing are defined once in [`platform.json`](../platform.json)
+The clock, slave id, address bound (`addr_limit`), FC03 read ceiling
+(`max_read_qty`) and UART framing are defined once in [`platform.json`](../platform.json)
 (`clock` / `modbus` / `uart` sections) and flow to **both** sides: CMake bakes them
 into the gateware via `src/platform_config.vh`, and the host reads the same file
 through [`platform_config.py`](../platform_config.py), so the web app

@@ -16,7 +16,11 @@
 `define PLATFORM_SYS_CLK_HZ         @PLATFORM_SYS_CLK_HZ@
 
 // ---- modbus ----
-`define PLATFORM_MODBUS_DEVICE_ID   @PLATFORM_MODBUS_DEVICE_ID@
+// PLATFORM_MODBUS_ADDR_LIMIT: highest address the FC03/06/10 bounds check accepts
+// (decimal here; platform.json carries it as the hex span, e.g. 0x1100).
+`define PLATFORM_MODBUS_DEVICE_ID    @PLATFORM_MODBUS_DEVICE_ID@
+`define PLATFORM_MODBUS_ADDR_LIMIT   @PLATFORM_MODBUS_ADDR_LIMIT@
+`define PLATFORM_MODBUS_MAX_READ_QTY @PLATFORM_MODBUS_MAX_READ_QTY@
 
 // ---- uart ----
 // PLATFORM_UART_PARITY: 0 = none, 1 = odd, 2 = even (the RTL implements 8-E-1).

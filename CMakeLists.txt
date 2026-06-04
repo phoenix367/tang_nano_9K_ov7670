@@ -106,6 +106,16 @@ macro(platform_json_int key outvar)
     endif()
 endmacro()
 
+# Extract a hex-string-valued key ("0x1100") and convert it to a decimal cmake
+# integer (so it can be emitted as a plain Verilog integer literal).
+macro(platform_json_hex key outvar)
+    if (_PLATFORM_JSON_CONTENT MATCHES "\"${key}\"[ \t\r\n]*:[ \t\r\n]*\"(0[xX][0-9A-Fa-f]+)\"")
+        math(EXPR ${outvar} "${CMAKE_MATCH_1}")
+    else()
+        message(FATAL_ERROR "platform.json: key '${key}' is missing or not a hex string (\"0x...\")")
+    endif()
+endmacro()
+
 # Extract a string-valued key and map it to a numeric code via a lookup list of
 # "name=value" pairs (used for the UART parity enum: none=0, odd=1, even=2).
 macro(platform_json_enum key outvar)
@@ -138,6 +148,8 @@ platform_json_int("emit_row_size"      PLATFORM_EMIT_ROW_SIZE)
 platform_json_int("sys_clk_hz"         PLATFORM_SYS_CLK_HZ)
 # modbus
 platform_json_int("device_id"          PLATFORM_MODBUS_DEVICE_ID)
+platform_json_hex("addr_limit"         PLATFORM_MODBUS_ADDR_LIMIT)
+platform_json_int("max_read_qty"       PLATFORM_MODBUS_MAX_READ_QTY)
 # uart
 platform_json_int("baud"               PLATFORM_UART_BAUD)
 platform_json_int("data_bits"          PLATFORM_UART_DATA_BITS)
@@ -147,7 +159,8 @@ platform_json_enum("parity"            PLATFORM_UART_PARITY  none=0 odd=1 even=2
 message(STATUS "Platform: ${PLATFORM_INPUT_FRAME_WIDTH}x${PLATFORM_INPUT_FRAME_HEIGHT} in, "
                "${PLATFORM_SCREEN_WIDTH}x${PLATFORM_SCREEN_HEIGHT} screen, "
                "emit_row_size=${PLATFORM_EMIT_ROW_SIZE}")
-message(STATUS "Platform: ${PLATFORM_SYS_CLK_HZ} Hz sys_clk, Modbus id ${PLATFORM_MODBUS_DEVICE_ID}, "
+message(STATUS "Platform: ${PLATFORM_SYS_CLK_HZ} Hz sys_clk, Modbus id ${PLATFORM_MODBUS_DEVICE_ID} "
+               "(addr_limit=${PLATFORM_MODBUS_ADDR_LIMIT}, max_read_qty=${PLATFORM_MODBUS_MAX_READ_QTY}), "
                "UART ${PLATFORM_UART_BAUD} ${PLATFORM_UART_DATA_BITS}-parity${PLATFORM_UART_PARITY}-${PLATFORM_UART_STOP_BITS}")
 
 configure_file("${SRC_FOLDER}/platform_config.vh.in"

@@ -24,6 +24,11 @@ from pymodbus.exceptions import ConnectionException, ModbusException
 # UART/Modbus defaults come from platform.json (same source as the gateware).
 DEFAULT_BAUD = _platform.UART_BAUD
 DEFAULT_SLAVE = _platform.MODBUS_DEVICE_ID
+# Address bound the FPGA slave enforces (FC03/06/10): the same 0x1100 span the
+# gateware checks. MAX_READ_QTY is the device's FC03 ceiling; note read_holding()
+# still clamps to the Modbus-spec 125 below, which is stricter.
+MODBUS_ADDR_LIMIT = _platform.MODBUS_ADDR_LIMIT
+MODBUS_MAX_READ_QTY = _platform.MODBUS_MAX_READ_QTY
 
 # Reserved bridge registers above the OV7670 0x00..0xC9 range (see
 # src/modbus/modbus_cam_backend.sv). The frame-grab feature captures a camera frame

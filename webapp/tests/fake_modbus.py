@@ -12,7 +12,7 @@ import struct
 
 import modbus_client  # for crc16 + (optional) termios
 
-REG_COUNT = 0x1100                    # matches the FPGA: camera + status/grab + stream band
+REG_COUNT = modbus_client.MODBUS_ADDR_LIMIT  # FPGA bounds: camera + status/grab + stream band
 STATUS_MAGIC = 0xA5
 STREAM_BASE = 0x1000                  # FC03 reads >= here stream the captured frame
 FRAME_PIXELS = modbus_client.FRAME_PIXELS

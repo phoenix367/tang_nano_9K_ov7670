@@ -26,7 +26,12 @@ EMIT_ROW_SIZE = _geom["emit_row_size"]
 SYS_CLK_HZ = _CFG["clock"]["sys_clk_hz"]
 
 # --- modbus ---
-MODBUS_DEVICE_ID = _CFG["modbus"]["device_id"]
+_modbus = _CFG["modbus"]
+MODBUS_DEVICE_ID = _modbus["device_id"]
+# addr_limit may be a hex string ("0x1100") or a plain int; normalize to int.
+_addr_limit = _modbus["addr_limit"]
+MODBUS_ADDR_LIMIT = int(_addr_limit, 0) if isinstance(_addr_limit, str) else int(_addr_limit)
+MODBUS_MAX_READ_QTY = _modbus["max_read_qty"]
 
 # --- uart ---
 _uart = _CFG["uart"]
