@@ -174,6 +174,16 @@ def test_osd_read_back(dev):
     assert dev.osd_read_cells(2, 5 + len(codes), 2) == [0x00, 0x00]
 
 
+def test_osd_read_text_round_trip(dev):
+    """osd_read_text() decodes the buffer back to the lines we wrote (the webapp
+    uses this to populate the OSD editor on connect)."""
+    dev.osd_clear()
+    time.sleep(0.05)
+    dev.osd_write_text(0, 0, "HELLO  device")
+    dev.osd_write_text(1, 0, "line two")
+    assert dev.osd_read_text() == ["HELLO  device", "line two"]
+
+
 # --------------------------------------------------------------- slow capabilities
 @pytest.mark.slow
 def test_frame_grab(dev):

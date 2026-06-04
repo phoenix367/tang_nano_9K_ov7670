@@ -10,7 +10,7 @@ pymodbus responses/exceptions to the small API the app and tests use.
 
 import time
 
-from osd_charset import osd_byte
+from osd_charset import osd_byte, osd_char
 from pymodbus import FramerType
 from pymodbus.client import ModbusSerialClient
 from pymodbus.exceptions import ConnectionException, ModbusException
@@ -231,6 +231,34 @@ class ModbusRTU:
             raise ValueError(f"OSD cell ({row}, {col}) out of range")
         self.write_single(REG_OSD_ADDR, row * OSD_COLS + col)
         return [self.read_reg(REG_OSD_DATA) for _ in range(count)]
+
+    def osd_read_text(self, max_blank_runahead=3):
+        """Read the OSD character buffer back and decode it to text.
+
+        Returns a list of strings (each up to OSD_COLS wide), trailing blank cells
+        and all-blank rows stripped, so it reflects what is shown on the LCD.
+
+        Each cell is a separate 0xFD read (the read auto-increments the cursor, and
+        FC03 cannot burst it -- the slave walks register addresses, not repeated
+        0xFD), which is slow over UART, so reading all 1020 cells takes ~2.5 s and
+        holds the serial link the whole time. OSD overlays are top-aligned text, so
+        we read row by row from cell 0 and stop after `max_blank_runahead`
+        consecutive blank rows -- the common cases (empty buffer, a few status
+        lines, the built-in drawings) finish in a fraction of a second. Content
+        separated from the top by a larger blank gap is not read back.
+        """
+        self.write_single(REG_OSD_ADDR, 0)
+        rows, blanks = [], 0
+        for _ in range(OSD_ROWS):
+            line = "".join(osd_char(self.read_reg(REG_OSD_DATA))
+                           for _ in range(OSD_COLS)).rstrip()
+            rows.append(line)
+            blanks = blanks + 1 if line == "" else 0
+            if blanks >= max_blank_runahead:
+                break
+        while rows and rows[-1] == "":
+            rows.pop()
+        return rows
 
     # ---- frame grab (capture into PSRAM ch1, then stream over FC03) ----------
     def grab_busy(self):

@@ -195,6 +195,16 @@ def test_osd_read_cells_off_grid_raises(rtu):
         c.osd_read_cells(modbus_client.OSD_ROWS, 0, 1)
 
 
+def test_osd_read_text_decodes_and_trims(rtu):
+    c, _ = rtu
+    c.osd_write_text(0, 0, "HELLO")
+    c.osd_write_text(2, 1, "Hi")
+    lines = c.osd_read_text()
+    assert lines[0] == "HELLO"
+    assert lines[2] == " Hi"          # col offset preserved, row 1 blank
+    assert len(lines) == 3            # trailing all-blank rows stripped
+
+
 def test_osd_clear_blanks_buffer(rtu):
     c, slave = rtu
     c.osd_write_text(0, 0, "ABC")

@@ -239,6 +239,7 @@ async function tryReconnect() {
     enterState(ST.CONNECTED, info);
     renderControls();
     await loadSettings();
+    loadOsdState();
     toast("Reconnected");
   } catch { /* port present but not ready yet; keep trying */ }
 }
@@ -805,9 +806,16 @@ async function resetDefaults() {
 // --------------------------------------------------------------- OSD overlay
 async function loadOsdState() {
   try {
-    const { enabled } = await api("/api/osd");
+    const { enabled, lines } = await api("/api/osd");
     $("#osd-enable").checked = !!enabled;
-  } catch { /* not connected yet — leave the checkbox as-is */ }
+    // reflect the overlay text the device is currently showing
+    if (Array.isArray(lines)) {
+      const text = lines.join("\n");
+      $("#osd-text").value = text;
+      lastGoodOsd = text;        // baseline for the overflow-reject logic
+      updateOsdCount();
+    }
+  } catch { /* not connected yet — leave the editor as-is */ }
 }
 
 const OSD_COLS = 60, OSD_ROWS = 17;
