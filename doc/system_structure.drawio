@@ -298,7 +298,7 @@
             <mxPoint x="-13" y="13" as="offset" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="mb-srv" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#9AC7E8;" value="Modbus server&lt;br&gt;(UART + RTU slave +&lt;br&gt;cam backend)" vertex="1">
+        <mxCell id="mb-srv" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#9AC7E8;" value="Modbus server&lt;br&gt;(UART + RTU slave +&lt;br&gt;Wishbone bus: sccb/sysregs/grab/osd)" vertex="1">
           <mxGeometry height="70" width="170" x="470" y="45" as="geometry" />
         </mxCell>
         <mxCell id="mb-host" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#CCE5FF;" value="Host PC&lt;br&gt;(Modbus master)" vertex="1">

@@ -32,6 +32,32 @@ Figure below shows high level representation of the system.
 
 ![System components](./doc/images/system_structure.drawio.png)
 
+The 27 MHz host control plane (the "Modbus server" block above) is a **Wishbone
+bus**; the diagram below zooms into it:
+
+```mermaid
+flowchart LR
+    CAM["OV7670 camera"] -->|"pixel bytes"| PIX["cam_pixel_processor<br/>→ RGB565"]
+    PIX --> VB["Video buffer<br/>3-frame circular<br/>PSRAM ch0 (67.5 MHz)"]
+    VB --> RSZ["vertical + pillarbox<br/>resize"] --> LCD["4.3&quot; LCD<br/>(13.5 MHz)"]
+
+    APP["Host PC<br/>web app / pyserial<br/>Modbus RTU master"]
+    APP <-->|"UART 1 Mbaud (FT2232H)"| MB["modbus_rtu_slave"]
+
+    subgraph WB["modbus_cam_backend — Wishbone B4 bus (27 MHz sys_clk)"]
+        IC["wb_interconnect<br/>addr decode"]
+        IC --> SCCB["wb_sccb<br/>0x00–0xC9"]
+        IC --> SYS["wb_sysregs<br/>0xF0/F1/F2/F9/FA"]
+        IC --> GRAB["wb_grab<br/>0xF3–F8, ≥0x1000"]
+        IC --> WOSD["wb_osd<br/>0xFB/FC/FD"]
+    end
+
+    MB <-->|"be_* = WB master"| IC
+    SCCB -->|"SCCB"| CAM
+    GRAB -->|"ch1 grab / frame stream"| VB
+    WOSD -->|"text overlay"| LCD
+```
+
 Here we have tree clock signals:
 * main clock 27 MHz
 * Memory clock 135 MHz
@@ -39,6 +65,12 @@ Here we have tree clock signals:
 
 I2C controller is used for camera module initial configuration. You can refer
 to [ov7670_default.sv](src/ov7670_default.sv) file for configuration details.
+After power-on init, the host control plane (live camera registers, status,
+frame grab/download, and the OSD overlay) runs over a **Wishbone B4
+classic-standard bus** on the 27 MHz clock: the Modbus slave's backend handshake
+is the bus master, and `modbus_cam_backend` decodes it to four peripheral slaves
+(`wb_sccb`, `wb_sysregs`, `wb_grab`, `wb_osd`). See
+[doc/modbus_server.md](doc/modbus_server.md) for detail.
 
 Video buffer implements circular buffer for 3 frames. Frames have 640x480 size 
 with 16-bit RGB565 pixels. Clock frequency for video buffer logi is 67.5 MHz.
