@@ -8,12 +8,22 @@ returns {0x00, reg_byte}. The RTU framing/CRC come from pymodbus
 pymodbus responses/exceptions to the small API the app and tests use.
 """
 
+import os
+import sys
 import time
+
+# repo root (parent of webapp/) on the path -> read the shared platform.json
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import platform_config as _platform
 
 from osd_charset import osd_byte, osd_char
 from pymodbus import FramerType
 from pymodbus.client import ModbusSerialClient
 from pymodbus.exceptions import ConnectionException, ModbusException
+
+# UART/Modbus defaults come from platform.json (same source as the gateware).
+DEFAULT_BAUD = _platform.UART_BAUD
+DEFAULT_SLAVE = _platform.MODBUS_DEVICE_ID
 
 # Reserved bridge registers above the OV7670 0x00..0xC9 range (see
 # src/modbus/modbus_cam_backend.sv). The frame-grab feature captures a camera frame
@@ -77,7 +87,7 @@ class ModbusRTU:
     (ModbusError for protocol exceptions, OSError for a lost port, TimeoutError
     for no/garbled response after retries)."""
 
-    def __init__(self, port, baud=1000000, slave=7, timeout=1.0, retries=2):
+    def __init__(self, port, baud=DEFAULT_BAUD, slave=DEFAULT_SLAVE, timeout=1.0, retries=2):
         if not (0 <= slave <= 247):
             raise ValueError(f"slave id {slave} out of range 0..247")
         self.port = port
@@ -87,9 +97,9 @@ class ModbusRTU:
             port,
             framer=FramerType.RTU,
             baudrate=baud,
-            bytesize=8,
-            parity="E",
-            stopbits=1,
+            bytesize=_platform.UART_DATA_BITS,
+            parity=_platform.UART_PARITY,
+            stopbits=_platform.UART_STOP_BITS,
             timeout=timeout,
             retries=retries + 1,        # pymodbus re-sends transient failures
         )

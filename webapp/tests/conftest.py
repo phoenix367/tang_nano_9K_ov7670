@@ -56,7 +56,7 @@ def fake(monkeypatch):
 def rtu(fake):
     """A real ModbusRTU client wired to a fresh fake slave. Short timeout so the
     no-response / bad-CRC fault tests don't wait whole seconds per retry."""
-    c = modbus_client.ModbusRTU("fake", slave=7, timeout=0.1)
+    c = modbus_client.ModbusRTU("fake", slave=modbus_client.DEFAULT_SLAVE, timeout=0.1)
     yield c, fake["slave"]
     c.close()
 

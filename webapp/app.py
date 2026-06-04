@@ -17,6 +17,8 @@ import threading
 import ov7670
 from flask import Flask, Response, jsonify, render_template, request
 from modbus_client import (
+    DEFAULT_BAUD,
+    DEFAULT_SLAVE,
     FRAME_H,
     FRAME_W,
     OSD_ROWS,
@@ -183,8 +185,8 @@ def api_connect():
     port = data.get("port")
     if not port:
         return _error("no port specified")
-    baud = int(data.get("baud", 1000000))
-    slave = int(data.get("slave", 7))
+    baud = int(data.get("baud", DEFAULT_BAUD))
+    slave = int(data.get("slave", DEFAULT_SLAVE))
     timeout = float(data.get("timeout", 1.0))
     with _lock:
         if _client is not None:

@@ -33,8 +33,8 @@ pytestmark = [
 @pytest.fixture(scope="module")
 def dev():
     """One real Modbus connection shared by the module; skip if it isn't ours."""
-    baud = int(os.environ.get("OV7670_BAUD", "1000000"))
-    slave = int(os.environ.get("OV7670_SLAVE", "7"))
+    baud = int(os.environ.get("OV7670_BAUD", str(mc.DEFAULT_BAUD)))
+    slave = int(os.environ.get("OV7670_SLAVE", str(mc.DEFAULT_SLAVE)))
     try:
         client = mc.ModbusRTU(PORT, baud=baud, slave=slave, timeout=1.0)
     except Exception as e:  # serial open failure

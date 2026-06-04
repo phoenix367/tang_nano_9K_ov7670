@@ -48,7 +48,8 @@ def default_registers():
 
 class FakeModbusSlave:
     def __init__(self, port=None, baudrate=9600, bytesize=8, parity="E",
-                 stopbits=1, timeout=1.0, slave=7, reg_count=REG_COUNT, **kwargs):
+                 stopbits=1, timeout=1.0, slave=modbus_client.DEFAULT_SLAVE,
+                 reg_count=REG_COUNT, **kwargs):
         # **kwargs absorbs the extra args pymodbus passes to serial.serial_for_url
         # (e.g. exclusive=True); they don't affect the behavioural model.
         self.port = port

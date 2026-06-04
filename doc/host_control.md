@@ -64,6 +64,15 @@ FT2232H channel B.
 | Exceptions       | `0x01` illegal function, `0x02` illegal address, `0x03` illegal value |
 | Read-burst cap   | a single `0x03` reads ≤ 125 registers (response payload in BSRAM) |
 
+The clock, slave id and UART framing are defined once in [`platform.json`](../platform.json)
+(`clock` / `modbus` / `uart` sections) and flow to **both** sides: CMake bakes them
+into the gateware via `src/platform_config.vh`, and the host reads the same file
+through [`platform_config.py`](../platform_config.py), so the web app
+([`webapp/modbus_client.py`](../webapp/modbus_client.py)) and the CLI scripts
+([`scripts/modbus_test.py`](../scripts/modbus_test.py),
+[`scripts/frame_grab.py`](../scripts/frame_grab.py)) default to the right baud/parity/id
+without hardcoding. Change `platform.json` and the RTL and host stay in lockstep.
+
 Instead of an internal register file, the server runs with `EXTERNAL_BACKEND=1`:
 every holding-register access is handed to
 [`src/modbus/modbus_cam_backend.sv`](../src/modbus/modbus_cam_backend.sv), which performs **one

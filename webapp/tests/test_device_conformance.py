@@ -12,14 +12,16 @@ Skipped unless OV7670_PORT names a connected board (see test_device_hw.py):
 
 import os
 
+import modbus_client  # noqa: F401 -- import side effect: puts the repo root on sys.path
 import ov7670
+import platform_config as pc
 import pytest
 from pymodbus import FramerType
 from pymodbus.client import ModbusSerialClient
 from pymodbus.exceptions import ModbusIOException
 
 PORT = os.environ.get("OV7670_PORT")
-SLAVE = int(os.environ.get("OV7670_SLAVE", "7"))
+SLAVE = int(os.environ.get("OV7670_SLAVE", str(pc.MODBUS_DEVICE_ID)))
 
 pytestmark = [
     pytest.mark.hardware,
@@ -32,8 +34,9 @@ def mb():
     """A plain pymodbus ModbusSerialClient — the reference master."""
     client = ModbusSerialClient(
         PORT, framer=FramerType.RTU,
-        baudrate=int(os.environ.get("OV7670_BAUD", "1000000")),
-        bytesize=8, parity="E", stopbits=1, timeout=1.0,
+        baudrate=int(os.environ.get("OV7670_BAUD", str(pc.UART_BAUD))),
+        bytesize=pc.UART_DATA_BITS, parity=pc.UART_PARITY, stopbits=pc.UART_STOP_BITS,
+        timeout=1.0,
     )
     if not client.connect():
         pytest.skip(f"cannot open {PORT}")
