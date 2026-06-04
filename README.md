@@ -6,7 +6,7 @@ resized on the fly to fit the 480×272 LCD with full aspect-preserving
 (pillarbox) output: a vertical downscale plus a horizontal downscale of
 the whole row, centred with black side borders.
 
-> **A significant upgrade of the classic Tang Nano 9K OV7670 camera demo.**
+> **A significant upgrade of the old Tang Nano 9K OV7670 camera demo.**
 > This version was developed with the help of the
 > [Claude Code](https://claude.com/claude-code) AI assistant and goes well
 > beyond the original "capture and display" demo, adding:
