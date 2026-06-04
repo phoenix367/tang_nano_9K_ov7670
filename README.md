@@ -56,6 +56,13 @@ flowchart LR
     SCCB -->|"SCCB"| CAM
     GRAB -->|"ch1 grab / frame stream"| VB
     WOSD -->|"text overlay"| LCD
+
+    WD["watchdog<br/>health monitor (27 MHz)"]
+    CAM -.->|"vsync heartbeat"| WD
+    VB -.->|"PSRAM heartbeat"| WD
+    LCD -.->|"vsync heartbeat"| WD
+    WD -->|"wd_health → 0xF9"| SYS
+    WD -->|"blink / solid on hang"| DBG["debug_led"]
 ```
 
 Here we have tree clock signals:

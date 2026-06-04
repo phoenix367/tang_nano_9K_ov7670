@@ -354,6 +354,12 @@
             <mxPoint x="720" y="390" as="targetPoint" />
           </mxGeometry>
         </mxCell>
+        <mxCell id="wd-mon" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D5E8D4;" value="Watchdog&lt;br&gt;health monitor&lt;br&gt;(cam / mem / lcd heartbeats)" vertex="1">
+          <mxGeometry height="70" width="170" x="655" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="wd-e-health" edge="1" parent="1" source="wd-mon" target="mb-srv" style="endArrow=classic;html=1;rounded=0;" value="wd_health &#8594; 0xF9">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
