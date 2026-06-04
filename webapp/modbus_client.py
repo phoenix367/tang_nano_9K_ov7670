@@ -14,12 +14,12 @@ import time
 
 # repo root (parent of webapp/) on the path -> read the shared platform.json
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import platform_config as _platform
-
 from osd_charset import osd_byte, osd_char
 from pymodbus import FramerType
 from pymodbus.client import ModbusSerialClient
 from pymodbus.exceptions import ConnectionException, ModbusException
+
+import platform_config as _platform
 
 # UART/Modbus defaults come from platform.json (same source as the gateware).
 DEFAULT_BAUD = _platform.UART_BAUD

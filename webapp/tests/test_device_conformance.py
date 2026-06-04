@@ -14,11 +14,12 @@ import os
 
 import modbus_client  # noqa: F401 -- import side effect: puts the repo root on sys.path
 import ov7670
-import platform_config as pc
 import pytest
 from pymodbus import FramerType
 from pymodbus.client import ModbusSerialClient
 from pymodbus.exceptions import ModbusIOException
+
+import platform_config as pc
 
 PORT = os.environ.get("OV7670_PORT")
 SLAVE = int(os.environ.get("OV7670_SLAVE", str(pc.MODBUS_DEVICE_ID)))
