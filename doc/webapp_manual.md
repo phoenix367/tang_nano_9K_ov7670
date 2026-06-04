@@ -104,6 +104,8 @@ appears composited over the camera image in real time.
 
 A heartbeat polls the device every few seconds. If the board is reset (its
 uptime counter jumps backward) the UI resyncs the register state; if the serial
-port disappears the app shows a banner and auto-reconnects when it returns. A
-grabbed frame is cleared on disconnect, and a fresh connection lands on the
+port disappears the app shows a banner and auto-reconnects when it returns. On
+disconnect the whole tabbed UI is torn down — every tab panel (including the
+**OSD overlay**) and the **Board health** row are hidden and the grabbed frame
+is cleared — so no stale controls linger; a fresh connection lands on the
 **Basic controls** tab.

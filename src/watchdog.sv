@@ -101,4 +101,43 @@ module watchdog #(
         else          blink_cnt <= blink_cnt + 1'b1;
     assign blink = blink_cnt[BLINK];
 
+`ifdef FORMAL
+    // ---- Formal verification (yosys k-induction; see sby/CMakeLists.txt,
+    // sby/watchdog.sby). These invariants are scale-invariant -- they prove at the
+    // shipped STARTUP/TIMEOUT counters; the .sby cover shrinks them via chparam so
+    // a hang is reachable within BMC depth.
+    reg f_past_valid = 1'b0;
+    always @(posedge clk) f_past_valid <= 1'b1;
+
+`ifdef SBY_COVER
+    // cover-only: start from a real reset so covers reflect real operation
+    // (arming, then a timeout) rather than a hand-picked initial state.
+    always @(posedge clk) if (!f_past_valid) assume (!reset_n);
+`endif
+
+    always @(posedge clk) begin
+        // hang is exactly the OR of the per-subsystem sticky flags
+        assert (hang == (|subsystem_hang));
+        // a hang can only exist once the startup grace has armed monitoring
+        assert (monitoring || !hang);
+
+        if (f_past_valid && reset_n && $past(reset_n)) begin
+            // per-subsystem hang is sticky: no bit goes 1 -> 0 while running
+            assert ((~subsystem_hang & $past(subsystem_hang)) == 3'b000);
+            // monitoring is sticky: once armed, stays armed while running
+            assert (!($past(monitoring) && !monitoring));
+        end
+    end
+
+    // reachability (cover task; run from a real reset via SBY_COVER, params
+    // shrunk via chparam so a hang is in reach)
+    always @(posedge clk) begin
+        cover (monitoring);                 // the grace period ends
+        cover (hang);                       // a subsystem actually times out
+        cover (blink);                      // heartbeat reaches 1
+        if (f_past_valid)
+            cover (!blink && $past(blink));  // ... and toggles back to 0
+    end
+`endif
+
 endmodule

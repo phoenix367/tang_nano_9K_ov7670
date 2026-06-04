@@ -1,0 +1,36 @@
+# Formal verification of wb_interconnect — the Wishbone address decoder + ack/dat
+# mux on the 27 MHz bus (see src/modbus/wb_interconnect.sv, doc/modbus_server.md).
+#
+# DIVISION OF LABOUR (both fast, both solver-friendly):
+#   * The SAFETY ASSERTIONS (decode == register map, mutual exclusion, no-hang,
+#     default-ack, ack/data routing) are proven EXHAUSTIVELY by yosys's built-in
+#     SAT solver in ~0.1 s, with no external SMT solver. That is the form wired
+#     into ctest (`ctest -L formal`); see sby/README.md for the one-liner.
+#   * This .sby runs the COVER reachability checks via SBY + an SMT solver,
+#     confirming every routing path (sccb / sysregs / grab-reg / stream / osd /
+#     unmapped) is actually exercisable, so the assertion proof can't be vacuous.
+#
+# Why cover here instead of bmc: for this combinational bit-vector problem,
+# bit-level SAT (yosys `sat`) is ~0.1 s, but word-level SMT assertion-BMC is
+# pathologically slow (z3 4.8.12 did not finish a depth-1 proof in 90 s). cover,
+# however, is instant. So assertions -> yosys SAT, reachability -> SBY cover.
+#
+# Requires an SMT solver on PATH (this repo's dev env has z3; OSS CAD Suite also
+# bundles yices/boolector). From the REPO ROOT:
+#     sby -f sby/wb_interconnect.sby            # the cover task
+
+[options]
+mode cover
+depth 1
+
+[engines]
+smtbmc z3
+
+[script]
+read_verilog -sv -formal -DFORMAL wb_interconnect.sv
+prep -top wb_interconnect
+
+# Paths are resolved relative to the directory sby is invoked from (the repo
+# root, per the command above), NOT relative to this .sby file.
+[files]
+src/modbus/wb_interconnect.sv

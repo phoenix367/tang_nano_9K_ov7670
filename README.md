@@ -6,6 +6,24 @@ resized on the fly to fit the 480×272 LCD with full aspect-preserving
 (pillarbox) output: a vertical downscale plus a horizontal downscale of
 the whole row, centred with black side borders.
 
+> **A significant upgrade of the old Tang Nano 9K OV7670 camera demo.**
+> This version was developed with the help of the
+> [Claude Code](https://claude.com/claude-code) AI assistant and goes well
+> beyond the original "capture and display" demo, adding:
+>
+> - **Host integration via Modbus** — a Modbus RTU server (over a Wishbone bus
+>   on the FPGA) lets a PC read/write live camera registers and download full
+>   frames over USB; a companion web app drives it.
+> - **Runtime camera control** — tune OV7670 registers on the fly (exposure,
+>   colour, test patterns, …) without rebuilding the bitstream.
+> - **On-the-fly frame resizing** — aspect-preserving 640×480 → 480×272
+>   downscale with pillarbox borders, done in hardware in the video path.
+> - **On-screen display (OSD)** — a host-controlled text overlay rendered on
+>   the LCD (60×17 character grid): the host enables it and writes characters
+>   over Modbus, with a hardware clear sweep.
+> - **Device health checking** — an on-chip watchdog monitors the camera,
+>   memory and LCD subsystems and reports health to the host (and a status LED).
+
 The frame geometry (input/screen size, emit row size) is configured in
 [`platform.json`](platform.json), from which CMake generates the
 SystemVerilog header `src/platform_config.vh` used by the design.
@@ -32,6 +50,39 @@ Figure below shows high level representation of the system.
 
 ![System components](./doc/images/system_structure.drawio.png)
 
+The 27 MHz host control plane (the "Modbus server" block above) is a **Wishbone
+bus**; the diagram below zooms into it:
+
+```mermaid
+flowchart LR
+    CAM["OV7670 camera"] -->|"pixel bytes"| PIX["cam_pixel_processor<br/>→ RGB565"]
+    PIX --> VB["Video buffer<br/>3-frame circular<br/>PSRAM ch0 (67.5 MHz)"]
+    VB --> RSZ["vertical + pillarbox<br/>resize"] --> LCD["4.3&quot; LCD<br/>(13.5 MHz)"]
+
+    APP["Host PC<br/>web app / pyserial<br/>Modbus RTU master"]
+    APP <-->|"UART 1 Mbaud (FT2232H)"| MB["modbus_rtu_slave"]
+
+    subgraph WB["modbus_cam_backend — Wishbone B4 bus (27 MHz sys_clk)"]
+        IC["wb_interconnect<br/>addr decode"]
+        IC --> SCCB["wb_sccb<br/>0x00–0xC9"]
+        IC --> SYS["wb_sysregs<br/>0xF0/F1/F2/F9/FA"]
+        IC --> GRAB["wb_grab<br/>0xF3–F8, ≥0x1000"]
+        IC --> WOSD["wb_osd<br/>0xFB/FC/FD"]
+    end
+
+    MB <-->|"be_* = WB master"| IC
+    SCCB -->|"SCCB"| CAM
+    GRAB -->|"ch1 grab / frame stream"| VB
+    WOSD -->|"text overlay"| LCD
+
+    WD["watchdog<br/>health monitor (27 MHz)"]
+    CAM -.->|"vsync heartbeat"| WD
+    VB -.->|"PSRAM heartbeat"| WD
+    LCD -.->|"vsync heartbeat"| WD
+    WD -->|"wd_health → 0xF9"| SYS
+    WD -->|"blink / solid on hang"| DBG["debug_led"]
+```
+
 Here we have tree clock signals:
 * main clock 27 MHz
 * Memory clock 135 MHz
@@ -39,6 +90,12 @@ Here we have tree clock signals:
 
 I2C controller is used for camera module initial configuration. You can refer
 to [ov7670_default.sv](src/ov7670_default.sv) file for configuration details.
+After power-on init, the host control plane (live camera registers, status,
+frame grab/download, and the OSD overlay) runs over a **Wishbone B4
+classic-standard bus** on the 27 MHz clock: the Modbus slave's backend handshake
+is the bus master, and `modbus_cam_backend` decodes it to four peripheral slaves
+(`wb_sccb`, `wb_sysregs`, `wb_grab`, `wb_osd`). See
+[doc/modbus_server.md](doc/modbus_server.md) for detail.
 
 Video buffer implements circular buffer for 3 frames. Frames have 640x480 size 
 with 16-bit RGB565 pixels. Clock frequency for video buffer logi is 67.5 MHz.

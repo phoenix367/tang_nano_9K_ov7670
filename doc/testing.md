@@ -47,8 +47,19 @@ sim/
 │   │   └── round_robin.sv           grant / hold / mask / round-robin (width 2)
 │   ├── cam_pixel_processor/
 │   │   └── frame_sequence.sv        start / per-row / end command framing
-│   └── uart/
-│       └── frame.sv                 8-E-1 UART: loopback + parity/frame error paths
+│   ├── uart/
+│   │   └── frame.sv                 8-E-1 UART: loopback + parity/frame error paths
+│   ├── wb_interconnect/
+│   │   └── decode.sv                Wishbone address decode → per-slave strobe, dat/ack mux, default-ack
+│   ├── wb_sccb/
+│   │   └── transaction.sv           Wishbone SCCB slave vs i2c stack + slave model: write/read + init gate
+│   ├── wb_sysregs/
+│   │   ├── regs.sv                  magic / uptime (coherent pair) / health / cam_reinit pulse
+│   │   └── health.sv               wd_health exposed on 0xF9: bit layout sweep + non-destructive / live passthrough
+│   ├── wb_grab/
+│   │   └── stream.sv                grab regs F3..F8 + stream-band ramp walk + rewind (stubbed ch1)
+│   └── wb_osd/
+│       └── cursor.sv                enable / cursor auto-increment / clear sweep over 1020 cells / 0xFD glyph read-back
 │
 └── integration/                     cross-module tests
     ├── frame_roundtrip/
@@ -58,10 +69,18 @@ sim/
     │   ├── register_read.sv         i2c_master_top SCCB reads (WISHBONE BFM) vs seeded slave memory
     │   └── fsm_read.sv              i2c_control_fsm recv_data read path: data_out vs seeded slave memory
     ├── modbus/
-    │   └── rtu_slave.sv             Modbus RTU slave (FC03/06/16 + exceptions + bad-CRC) over 2 cross-wired UARTs
+    │   ├── rtu_slave.sv             Modbus RTU slave (FC03/06/16 + exceptions + bad-CRC) over 2 cross-wired UARTs
+    │   └── cam_bridge.sv            full stack UART→slave→Wishbone bus→i2c→OV7670 model; byte-identical register-map regression
     └── pillarbox/
         └── borders{,_full,_vmap}.sv vertical resize + pillarbox pixel mapping
 ```
+
+The five `wb_*` unit tests cover the Wishbone bus that replaced the monolithic
+backend (see [modbus_server.md](modbus_server.md)). `wb_interconnect/decode`
+stubs the slaves and checks every address routes correctly (including the
+scattered `0xFx` split and the default-ack for unmapped gaps); the per-slave
+tests verify behaviour in isolation. `modbus/cam_bridge` exercises the whole
+composed bus end to end and is the byte-identical guard for the register map.
 
 The I2C test passes per-test extra sources (the opencores I2C core + the
 behavioural `i2c_slave_model`) to `register_test` after the test path —
@@ -151,6 +170,23 @@ Optional env: `OV7670_BAUD` (default 1000000), `OV7670_SLAVE` (default 7). Each
 test restores any register it changes, except the `slow` re-init test which
 deliberately reloads the ROM defaults. The fixture skips with a clear message
 if the port can't open or the firmware magic (`0xF0` → `0xA5`) doesn't match.
+
+## Formal verification
+
+Separate from the simulations, the self-contained single-clock control modules
+(`wb_interconnect`, `arbiter`, `watchdog`, `wb_sysregs`, `wb_osd`, `wb_grab`)
+carry **formal property proofs**. The properties live in the RTL behind
+`` `ifdef FORMAL `` — so Gowin synthesis and the Icarus sims never see them — and
+are proven by yosys's built-in SAT engine (exhaustive for the combinational
+module, k-induction for the sequential FSMs), no external SMT solver required:
+
+```sh
+ctest -L formal        # runs all formal_* proofs (gated on yosys being found)
+```
+
+The full reference — toolchain setup (OSS CAD Suite), the SAT-vs-SMT rationale,
+the SBY+z3 `cover` reachability tasks, and the per-module property table — lives
+in [`sby/README.md`](../sby/README.md).
 
 ## CTest labels
 

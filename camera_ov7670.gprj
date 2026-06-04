@@ -31,6 +31,11 @@
         <File path="src/color_utilities.vh" type="file.verilog" enable="1"/>
         <File path="src/modbus/modbus_rtu_slave.sv" type="file.verilog" enable="1"/>
         <File path="src/modbus/modbus_cam_backend.sv" type="file.verilog" enable="1"/>
+        <File path="src/modbus/wb_interconnect.sv" type="file.verilog" enable="1"/>
+        <File path="src/modbus/wb_sccb.sv" type="file.verilog" enable="1"/>
+        <File path="src/modbus/wb_sysregs.sv" type="file.verilog" enable="1"/>
+        <File path="src/modbus/wb_grab.sv" type="file.verilog" enable="1"/>
+        <File path="src/modbus/wb_osd.sv" type="file.verilog" enable="1"/>
         <File path="src/platform_config.vh" type="file.verilog" enable="1"/>
         <File path="src/debug/debug_pattern_generator.sv" type="file.verilog" enable="1"/>
         <File path="src/debug/debug_pattern_generator2.sv" type="file.verilog" enable="1"/>

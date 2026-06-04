@@ -133,10 +133,15 @@ FT2232H channel-B UART (1 Mbaud 8-E-1). A Modbus RTU slave
 runs with `EXTERNAL_BACKEND=1`: instead of an internal register file,
 every holding-register access is handed to
 [`src/modbus/modbus_cam_backend.sv`](../src/modbus/modbus_cam_backend.sv) over a small
-request/ready handshake, and the bridge turns it into one SCCB
-transaction. The mapping is **Direct 1:1** — the Modbus holding-register
+request/ready handshake. That handshake is a **Wishbone B4 classic-standard**
+master cycle, and `modbus_cam_backend` is a thin wrapper around a
+`wb_interconnect` that address-decodes to four peripheral slaves
+(`wb_sccb`, `wb_sysregs`, `wb_grab`, `wb_osd`), all in the 27 MHz `sys_clk`
+domain. A camera-register access routes to `wb_sccb`, which turns it into one
+SCCB transaction. The mapping is **Direct 1:1** — the Modbus holding-register
 address *is* the OV7670 register number (`0x00..0xC9`); a write uses the
-low byte of the value, a read returns `{8'h00, reg_byte}`.
+low byte of the value, a read returns `{8'h00, reg_byte}`. See
+[modbus_server.md](modbus_server.md) for the full bus and per-slave detail.
 
 `camera_control.v` multiplexes the SCCB controller's command inputs by
 ownership: the init FSM owns it until the ROM load reaches
@@ -348,6 +353,7 @@ src/                  Synthesizable RTL
    PositionScaler_horz.sv, PositionScaler_vert.sv,
    ov7670_default.sv, ov7670_regs.vh, debug_pattern_generator{,2}.sv,
    uart.sv, modbus_rtu_slave.sv, modbus_cam_backend.sv,
+   wb_interconnect.sv, wb_sccb.sv, wb_sysregs.sv, wb_grab.sv, wb_osd.sv,
    camera_ov7670.cst, camera_control.sdc, …)
 
 sim/                  Icarus Verilog testbenches and behavioural models

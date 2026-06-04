@@ -4,6 +4,7 @@ project (cam_ov7670_sim LANGUAGES NONE)
 
 option(IVerilog_PATH "Path to Icarus Verilog bin folder" NONE)
 option(Gowin_PATH "Path to Gowin IDE folder" NONE)
+option(Yosys_PATH "Path to yosys bin folder (optional, enables formal targets)" NONE)
 option(DUMP_SIM_VARIABLES "Enable dump variables during tests simulation" OFF)
 
 set(SimLogLevel "Info" CACHE STRING
@@ -68,6 +69,15 @@ else()
     message(STATUS "Gowin programmer_cli not found - hw_program targets disabled")
 endif()
 
+# yosys is optional: when present it enables the formal-verification ctest
+# targets (sby/). Not fatal if missing — those tests simply aren't registered.
+find_program(YOSYS yosys HINTS ${Yosys_PATH})
+if (YOSYS)
+    message(STATUS "Found yosys at ${YOSYS} - formal targets enabled (ctest -L formal)")
+else()
+    message(STATUS "yosys not found - formal targets disabled")
+endif()
+
 set(SRC_FOLDER "${CMAKE_CURRENT_SOURCE_DIR}/src")
 set(SIM_SRC_FOLDER "${CMAKE_CURRENT_SOURCE_DIR}/sim")
 set(FPGA_ELEMENTS_FOLDER "${CMAKE_CURRENT_SOURCE_DIR}/FPGADesignElements")
@@ -112,6 +122,9 @@ enable_testing()
 
 add_subdirectory("src")
 add_subdirectory("sim")
+if (YOSYS)
+    add_subdirectory("sby")
+endif()
 
 # Hardware build targets — drive Gowin's gw_sh in console mode to
 # synthesize / place-and-route / generate the bitstream without the IDE

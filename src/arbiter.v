@@ -268,7 +268,42 @@ begin: gen_mux
 	assign interconnect_mux[mux_sum(g/2,clog2(width))-1-:g/2] = interconnect_select[g-2-:g/2];
 end
 endgenerate
- 
+
+`ifdef FORMAL
+// ---- Formal verification (project addition; yosys k-induction). Prove the
+// round-robin arbiter's contract for a fixed width (set via chparam in
+// sby/CMakeLists.txt / sby/arbiter.sby): grant is one-hot (mutual exclusion,
+// even mid-transition), a granted lane was requesting last cycle, no grant
+// without enable, and select indexes the granted lane. The deployed instance
+// (video_controller's PSRAM arbiter) is width 2, a subcase.
+reg f_past_valid = 1'b0;
+always @(posedge clock) f_past_valid <= 1'b1;
+
+integer fi;
+reg [31:0] gcount;
+always @(posedge clock) begin
+	// mutual exclusion: at most one grant bit set, every cycle
+	gcount = 0;
+	for (fi = 0; fi < width; fi = fi + 1) gcount = gcount + grant[fi];
+	assert (gcount <= 1);
+
+	// arbiter `reset` is active-HIGH; only check $past relations while running
+	if (f_past_valid && !reset && !$past(reset)) begin
+		assert ((grant & ~$past(req)) == {width{1'b0}});  // grant follows req
+		if (|grant) assert ($past(enable));               // grant needs enable
+		if (|grant) assert (grant[select]);               // select tracks grant
+	end
+end
+
+// reachability (cover task)
+always @(posedge clock) begin
+	cover (grant[0]);
+	cover (grant[width-1]);
+	if (f_past_valid)
+		cover (|grant && $past(|grant) && (grant != $past(grant)));  // hand-off
+end
+`endif
+
 endmodule
  
 module mux_array #(

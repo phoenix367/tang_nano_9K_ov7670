@@ -244,6 +244,17 @@ def test_osd_get_default_disabled(client):
     _connect(tc)
     r = tc.get("/api/osd").get_json()
     assert r["ok"] and r["enabled"] is False
+    assert r["lines"] == []          # nothing written yet -> no text
+
+
+def test_osd_get_reads_back_text(client):
+    """GET /api/osd returns the overlay text the device is showing (for connect)."""
+    tc, _ = client
+    _connect(tc)
+    tc.post("/api/osd", json={"lines": ["HELLO", "  world"]})
+    r = tc.get("/api/osd").get_json()
+    assert r["ok"]
+    assert r["lines"] == ["HELLO", "  world"]   # trailing blank rows/cols trimmed
 
 
 def test_osd_enable_and_write_text(client):

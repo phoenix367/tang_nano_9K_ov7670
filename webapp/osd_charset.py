@@ -50,6 +50,7 @@ PSEUDOGRAPHICS = [
 
 PSEUDO_BY_CHAR = {ch: b for ch, b in PSEUDOGRAPHICS}
 PSEUDO_CHARS = [ch for ch, _ in PSEUDOGRAPHICS]
+PSEUDO_BY_BYTE = {b: ch for ch, b in PSEUDOGRAPHICS}
 
 
 def osd_byte(ch):
@@ -60,3 +61,14 @@ def osd_byte(ch):
         return code
     o = ord(ch)
     return o if o <= 0xFF else 0x3F
+
+
+def osd_char(b):
+    """Inverse of osd_byte: map an OSD ROM byte back to a character. Pseudographic
+    C1 codes (0x80..0x9F) -> their Unicode glyph; control codes (< 0x20, including
+    the 0x00 blank cell) render blank, so -> space; else the Latin-1 character."""
+    b &= 0xFF
+    ch = PSEUDO_BY_BYTE.get(b)
+    if ch is not None:
+        return ch
+    return " " if b < 0x20 else chr(b)

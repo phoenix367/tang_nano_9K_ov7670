@@ -138,8 +138,8 @@ covered in [Frame grab and download](#frame-grab-and-download).
 | `0xF9`| R      | [Watchdog board health](#board-health-watchdog) (bit-field, below) |
 | `0xFA`| W      | Write `1` = reset to defaults — re-run the power-on camera init (reloads every OV7670 register from ROM) |
 | `0xFB`| R/W    | [OSD overlay](#osd-text-overlay) control: write bit0 = show, bit1 = clear buffer; read bit0 = currently shown |
-| `0xFC`| R/W    | OSD write cursor (character cell `row*60 + col`, `0`–`1019`)    |
-| `0xFD`| W      | OSD character code at the cursor; the cursor auto-increments (wraps at 1020) |
+| `0xFC`| R/W    | OSD cursor (character cell `row*60 + col`, `0`–`1019`)          |
+| `0xFD`| R/W    | OSD character at the cursor — **write** stores a code, **read** returns the stored code; either way the cursor auto-increments (wraps at 1020) |
 
 The 16-bit uptime (`0xF1`/`0xF2`) is `0` at reset and free-runs (~1 Hz); read the
 high byte first (it latches the low byte for a coherent pair). A host that sees
@@ -206,13 +206,24 @@ Three reserved registers drive it (all served without an SCCB cycle):
 | Addr  | Access | Meaning                                                        |
 | ----- | ------ | -------------------------------------------------------------- |
 | `0xFB`| R/W    | Control — write bit0 = show overlay, bit1 = clear the whole buffer; read bit0 = currently shown |
-| `0xFC`| R/W    | Write cursor — character cell `row*60 + col` (`0`–`1019`)      |
-| `0xFD`| W      | Character code at the cursor (Latin-1 `0x00`–`0xFF`, or `0x80`–`0x9F` for a pseudographic); the cursor then **auto-increments** (wrapping at cell 1020) |
+| `0xFC`| R/W    | Cursor — character cell `row*60 + col` (`0`–`1019`)            |
+| `0xFD`| R/W    | Character at the cursor — **write** a code (Latin-1 `0x00`–`0xFF`, or `0x80`–`0x9F` for a pseudographic), or **read** to get the code stored there; either access **auto-increments** the cursor (wrapping at cell 1020) |
 
 To write a string: set the cursor (`0xFC`) to `row*60 + col`, then write each
 character's code to `0xFD` in turn — the auto-increment lets a whole line stream
 with back-to-back FC06 writes. Control codes and space render blank. Clearing
 (`0xFB` bit1) sweeps all 1020 cells to blank in hardware and homes the cursor.
+
+**Reading the overlay back:** set the cursor (`0xFC`), then read `0xFD` to get the
+glyph at the cursor; the cursor auto-increments, so back-to-back single reads walk
+a run of cells. (The read is one bus wait-state slower than a write — the
+character buffer's read port is registered — but the host doesn't notice over
+UART.) To read the *whole* buffer efficiently, use the **burst-read band**:
+addresses `0x0800`–`0x0FFF` (reads only) return successive cells from the cursor,
+so a single FC03 of up to 127 registers fetches 127 cells at once — the full
+60×17 buffer is ~9 reads instead of 1020. Set the cursor (`0xFC`), then FC03-burst
+from `0x0800` (the address is ignored; the cursor walks). A write in this band is
+ignored (reads as 0).
 
 ```sh
 # show "HI" at the top-left, then enable the overlay
@@ -220,6 +231,10 @@ scripts/modbus_test.py --port /dev/ttyGowin --write 0xFC 0      # cursor -> (0,0
 scripts/modbus_test.py --port /dev/ttyGowin --write 0xFD 0x48   # 'H'
 scripts/modbus_test.py --port /dev/ttyGowin --write 0xFD 0x49   # 'I'
 scripts/modbus_test.py --port /dev/ttyGowin --write 0xFB 1      # show overlay
+
+# read the two cells back
+scripts/modbus_test.py --port /dev/ttyGowin --write 0xFC 0      # cursor -> (0,0)
+scripts/modbus_test.py --port /dev/ttyGowin --read  0xFD 2      # -> 0x48 0x49
 ```
 
 The character buffer crosses from the Modbus (`sys_clk`) domain to the LCD pixel

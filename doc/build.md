@@ -20,10 +20,36 @@ exposes a small set of `make` targets.
 | Icarus Verilog 12-20220611+     | `apt install iverilog` (or distro equivalent)           | [installer](https://bleyer.org/icarus/)            |
 | CMake 3.17 or newer             | `apt install cmake`                                     | bundled with most IDEs                             |
 | Python 3 (for scaler scripts)   | `apt install python3`                                   | python.org installer                               |
+| Yosys + z3 *(optional, formal)* | `apt install yosys z3`                                  | OSS CAD Suite                                      |
+| SymbiYosys *(optional, cover)*  | from source — [YosysHQ/sby](https://github.com/YosysHQ/sby) | OSS CAD Suite                                  |
 
 The Gowin install is required even on Linux for simulation, because
 CMake locates `simlib/gw1n/prim_tsim.v` and the `GowinSynthesis`
 binary under the IDE install root.
+
+**Yosys, z3, and SymbiYosys (`sby`) are optional** — only the formal
+verification proofs need them (`ctest -L formal`; see
+[testing.md](testing.md#formal-verification) and [`sby/README.md`](../sby/README.md)).
+On Ubuntu the easiest path is the distro packages plus a separate `sby` build:
+
+```sh
+sudo apt install yosys z3                 # yosys (built-in SAT) + the z3 solver
+
+# SymbiYosys is not packaged — build it from source (only needed for the
+# optional `cover` reachability tasks):
+git clone https://github.com/YosysHQ/sby
+cd sby && sudo make install
+```
+
+The committed `ctest -L formal` proofs only need **yosys** — they run on its
+built-in SAT engine, so `apt install yosys` alone is enough; z3 and `sby` are
+needed only for the optional `cover` reachability tasks. CMake gates the formal
+targets on `find_program(YOSYS)`, so a checkout without yosys simply skips them.
+
+Alternatively, the **OSS CAD Suite** bundles `yosys`, `sby`, `sv2v`, and the SMT
+solvers in one download (handy on Windows or to get a matched set) — grab a
+release from <https://github.com/YosysHQ/oss-cad-suite-build/releases>, extract
+it, and `source oss-cad-suite/environment` (or add its `bin/` to `PATH`).
 
 Clone the repo with submodules — `FPGADesignElements` is a submodule
 that supplies the CDC and pipeline primitives:

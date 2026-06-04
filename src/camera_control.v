@@ -76,6 +76,8 @@ wire        osd_enable;
 wire        osd_wr_en;
 wire [10:0] osd_wr_addr;
 wire [7:0]  osd_wr_data;
+wire [10:0] osd_rb_addr;
+wire [7:0]  osd_rb_data;
 
 // channel-1 PSRAM bring-up loopback (Modbus backend <-> VGA_timing/psram_ch1)
 wire        grab_arm;
@@ -166,6 +168,8 @@ modbus_cam_backend cam_bridge (
     .osd_wr_en(osd_wr_en),
     .osd_wr_addr(osd_wr_addr),
     .osd_wr_data(osd_wr_data),
+    .osd_rb_addr(osd_rb_addr),
+    .osd_rb_data(osd_rb_data),
     .grab_arm(grab_arm),
     .grab_rd_req(grab_rd_req),
     .grab_rd_addr(grab_rd_addr),
@@ -324,7 +328,9 @@ VGA_timing	VGA_timing_inst(
     .osd_wr_clk(sys_clk),
     .osd_wr_en(osd_wr_en),
     .osd_wr_addr(osd_wr_addr),
-    .osd_wr_data(osd_wr_data)
+    .osd_wr_data(osd_wr_data),
+    .osd_rb_addr(osd_rb_addr),
+    .osd_rb_data(osd_rb_data)
 );
 
 i2c_master_top i2c_master(

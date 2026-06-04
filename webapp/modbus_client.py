@@ -10,7 +10,7 @@ pymodbus responses/exceptions to the small API the app and tests use.
 
 import time
 
-from osd_charset import osd_byte
+from osd_charset import osd_byte, osd_char
 from pymodbus import FramerType
 from pymodbus.client import ModbusSerialClient
 from pymodbus.exceptions import ConnectionException, ModbusException
@@ -24,8 +24,9 @@ REG_STREAM  = 0x00F8   # write = rewind the download stream to pixel 0
 REG_HEALTH  = 0x00F9   # read = watchdog health bits (see read_health)
 REG_REINIT  = 0x00FA   # write 1 = re-run camera init (reset all registers to defaults)
 REG_OSD_CTRL = 0x00FB  # write bit0 = enable, bit1 = clear; read bit0 = enable
-REG_OSD_ADDR = 0x00FC  # write = OSD char-cell write cursor (row*OSD_COLS + col)
-REG_OSD_DATA = 0x00FD  # write = char code at the cursor (cursor auto-increments)
+REG_OSD_ADDR = 0x00FC  # OSD char-cell cursor (row*OSD_COLS + col); read or write
+REG_OSD_DATA = 0x00FD  # char at the cursor: write a code or read it back; either auto-increments
+OSD_STREAM_BASE = 0x0800  # FC03 reads in [0x0800..0x0FFF] burst-read consecutive OSD cells
 STREAM_BASE = 0x1000   # any FC03 read >= here returns the next frame pixel(s)
 FRAME_W, FRAME_H = 640, 480
 FRAME_PIXELS = FRAME_W * FRAME_H
@@ -217,6 +218,42 @@ class ModbusRTU:
         self.write_single(REG_OSD_ADDR, row * OSD_COLS + col)
         for ch in text:
             self.write_single(REG_OSD_DATA, osd_byte(ch))
+
+    def osd_read_cells(self, row, col, count):
+        """Read back `count` glyph codes from the OSD grid starting at (row, col).
+
+        Sets the cursor (0xFC), then reads 0xFD `count` times. Each 0xFD read
+        returns the cell at the cursor and auto-increments it, so the reads walk a
+        run of cells. (FC03 cannot burst this: the slave walks consecutive register
+        *addresses*, not repeated 0xFD reads, so one single-register read per cell.)
+        Returns a list of byte codes (0..255).
+        """
+        if not (0 <= row < OSD_ROWS and 0 <= col < OSD_COLS):
+            raise ValueError(f"OSD cell ({row}, {col}) out of range")
+        self.write_single(REG_OSD_ADDR, row * OSD_COLS + col)
+        return [self.read_reg(REG_OSD_DATA) for _ in range(count)]
+
+    def osd_read_text(self):
+        """Read the whole OSD character buffer back and decode it to text.
+
+        Returns a list of strings (each up to OSD_COLS wide), trailing blank cells
+        and all-blank rows stripped, so it reflects what is shown on the LCD.
+
+        Uses the burst-read band: set the cursor to 0, then FC03-burst consecutive
+        cells from OSD_STREAM_BASE (each band read returns the cell at the cursor
+        and auto-increments it, so the cursor walks across the burst). The full
+        1020-cell buffer is ~9 transactions instead of 1020 single 0xFD reads.
+        """
+        self.write_single(REG_OSD_ADDR, 0)
+        codes = []
+        while len(codes) < OSD_CELLS:
+            n = min(125, OSD_CELLS - len(codes))   # FC03 burst (device MAX_QTY = 127)
+            codes.extend(self.read_holding(OSD_STREAM_BASE, n))
+        rows = ["".join(osd_char(b & 0xFF) for b in codes[r * OSD_COLS:(r + 1) * OSD_COLS]).rstrip()
+                for r in range(OSD_ROWS)]
+        while rows and rows[-1] == "":
+            rows.pop()
+        return rows
 
     # ---- frame grab (capture into PSRAM ch1, then stream over FC03) ----------
     def grab_busy(self):

@@ -439,7 +439,9 @@ def api_reset_defaults():
 def api_osd():
     """OSD text overlay control.
 
-    GET  -> {ok, enabled}.
+    GET  -> {ok, enabled, lines} where `lines` is the overlay text read back from
+            the device (trailing blank cells/rows trimmed) so the UI can show what
+            is currently on the LCD.
     POST JSON keys (all optional, applied in this order):
       "clear":   true      -> blank the whole character buffer first
       "text":    "string"  -> write at ("row","col") (defaults 0,0)
@@ -450,7 +452,8 @@ def api_osd():
         try:
             client = _require_client()
             if request.method == "GET":
-                return jsonify(ok=True, enabled=client.osd_enabled())
+                return jsonify(ok=True, enabled=client.osd_enabled(),
+                               lines=client.osd_read_text())
             data = request.get_json(force=True, silent=True) or {}
             if data.get("clear"):
                 client.osd_clear()

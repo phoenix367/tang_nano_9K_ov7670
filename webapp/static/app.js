@@ -106,9 +106,7 @@ function enterState(next, info) {
   if (conn) {
     showTab(currentTab);
   } else {
-    $("#tab-basic").hidden = true;
-    $("#tab-color").hidden = true;
-    $("#tab-capture").hidden = true;
+    for (const t of ["basic", "color", "capture", "overlay"]) $("#tab-" + t).hidden = true;
     clearGrabCanvas();          // drop any grabbed frame from a prior session
     $("#board-health").hidden = true;
   }
@@ -193,6 +191,7 @@ async function heartbeat() {
     if (lastUptime !== null && data.uptime < lastUptime - 1) {
       toast("Device was reset — resyncing", "error");
       loadSettings();                        // re-pull the reverted register state
+      loadOsdState();                        // re-read the (now cleared) OSD overlay
     }
     lastUptime = data.uptime;
     if (data.magic_ok === false) toast("Unexpected firmware magic", "error");
@@ -239,6 +238,7 @@ async function tryReconnect() {
     enterState(ST.CONNECTED, info);
     renderControls();
     await loadSettings();
+    loadOsdState();
     toast("Reconnected");
   } catch { /* port present but not ready yet; keep trying */ }
 }
@@ -805,9 +805,16 @@ async function resetDefaults() {
 // --------------------------------------------------------------- OSD overlay
 async function loadOsdState() {
   try {
-    const { enabled } = await api("/api/osd");
+    const { enabled, lines } = await api("/api/osd");
     $("#osd-enable").checked = !!enabled;
-  } catch { /* not connected yet — leave the checkbox as-is */ }
+    // reflect the overlay text the device is currently showing
+    if (Array.isArray(lines)) {
+      const text = lines.join("\n");
+      $("#osd-text").value = text;
+      lastGoodOsd = text;        // baseline for the overflow-reject logic
+      updateOsdCount();
+    }
+  } catch { /* not connected yet — leave the editor as-is */ }
 }
 
 const OSD_COLS = 60, OSD_ROWS = 17;
