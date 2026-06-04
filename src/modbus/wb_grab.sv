@@ -1,6 +1,10 @@
 `ifdef __ICARUS__
 `include "timescale.v"
 `include "camera_control_defs.vh"
+`elsif FORMAL
+// formal (SymbiYosys/yosys): only WRAP_SIM is needed from the project headers and
+// it is a no-op outside Icarus -- define it empty so the read is self-contained.
+`define WRAP_SIM(x)
 `else
 `include "../timescale.v"
 `include "../camera_control_defs.vh"
@@ -186,5 +190,61 @@ module wb_grab (
             endcase
         end
     end
+
+`ifdef FORMAL
+    // ---- Formal verification (yosys k-induction + SBY liveness; see
+    // sby/CMakeLists.txt, sby/wb_grab*.sby). ----
+    reg f_past_valid = 1'b0;
+    always @(posedge clk) f_past_valid <= 1'b1;
+
+    always @(posedge clk) begin
+        // ack is a Moore output, high only in S_RESP; state is always defined
+        assert (wb_ack_o == (state == S_RESP));
+        assert (state <= S_RESP);
+
+        if (f_past_valid && reset_n && $past(reset_n)) begin
+            // ack and the ch1 control pulses are single-cycle (never held two
+            // cycles -> psram_ch1 is never spuriously re-triggered, master sees
+            // exactly one ack per access)
+            assert (!(wb_ack_o    && $past(wb_ack_o)));
+            assert (!(grab_arm    && $past(grab_arm)));
+            assert (!(grab_rd_req && $past(grab_rd_req)));
+
+            // FSM progress: every state advances deterministically EXCEPT the two
+            // fetch waits, which advance exactly when grab_busy moves. So the only
+            // way to stall is the ch1 engine (the environment), never the FSM.
+            if ($past(state) == S_FETCH0)                      assert (state == S_FETCH1);
+            if ($past(state) == S_FETCH1 &&  $past(grab_busy)) assert (state == S_FETCH2);
+            if ($past(state) == S_FETCH1 && !$past(grab_busy)) assert (state == S_FETCH1);
+            if ($past(state) == S_FETCH2 && !$past(grab_busy)) assert (state == S_SERVE);
+            if ($past(state) == S_FETCH2 &&  $past(grab_busy)) assert (state == S_FETCH2);
+            if ($past(state) == S_SERVE)                       assert (state == S_RESP);
+            if ($past(state) == S_RESP)                        assert (state == G_IDLE);
+
+            // stream pointer: finishing the 16th pixel of a burst (high half of
+            // word 7) advances to the next burst and marks the buffer empty
+            if ($past(state) == S_SERVE && $past(s_half) && $past(s_widx) == 3'd7) begin
+                assert (s_widx   == 3'd0);
+                assert (s_baddr  == ($past(s_baddr) + BSTEP));
+                assert (s_loaded == 1'b0);
+            end
+        end
+    end
+
+`ifdef SBY_LIVE
+    // ---- Full temporal liveness (SBY `mode live`). The conditional-progress
+    // asserts above already prove there is no INTERNAL deadlock -- the only stalls
+    // are the two grab_busy waits. This block adds the temporal closure: given a
+    // fair ch1 engine (grab_busy does not stay stuck in either wait), the slave
+    // ALWAYS eventually returns to idle. Requires an aiger liveness engine
+    // (suprove / avy, e.g. from OSS CAD Suite) -- not run by `ctest -L formal`
+    // (yosys's built-in SAT does safety only). See sby/README.md.
+    always @(posedge clk) begin
+        assume (s_eventually ((state != S_FETCH1) ||  grab_busy));
+        assume (s_eventually ((state != S_FETCH2) || !grab_busy));
+        assert (s_eventually (state == G_IDLE));
+    end
+`endif
+`endif
 
 endmodule

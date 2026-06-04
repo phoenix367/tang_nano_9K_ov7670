@@ -66,3 +66,11 @@ register_formal(wb_sysregs wb_sysregs
 # 1020-cell sweep correct WITHOUT unrolling 1020 cycles.
 register_formal(wb_osd wb_osd
     "${SRC_FOLDER}/modbus/wb_osd.sv")
+
+# wb_grab bus slave (sequential, multi-cycle stream FSM): Moore ack, single-cycle
+# control pulses, defined state, deterministic FSM progress (the only stalls are
+# the two grab_busy fetch-waits -> no internal deadlock), and stream-pointer
+# advance. (Full temporal liveness needs an aiger engine -- see SBY_LIVE in the
+# RTL and sby/README.md; not part of this SAT-based target.)
+register_formal(wb_grab wb_grab
+    "${SRC_FOLDER}/modbus/wb_grab.sv")

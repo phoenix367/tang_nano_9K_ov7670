@@ -85,12 +85,22 @@ will genuinely need SBY (BMC / k-induction), where SMT is the right tool.
 The CTest targets are gated on `yosys` being found (see the top-level
 `CMakeLists.txt`); `ctest -L formal` runs them all.
 
-`wb_osd` has **no SBY cover task**: z3's word-level BMC can't handle this model's
-1020-cell comparisons (it times out even at step 0), whereas yosys's bit-level
-SAT proves the asserts in ~0.2 s. Reachability (enable / cursor advance / the full
-clear sweep) is demonstrated concretely by `sim/unit/wb_osd/cursor.sv` instead.
+| `formal_wb_grab` (ctest, yosys SAT) | `src/modbus/wb_grab.sv` | sequential, k-induction | Moore ack; ack + ch1 control pulses (`grab_arm`/`grab_rd_req`) are single-cycle; state always defined; **deterministic FSM progress** — every state advances, the only stalls are the two `grab_busy` fetch-waits (no internal deadlock); stream pointer advances a burst at the 16th pixel |
 
-Good next candidate (single-clock, no Gowin IP): the last FSM bus slave `wb_grab`
-(needs an `assume` that `grab_busy` eventually drops). Modules that instantiate
-Gowin IP or cross clock domains (`psram_ch1`, the video path) need the IP
-black-boxed and clock abstraction first.
+`wb_osd` and `wb_grab` have **no SBY cover task**: z3's word-level BMC can't handle
+their wide signals (the 1020-cell comparisons / the 256-bit burst), timing out,
+whereas yosys's bit-level SAT proves the asserts in ~0.2–1 s. Reachability is
+instead demonstrated concretely by the sim tests `sim/unit/wb_osd/cursor.sv` and
+`sim/unit/wb_grab/stream.sv`.
+
+**Liveness.** The `wb_grab` safety proof already shows there is no *internal*
+deadlock (progress is deterministic; the only stalls are the `grab_busy` waits).
+Full *temporal* liveness — "given a fair ch1 engine, the slave always eventually
+returns to idle" — is encoded behind `` `ifdef SBY_LIVE `` in `wb_grab.sv` using
+`s_eventually`. It needs SBY `mode live` with an **aiger liveness engine
+(`suprove`/`avy`, e.g. from OSS CAD Suite)**, which this dev env lacks, so it is
+not part of the SAT-based `ctest -L formal` target.
+
+All the clean single-clock, no-Gowin-IP modules are now covered. Remaining targets
+(`psram_ch1`, the video datapath) instantiate Gowin IP and/or cross clock domains,
+so they need the IP black-boxed and clock abstraction before they can be proven.
