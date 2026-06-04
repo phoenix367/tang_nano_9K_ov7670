@@ -171,6 +171,23 @@ test restores any register it changes, except the `slow` re-init test which
 deliberately reloads the ROM defaults. The fixture skips with a clear message
 if the port can't open or the firmware magic (`0xF0` → `0xA5`) doesn't match.
 
+## Formal verification
+
+Separate from the simulations, the self-contained single-clock control modules
+(`wb_interconnect`, `arbiter`, `watchdog`, `wb_sysregs`, `wb_osd`, `wb_grab`)
+carry **formal property proofs**. The properties live in the RTL behind
+`` `ifdef FORMAL `` — so Gowin synthesis and the Icarus sims never see them — and
+are proven by yosys's built-in SAT engine (exhaustive for the combinational
+module, k-induction for the sequential FSMs), no external SMT solver required:
+
+```sh
+ctest -L formal        # runs all formal_* proofs (gated on yosys being found)
+```
+
+The full reference — toolchain setup (OSS CAD Suite), the SAT-vs-SMT rationale,
+the SBY+z3 `cover` reachability tasks, and the per-module property table — lives
+in [`sby/README.md`](../sby/README.md).
+
 ## CTest labels
 
 `register_test()` attaches two labels to every test: the scope
