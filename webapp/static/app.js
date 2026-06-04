@@ -106,9 +106,7 @@ function enterState(next, info) {
   if (conn) {
     showTab(currentTab);
   } else {
-    $("#tab-basic").hidden = true;
-    $("#tab-color").hidden = true;
-    $("#tab-capture").hidden = true;
+    for (const t of ["basic", "color", "capture", "overlay"]) $("#tab-" + t).hidden = true;
     clearGrabCanvas();          // drop any grabbed frame from a prior session
     $("#board-health").hidden = true;
   }
