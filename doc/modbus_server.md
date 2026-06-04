@@ -267,11 +267,15 @@ char-buffer write port (verbatim from the old monolith):
 | ------ | --------------------------------------------------------------------- |
 | `0xFB` | write bit0 = `osd_enable`, bit1 = clear-buffer sweep; read bit0 = enable (see [video_datapath.md](video_datapath.md#osd-text-overlay)) |
 | `0xFC` | write OSD cursor (`row*60 + col`); read = current cursor              |
-| `0xFD` | write character code at the cursor; cursor auto-increments (wraps at 1020) |
+| `0xFD` | write character code at the cursor, or read it back; cursor auto-increments (wraps at 1020) |
 
 A `0xFB` clear pulse triggers a hardware sweep that blanks all 1020 cells and homes
 the cursor; the write port drives `osd_wr_en/addr/data` into the dual-clock
-character buffer in `OSDOverlay`.
+character buffer in `OSDOverlay`. A `0xFD` **read** returns the glyph at the cursor
+via a second (registered) read port on the char buffer (`osd_rb_addr`/`osd_rb_data`),
+so it takes one bus wait-state — handled by a small `G_IDLE → G_CAP → G_RESP` FSM
+in `wb_osd` — then auto-increments the cursor like a write, letting a host read a
+run of cells back to back.
 
 ## Connections summary
 

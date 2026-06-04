@@ -59,7 +59,7 @@ sim/
 │   ├── wb_grab/
 │   │   └── stream.sv                grab regs F3..F8 + stream-band ramp walk + rewind (stubbed ch1)
 │   └── wb_osd/
-│       └── cursor.sv                enable / cursor auto-increment / clear sweep over 1020 cells
+│       └── cursor.sv                enable / cursor auto-increment / clear sweep over 1020 cells / 0xFD glyph read-back
 │
 └── integration/                     cross-module tests
     ├── frame_roundtrip/

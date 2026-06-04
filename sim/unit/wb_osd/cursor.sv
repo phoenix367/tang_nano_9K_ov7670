@@ -31,15 +31,27 @@ integer errors;
 string  module_name, str;
 DataLogger #(.verbosity(LOG_LEVEL)) logger();
 
+wire [10:0] osd_rb_addr;
+reg  [7:0]  osd_rb_data;
+
 wb_osd dut (
     .clk(clk), .reset_n(reset_n),
     .wb_adr_i(adr), .wb_dat_i(dat_w), .wb_dat_o(dat_r),
     .wb_we_i(we), .wb_stb_i(stb), .wb_cyc_i(cyc), .wb_ack_o(ack),
     .osd_enable(osd_enable), .osd_wr_en(osd_wr_en),
-    .osd_wr_addr(osd_wr_addr), .osd_wr_data(osd_wr_data)
+    .osd_wr_addr(osd_wr_addr), .osd_wr_data(osd_wr_data),
+    .osd_rb_addr(osd_rb_addr), .osd_rb_data(osd_rb_data)
 );
 
 always #5 clk = ~clk;
+
+// model OSDOverlay's char buffer: write port + registered (1-cycle) read-back,
+// exactly as the RTL drives them, so 0xFD reads return what 0xFD writes stored.
+reg [7:0] tb_charbuf [0:1019];
+always @(posedge clk) begin
+    if (osd_wr_en) tb_charbuf[osd_wr_addr] <= osd_wr_data;
+    osd_rb_data <= tb_charbuf[osd_rb_addr];
+end
 
 // monitor the char-buffer write port
 reg [10:0] last_addr;
@@ -149,8 +161,36 @@ initial begin
         logger.error(module_name, str); errors = errors + 1;
     end
 
+    // 5) read-back: write a short run, then read it back over 0xFD. The cursor is
+    //    shared, so set it, write the run, set it again, and stream reads.
+    wb_write(16'h00FC, 16'd10);              // cursor = 10
+    wb_write(16'h00FD, 16'h0048);            // 'H' at 10 -> cursor 11
+    wb_write(16'h00FD, 16'h0049);            // 'I' at 11 -> cursor 12
+    wb_write(16'h00FD, 16'h0021);            // '!' at 12 -> cursor 13
+    wb_write(16'h00FC, 16'd10);              // rewind cursor to 10
+    wb_read(16'h00FD, rd);                   // -> 'H', cursor 11
+    if (rd !== 16'h0048) begin
+        $sformat(str, "read-back[10] = %h, expected 0048 ('H')", rd);
+        logger.error(module_name, str); errors = errors + 1;
+    end
+    wb_read(16'h00FD, rd);                   // -> 'I', cursor 12
+    if (rd !== 16'h0049) begin
+        $sformat(str, "read-back[11] = %h, expected 0049 ('I')", rd);
+        logger.error(module_name, str); errors = errors + 1;
+    end
+    wb_read(16'h00FD, rd);                   // -> '!', cursor 13
+    if (rd !== 16'h0021) begin
+        $sformat(str, "read-back[12] = %h, expected 0021 ('!')", rd);
+        logger.error(module_name, str); errors = errors + 1;
+    end
+    wb_read(16'h00FC, rd);                   // cursor advanced by the three reads
+    if (rd !== 16'd13) begin
+        $sformat(str, "cursor after read-back = %0d, expected 13", rd);
+        logger.error(module_name, str); errors = errors + 1;
+    end
+
     if (errors == 0) begin
-        logger.info(module_name, "wb_osd: enable/cursor/auto-increment/clear all correct");
+        logger.info(module_name, "wb_osd: enable/cursor/auto-increment/clear/read-back all correct");
         `TEST_PASS
     end else
         `TEST_FAIL

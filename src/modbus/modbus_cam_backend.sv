@@ -67,6 +67,8 @@ module modbus_cam_backend
     output wire        osd_wr_en,
     output wire [10:0] osd_wr_addr,
     output wire [7:0]  osd_wr_data,
+    output wire [10:0] osd_rb_addr,   // OSD char-buffer read-back: cursor out
+    input  wire [7:0]  osd_rb_data,   //                            glyph in
 
     // channel-1 PSRAM bring-up loopback (wb_grab, to/from psram_ch1 via VGA_timing)
     output wire        grab_arm,
@@ -144,7 +146,8 @@ module modbus_cam_backend
         .wb_adr_i(m_adr), .wb_dat_i(m_dat_w), .wb_dat_o(osd_dat),
         .wb_we_i(m_we), .wb_stb_i(osd_stb), .wb_cyc_i(m_cyc), .wb_ack_o(osd_ack),
         .osd_enable(osd_enable), .osd_wr_en(osd_wr_en),
-        .osd_wr_addr(osd_wr_addr), .osd_wr_data(osd_wr_data)
+        .osd_wr_addr(osd_wr_addr), .osd_wr_data(osd_wr_data),
+        .osd_rb_addr(osd_rb_addr), .osd_rb_data(osd_rb_data)
     );
 
 endmodule

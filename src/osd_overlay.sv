@@ -51,7 +51,11 @@ module OSDOverlay #(
     input  wire        wr_clk,
     input  wire        wr_en,
     input  wire [10:0] wr_addr,    // 0 .. COLS*ROWS-1  (row*COLS + col)
-    input  wire [7:0]  wr_data
+    input  wire [7:0]  wr_data,
+    // character-buffer read-back port (host / wr_clk domain): registered read,
+    // 1-cycle latency. Lets the host read back what it wrote (see wb_osd 0xFD read).
+    input  wire [10:0] rb_addr,
+    output reg  [7:0]  rb_data
 );
     localparam integer CELLS = COLS * ROWS;
 
@@ -73,6 +77,11 @@ module OSDOverlay #(
     initial for (ci = 0; ci < CELLS; ci = ci + 1) charbuf[ci] = 8'h00;
     always @(posedge wr_clk)
         if (wr_en) charbuf[wr_addr] <= `WRAP_SIM(#1) wr_data;
+
+    // host read-back: registered read of the char buffer on the wr_clk side
+    // (second read port; the render read below is on `clk`).
+    always @(posedge wr_clk)
+        rb_data <= `WRAP_SIM(#1) charbuf[rb_addr];
 
     // ---- reconstruct the active pixel position from DE / VSYNC ----
     reg [10:0] x, y;       // 0..SCREEN_WIDTH-1, 0..SCREEN_HEIGHT-1

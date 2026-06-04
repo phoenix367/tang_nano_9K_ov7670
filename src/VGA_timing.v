@@ -59,7 +59,10 @@ module VGA_timing
     input                  osd_wr_clk,
     input                  osd_wr_en,
     input  [10:0]          osd_wr_addr,
-    input  [7:0]           osd_wr_data
+    input  [7:0]           osd_wr_data,
+    // OSD char-buffer read-back (sys_clk side): cursor in, glyph out
+    input  [10:0]          osd_rb_addr,
+    output [7:0]           osd_rb_data
 );
 // Logger initialization
 `ifdef __ICARUS__
@@ -418,7 +421,9 @@ VideoController #(
         .wr_clk(osd_wr_clk),
         .wr_en(osd_wr_en),
         .wr_addr(osd_wr_addr),
-        .wr_data(osd_wr_data)
+        .wr_data(osd_wr_data),
+        .rb_addr(osd_rb_addr),
+        .rb_data(osd_rb_data)
     );
 
     // ---- health watchdog: blink debug_led while the LCD, memory and camera

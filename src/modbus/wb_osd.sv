@@ -46,7 +46,11 @@ module wb_osd (
     output reg         osd_enable,      // held: 1 = OSD visible
     output reg         osd_wr_en,       // 1-cycle write strobe into the char buffer
     output reg [10:0]  osd_wr_addr,     // character cell (row*COLS + col)
-    output reg [7:0]   osd_wr_data      // glyph/char code
+    output reg [7:0]   osd_wr_data,     // glyph/char code
+    // character-buffer read-back: address out (= cursor), data in. OSDOverlay's
+    // read port has 1-cycle latency, so a 0xFD read takes one bus wait state.
+    output wire [10:0] osd_rb_addr,
+    input  wire [7:0]  osd_rb_data
 );
     localparam [15:0] ADDR_OSD_CTRL = 16'h00FB,
                       ADDR_OSD_ADDR = 16'h00FC,
@@ -65,16 +69,30 @@ module wb_osd (
     reg        osd_clear_pulse;   // pulse: blank the whole buffer
     reg        osd_clear_busy;
     reg [10:0] osd_clear_addr;
+    reg        osd_rd_we;         // pulse: a 0xFD read completed -> advance cursor
 
-    // single-cycle slave: acknowledge immediately
-    assign wb_ack_o = sel;
+    // continuously present the cursor to the char-buffer read-back port
+    assign osd_rb_addr = osd_cursor;
+
+    // A 0xFD read returns the glyph at the cursor. OSDOverlay's read port is
+    // registered (1-cycle latency), so the read runs through a small FSM: G_CAP is
+    // a settle cycle (so back-to-back reads, which each advance the cursor, never
+    // return stale data), then G_RESP asserts ack for one cycle and pulses
+    // osd_rd_we to advance the cursor.
+    localparam [1:0] G_IDLE = 2'd0, G_CAP = 2'd1, G_RESP = 2'd2;
+    reg  [1:0] gstate;
+    wire glyph_rd = sel & ~wb_we_i & (wb_adr_i == ADDR_OSD_DATA);
+
+    // single-cycle ack for everything except a 0xFD glyph read (waits for G_RESP)
+    assign wb_ack_o = sel & (~glyph_rd | (gstate == G_RESP));
 
     // combinational read decode
     always @* begin
         case (wb_adr_i)
             ADDR_OSD_CTRL: wb_dat_o = {15'd0, osd_enable};
             ADDR_OSD_ADDR: wb_dat_o = {5'd0, osd_cursor};
-            default:       wb_dat_o = 16'h0000;     // 0xFD + any unowned address
+            ADDR_OSD_DATA: wb_dat_o = {8'h00, osd_rb_data};   // glyph at the cursor
+            default:       wb_dat_o = 16'h0000;               // any unowned address
         endcase
     end
 
@@ -87,10 +105,25 @@ module wb_osd (
             osd_data_we     <= `WRAP_SIM(#1) 1'b0;
             osd_data_val    <= `WRAP_SIM(#1) 8'd0;
             osd_clear_pulse <= `WRAP_SIM(#1) 1'b0;
+            gstate          <= `WRAP_SIM(#1) G_IDLE;
+            osd_rd_we       <= `WRAP_SIM(#1) 1'b0;
         end else begin
             osd_addr_we     <= `WRAP_SIM(#1) 1'b0;   // 1-cycle pulse defaults
             osd_data_we     <= `WRAP_SIM(#1) 1'b0;
             osd_clear_pulse <= `WRAP_SIM(#1) 1'b0;
+
+            // 0xFD glyph-read FSM: G_CAP lets the registered RAM read settle,
+            // G_RESP acks and pulses osd_rd_we to advance the cursor afterwards.
+            osd_rd_we <= `WRAP_SIM(#1) 1'b0;
+            case (gstate)
+                G_IDLE:  if (glyph_rd) gstate <= `WRAP_SIM(#1) G_CAP;
+                G_CAP:   gstate <= `WRAP_SIM(#1) G_RESP;
+                G_RESP:  begin
+                    gstate    <= `WRAP_SIM(#1) G_IDLE;
+                    osd_rd_we <= `WRAP_SIM(#1) 1'b1;
+                end
+                default: gstate <= `WRAP_SIM(#1) G_IDLE;
+            endcase
 
             if (sel && wb_we_i) begin
                 case (wb_adr_i)
@@ -146,6 +179,11 @@ module wb_osd (
                 osd_wr_data <= `WRAP_SIM(#1) osd_data_val;
                 osd_cursor  <= `WRAP_SIM(#1) (osd_cursor == OSD_CELLS - 1)
                                               ? 11'd0 : osd_cursor + 1'b1;
+            end else if (osd_rd_we) begin
+                // a 0xFD read just returned charbuf[cursor]; advance the cursor so
+                // back-to-back reads walk the buffer (no write)
+                osd_cursor  <= `WRAP_SIM(#1) (osd_cursor == OSD_CELLS - 1)
+                                              ? 11'd0 : osd_cursor + 1'b1;
             end
         end
     end
@@ -158,12 +196,22 @@ module wb_osd (
     always @(posedge clk) f_past_valid <= 1'b1;
 
     always @(posedge clk) begin
+        // --- ack: implies selected; single-cycle except a 0xFD read (one wait) ---
+        if (wb_ack_o) assert (sel);
+        if (sel && !glyph_rd) assert (wb_ack_o);              // single-cycle accesses
+        if (glyph_rd && gstate != G_RESP) assert (!wb_ack_o); // 0xFD read: still waiting
+        if (glyph_rd && gstate == G_RESP) assert (wb_ack_o);  // 0xFD read: ack cycle
+
         // --- combinational read decode (correct for every address) ---
-        assert (wb_ack_o == (wb_stb_i & wb_cyc_i));
         if (wb_adr_i == ADDR_OSD_CTRL) assert (wb_dat_o == {15'd0, osd_enable});
         if (wb_adr_i == ADDR_OSD_ADDR) assert (wb_dat_o == {5'd0, osd_cursor});
-        if (wb_adr_i != ADDR_OSD_CTRL && wb_adr_i != ADDR_OSD_ADDR)
-            assert (wb_dat_o == 16'h0000);   // 0xFD + any unowned address
+        if (wb_adr_i == ADDR_OSD_DATA) assert (wb_dat_o == {8'h00, osd_rb_data});
+        if (wb_adr_i != ADDR_OSD_CTRL && wb_adr_i != ADDR_OSD_ADDR &&
+            wb_adr_i != ADDR_OSD_DATA)
+            assert (wb_dat_o == 16'h0000);   // any unowned address
+
+        // --- the read-back port always presents the current cursor ---
+        assert (osd_rb_addr == osd_cursor);
 
         // --- clear sweep is bounded: the sweep address never leaves the grid ---
         assert (osd_clear_addr <= (OSD_CELLS - 1));
@@ -188,12 +236,21 @@ module wb_osd (
                 assert (osd_enable == $past(wb_dat_i[0]));
             end
 
-            // a data write advances the cursor by one, wrapping at the last cell
-            // (only the consumer's data-write branch runs: not clearing/addr-loading)
+            // a data write OR a 0xFD read advances the cursor by one, wrapping at
+            // the last cell (only when the consumer takes that branch: not
+            // clearing / addr-loading / and for the read, no concurrent write)
             if ($past(osd_data_we) && !$past(osd_clear_busy) &&
                 !$past(osd_clear_pulse) && !$past(osd_addr_we))
                 assert (osd_cursor == (($past(osd_cursor) == (OSD_CELLS - 1))
                                        ? 11'd0 : $past(osd_cursor) + 11'd1));
+            if ($past(osd_rd_we) && !$past(osd_clear_busy) &&
+                !$past(osd_clear_pulse) && !$past(osd_addr_we) && !$past(osd_data_we))
+                assert (osd_cursor == (($past(osd_cursor) == (OSD_CELLS - 1))
+                                       ? 11'd0 : $past(osd_cursor) + 11'd1));
+
+            // a 0xFD read returns the cell at the cursor (registered char buffer)
+            if (glyph_rd && gstate == G_RESP)
+                assert (wb_dat_o == {8'h00, osd_rb_data});
         end
     end
 
