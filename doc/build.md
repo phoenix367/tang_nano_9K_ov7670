@@ -20,10 +20,34 @@ exposes a small set of `make` targets.
 | Icarus Verilog 12-20220611+     | `apt install iverilog` (or distro equivalent)           | [installer](https://bleyer.org/icarus/)            |
 | CMake 3.17 or newer             | `apt install cmake`                                     | bundled with most IDEs                             |
 | Python 3 (for scaler scripts)   | `apt install python3`                                   | python.org installer                               |
+| Yosys *(optional, formal)*      | `apt install yosys` (or OSS CAD Suite)                  | OSS CAD Suite                                      |
+| SymbiYosys + z3 *(optional)*    | `pip install sby` + `apt install z3` (or OSS CAD Suite) | OSS CAD Suite                                      |
 
 The Gowin install is required even on Linux for simulation, because
 CMake locates `simlib/gw1n/prim_tsim.v` and the `GowinSynthesis`
 binary under the IDE install root.
+
+**Yosys, SymbiYosys (`sby`), and z3 are optional** — only the formal
+verification proofs need them (`ctest -L formal`; see
+[testing.md](testing.md#formal-verification) and [`sby/README.md`](../sby/README.md)).
+The simplest way to get a consistent set is the **OSS CAD Suite**, which
+bundles `yosys`, `sby`, `sv2v`, and the SMT solvers (z3, yices, …) in one
+download — get a release from
+<https://github.com/YosysHQ/oss-cad-suite-build/releases>, extract it, and
+add it to `PATH`:
+
+```sh
+tar xzf oss-cad-suite-linux-x64-*.tgz
+source oss-cad-suite/environment   # or: export PATH=$PWD/oss-cad-suite/bin:$PATH
+yosys --version && sby --version && z3 --version    # sanity check
+```
+
+Distro packages work too (`apt install yosys z3` + `pip install sby`), but the
+committed `ctest -L formal` proofs only need **yosys** — they run on its
+built-in SAT engine, so a standalone `yosys` is enough; `sby` + an SMT solver
+(z3) are needed only for the optional `cover` reachability tasks. CMake gates
+the formal targets on `find_program(YOSYS)`, so a checkout without yosys simply
+skips them.
 
 Clone the repo with submodules — `FPGADesignElements` is a submodule
 that supplies the CDC and pipeline primitives:
