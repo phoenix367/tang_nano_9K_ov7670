@@ -61,6 +61,9 @@ module modbus_cam_backend
 
     // pulse: re-run the power-on camera initialization (wb_sysregs)
     output wire        cam_reinit,
+    // pulse: host-commanded SERV MCU reset (wb_sysregs 0xE2); crosses to mcu_clk
+    // in camera_control.v. Unconnected on a non-SERV build.
+    output wire        mcu_reset,
 
     // OSD text overlay (LCD): enable bit + character-buffer write port (wb_osd)
     output wire        osd_enable,
@@ -130,6 +133,7 @@ module modbus_cam_backend
         .wb_adr_i(m_adr), .wb_dat_i(m_dat_w), .wb_dat_o(sysregs_dat),
         .wb_we_i(m_we), .wb_stb_i(sysregs_stb), .wb_cyc_i(m_cyc), .wb_ack_o(sysregs_ack),
         .cam_reinit(cam_reinit),
+        .mcu_reset(mcu_reset),
         .wd_health(wd_health)
     );
 

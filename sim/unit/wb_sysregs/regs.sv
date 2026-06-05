@@ -24,6 +24,7 @@ reg         we, stb, cyc;
 wire [15:0] dat_r;
 wire        ack;
 wire        cam_reinit;
+wire        mcu_reset;
 reg  [4:0]  wd_health;
 
 integer errors;
@@ -34,7 +35,7 @@ wb_sysregs #(.UPTIME_DIV(UPTIME_DIV)) dut (
     .clk(clk), .reset_n(reset_n),
     .wb_adr_i(adr), .wb_dat_i(dat_w), .wb_dat_o(dat_r),
     .wb_we_i(we), .wb_stb_i(stb), .wb_cyc_i(cyc), .wb_ack_o(ack),
-    .cam_reinit(cam_reinit), .wd_health(wd_health)
+    .cam_reinit(cam_reinit), .mcu_reset(mcu_reset), .wd_health(wd_health)
 );
 
 always #5 clk = ~clk;
@@ -44,6 +45,12 @@ integer reinit_cnt;
 always @(posedge clk or negedge reset_n)
     if (!reset_n) reinit_cnt <= 0;
     else if (cam_reinit) reinit_cnt <= reinit_cnt + 1;
+
+// count mcu_reset assertions to confirm a single-cycle pulse (0xE2)
+integer mcu_reset_cnt;
+always @(posedge clk or negedge reset_n)
+    if (!reset_n) mcu_reset_cnt <= 0;
+    else if (mcu_reset) mcu_reset_cnt <= mcu_reset_cnt + 1;
 
 // Single Wishbone classic-standard access. Drives on the negedge so the DUT
 // samples cleanly on the posedge; polls ack (combinational or wait-stated).
@@ -170,8 +177,30 @@ initial begin
     wb_read(16'h00EC, rd);
     if (rd[0] !== 1'b0) begin logger.error(module_name, "pending not cleared after BOOT_DATA read"); errors = errors + 1; end
 
+    // 7) MCU reset pulse on 0xE2 bit0 (exactly one cycle), like 0xFA reinit
+    mcu_reset_cnt = 0;
+    wb_write(16'h00E2, 16'h0001);
+    repeat (4) @(posedge clk);
+    if (mcu_reset_cnt !== 1) begin
+        $sformat(str, "mcu_reset pulsed %0d times, expected exactly 1", mcu_reset_cnt);
+        logger.error(module_name, str); errors = errors + 1;
+    end
+    // a write WITHOUT bit0 must not pulse
+    mcu_reset_cnt = 0;
+    wb_write(16'h00E2, 16'h0000);
+    repeat (4) @(posedge clk);
+    if (mcu_reset_cnt !== 0) begin
+        logger.error(module_name, "mcu_reset pulsed on a 0xE2 write with bit0=0");
+        errors = errors + 1;
+    end
+    // 0xE2 reads back 0 (write-only)
+    wb_read(16'h00E2, rd);
+    if (rd !== 16'h0000) begin
+        logger.error(module_name, "0xE2 read should be 0"); errors = errors + 1;
+    end
+
     if (errors == 0) begin
-        logger.info(module_name, "wb_sysregs: magic/health/reinit/uptime/heartbeat/boot-mailbox all correct");
+        logger.info(module_name, "wb_sysregs: magic/health/reinit/mcu-reset/uptime/heartbeat/boot-mailbox all correct");
         `TEST_PASS
     end else
         `TEST_FAIL

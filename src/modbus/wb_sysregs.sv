@@ -54,6 +54,12 @@ module wb_sysregs
 
     // pulse: re-run the power-on camera initialization (reset to defaults)
     output reg         cam_reinit,
+    // pulse: host-commanded reset of the SERV MCU (write 0xE2 bit0). Crosses to
+    // the mcu_clk domain in camera_control.v (CDC_Pulse_Synchronizer_2phase) and
+    // re-arms the CPU reset hold -> the MCU restarts into the bootloader, so the
+    // host can recover even a parked overlay and load any firmware. Unused on a
+    // non-SERV build (left unconnected). Reads 0 (write-only, like 0xFA).
+    output reg         mcu_reset,
     // watchdog health bits: [4]=monitoring [3]=any-hang [2]=cam [1]=mem [0]=lcd
     input  wire [4:0]  wd_health
 );
@@ -63,6 +69,9 @@ module wb_sysregs
                       ADDR_UPTIME_LO = 16'h00F2,
                       ADDR_HEALTH    = 16'h00F9,
                       ADDR_REINIT    = 16'h00FA,
+                      // host-commanded SERV MCU reset (write bit0 -> reset pulse;
+                      // reads 0). Recovers the MCU from any state into the bootloader.
+                      ADDR_MCU_RESET = 16'h00E2,
                       // Scratch/heartbeat register: a co-master (the SERV soft
                       // core, Phase 2) writes an incrementing counter here and the
                       // host reads it back to confirm the CPU is live on the bus.
@@ -109,6 +118,7 @@ module wb_sysregs
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             cam_reinit   <= `WRAP_SIM(#1) 1'b0;
+            mcu_reset    <= `WRAP_SIM(#1) 1'b0;
             uptime       <= `WRAP_SIM(#1) 16'h0000;
             uptime_latch <= `WRAP_SIM(#1) 16'h0000;
             uptime_div   <= `WRAP_SIM(#1) 32'h0;
@@ -119,6 +129,7 @@ module wb_sysregs
             boot_start   <= `WRAP_SIM(#1) 1'b0;
         end else begin
             cam_reinit <= `WRAP_SIM(#1) 1'b0;   // 1-cycle pulse default
+            mcu_reset  <= `WRAP_SIM(#1) 1'b0;   // 1-cycle pulse default
 
             // free-running uptime tick (independent of the bus)
             if (uptime_div >= UPTIME_DIV - 1) begin
@@ -135,6 +146,9 @@ module wb_sysregs
                 // write 1 to 0xFA bit0 -> re-run camera init
                 if (wb_we_i && wb_adr_i == ADDR_REINIT && wb_dat_i[0])
                     cam_reinit <= `WRAP_SIM(#1) 1'b1;
+                // write 1 to 0xE2 bit0 -> reset the SERV MCU (-> bootloader)
+                if (wb_we_i && wb_adr_i == ADDR_MCU_RESET && wb_dat_i[0])
+                    mcu_reset <= `WRAP_SIM(#1) 1'b1;
                 // heartbeat (0xE0) is a plain RW scratch register
                 if (wb_we_i && wb_adr_i == ADDR_HEARTBEAT)
                     heartbeat <= `WRAP_SIM(#1) wb_dat_i;
@@ -241,12 +255,18 @@ module wb_sysregs
             if (cam_reinit)
                 assert ($past(sel) && $past(wb_we_i) &&
                         $past(wb_adr_i) == ADDR_REINIT && $past(wb_dat_i[0]));
+
+            // mcu_reset pulses ONLY in response to a 0xE2 write with bit0 set
+            if (mcu_reset)
+                assert ($past(sel) && $past(wb_we_i) &&
+                        $past(wb_adr_i) == ADDR_MCU_RESET && $past(wb_dat_i[0]));
         end
     end
 
     // reachability (cover task; run with a small UPTIME_DIV so a tick is in reach)
     always @(posedge clk) begin
         cover (cam_reinit);
+        cover (mcu_reset);
         cover (uptime != 16'h0000);        // the uptime counter actually ticked
         cover (uptime_latch != 16'h0000);  // a high-byte read latched a value
     end

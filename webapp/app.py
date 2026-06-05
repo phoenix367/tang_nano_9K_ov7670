@@ -448,9 +448,10 @@ def api_reset_defaults():
 @app.route("/api/serv/upload", methods=["POST"])
 def api_serv_upload():
     """Upload an overlay firmware (raw .bin body) to the SERV bootloader and hand
-    it control. One-shot: reset the device to load again. Requires a SERV-enabled
-    bitstream running the bootloader; otherwise the mailbox never drains and the
-    upload times out (surfaced as an error)."""
+    it control. The MCU is reset back into the bootloader first, so the upload
+    works regardless of what it was running (including a parked overlay). Requires
+    a SERV-enabled bitstream running the bootloader; otherwise the mailbox never
+    drains and the upload times out (surfaced as an error)."""
     blob = request.get_data()                    # raw octet-stream
     if not blob:
         return _error("no firmware uploaded")
@@ -463,6 +464,20 @@ def api_serv_upload():
         except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError) as e:
             return _classify(e)
     return jsonify(ok=True, bytes=len(blob), words=words)
+
+
+@app.route("/api/serv/reset", methods=["POST"])
+def api_serv_reset():
+    """Reset the SERV soft core back into its bootloader (Modbus reg 0xE2). Recovers
+    the MCU from any state -- including a parked overlay -- so the next upload can
+    load any firmware. A no-op on a non-SERV bitstream."""
+    with _lock:
+        try:
+            client = _require_client()
+            client.serv_mcu_reset()
+        except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError) as e:
+            return _classify(e)
+    return jsonify(ok=True)
 
 
 @app.route("/api/osd", methods=["GET", "POST"])

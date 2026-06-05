@@ -28,6 +28,7 @@ reg         we, stb, cyc;
 wire [15:0] dat_r;
 wire        ack;
 wire        cam_reinit;
+wire        mcu_reset;
 reg  [4:0]  wd_health;
 
 integer errors;
@@ -38,7 +39,7 @@ wb_sysregs #(.UPTIME_DIV(8)) dut (
     .clk(clk), .reset_n(reset_n),
     .wb_adr_i(adr), .wb_dat_i(dat_w), .wb_dat_o(dat_r),
     .wb_we_i(we), .wb_stb_i(stb), .wb_cyc_i(cyc), .wb_ack_o(ack),
-    .cam_reinit(cam_reinit), .wd_health(wd_health)
+    .cam_reinit(cam_reinit), .mcu_reset(mcu_reset), .wd_health(wd_health)
 );
 
 always #5 clk = ~clk;

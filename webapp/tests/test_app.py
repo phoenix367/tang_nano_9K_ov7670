@@ -49,6 +49,15 @@ def test_serv_upload_empty_rejected(client):
     assert not r["ok"]
 
 
+def test_serv_reset(client):
+    """POST /api/serv/reset writes the MCU-reset register (0xE2) and succeeds."""
+    tc, fake = client
+    _connect(tc)
+    r = tc.post("/api/serv/reset").get_json()
+    assert r["ok"]
+    assert fake["slave"].regs.get(0x00E2, 0) == 1   # reset bit landed on the bus
+
+
 def test_serv_upload_timeout_keeps_connection(client, monkeypatch):
     """A mailbox-drain timeout (e.g. the bootloader isn't waiting -- a parked
     overlay is running, or this isn't a SERV build) must surface as an error

@@ -223,6 +223,7 @@ uptime counter, independent of the bus:
 | `0xF9`      | read watchdog health `{monitoring, any_hang, cam, mem, lcd}` (from `wd_health`, see [video_datapath.md](video_datapath.md#health-watchdog)) |
 | `0xFA`      | write 1 = reset to defaults — pulse `cam_reinit`, restarting the camera init FSM in `camera_control.v` (re-walks the ROM like power-on) |
 | `0xE0`      | RW scratch / heartbeat. Reads 0 on a default build; on a `SERV_CONTROL` build the SERV co-master increments it (see [serv.md](serv.md#phase-2--serv-as-a-2nd-wishbone-master-in-the-camera-design)) |
+| `0xE2`      | write 1 = reset the SERV MCU — pulse `mcu_reset`, which crosses to `mcu_clk` and restarts the core into its bootloader (recovers a parked overlay so the host can load any firmware). Reads 0; a no-op on a non-SERV build (see [serv.md](serv.md#bootloader-load-an-overlay-from-the-host-at-runtime)) |
 | `0xE4/E8/EC`| SERV bootloader mailbox (`SERV_CONTROL` build): `BOOT_LEN` / `BOOT_DATA` / `BOOT_STATUS` — host streams an overlay firmware to the bootloader (see [serv.md](serv.md#bootloader-load-an-overlay-from-the-host-at-runtime)) |
 
 ### `wb_grab.sv` — frame grab + stream (`0xF3..F8`, `≥0x1000`)

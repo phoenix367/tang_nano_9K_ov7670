@@ -116,8 +116,22 @@ little-endian words and streams them with the per-word `pending` handshake; the
 bootloader jumps once it has received `BOOT_LEN` words. The bootloader **re-arms**
 (the `start` flag clears when SERV reads `BOOT_LEN`), so an overlay that jumps back
 to `0x0000` when done returns control to the bootloader and the host can load
-another overlay **without resetting the device**. An overlay that instead parks
-(infinite loop) is effectively one-shot until reset.
+another overlay **without resetting the device**.
+
+#### Host-commanded MCU reset (load any firmware)
+
+An overlay that **parks** (infinite loop) never returns to the bootloader, so the
+re-arm path alone can't recover it. For that, the host has a **hardware reset** of
+the soft core: a write of bit0 to **`0x00E2`** (`wb_sysregs`) pulses `mcu_reset`.
+That pulse is on `sys_clk`; it crosses into SERV's `mcu_clk` domain through a
+`CDC_Pulse_Synchronizer_2phase` (in `camera_control.v`) and **re-arms the CPU's
+power-on reset hold** — so the core restarts from `0x0000` into the bootloader
+from *any* state. `modbus_client.serv_mcu_reset()` issues it; `serv_boot_load()`
+does it automatically before every upload (`reset_first=True` by default), which
+makes "load any firmware" work unconditionally — even over a parked overlay. The
+webapp's **Firmware** tab also exposes a standalone **Reset MCU** button.
+(`serv_boot_load(..., reset_first=False)` skips it to exercise the bootloader's
+own re-arm.)
 
 `serv_soc/heartbeat.S` is built as a minimal **demo overlay**
 (`build/serv_fw/overlay_heartbeat.bin`, linked at 0x1000) — uploaded at runtime,

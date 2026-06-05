@@ -70,6 +70,10 @@ wire [15:0] be_addr, be_wdata, be_rdata;
 wire        mb_be_req, mb_be_we, mb_be_ready;
 wire [15:0] mb_be_addr, mb_be_wdata, mb_be_rdata;
 
+// host-commanded SERV MCU reset pulse (sys_clk), from wb_sysregs 0xE2. Always
+// driven by the backend; only the SERV build consumes it (CDC into mcu_clk below).
+wire        mcu_reset_sys;
+
 `ifdef SERV_CONTROL
 // ---- Phase 2: SERV soft core as a 2nd Wishbone master (build flag) ----
 // SERV runs on its OWN 30 MHz clock domain (mcu_rpll), decoupled from the 27 MHz
@@ -80,12 +84,24 @@ wire [15:0] mb_be_addr, mb_be_wdata, mb_be_rdata;
 wire mcu_clk;
 MCU_rPLL mcu_pll (.clkin(sys_clk), .clkout(mcu_clk));
 
+// Host-commanded reset (Modbus 0xE2): the 1-cycle sys_clk pulse crosses into
+// mcu_clk through a 2-phase pulse synchronizer, then re-arms the hold counter
+// below -- so the MCU restarts into the bootloader on demand and the host can
+// recover even a parked overlay and load any firmware.
+wire mcu_reset_pulse;   // host reset, synchronized into mcu_clk (1-cycle)
+CDC_Pulse_Synchronizer_2phase mcu_reset_cdc (
+    .sending_clock(sys_clk),   .sending_pulse_in(mcu_reset_sys), .sending_ready(),
+    .receiving_clock(mcu_clk), .receiving_pulse_out(mcu_reset_pulse)
+);
+
 // CPU reset, held ~16 mcu_clk cycles after release. mcu_clk only ticks once the
-// PLL locks, so the counter naturally waits for a stable clock.
+// PLL locks, so the counter naturally waits for a stable clock. A host reset
+// pulse re-arms the same hold (identical restart sequence as power-on).
 reg        serv_rst = 1'b1;
 reg [3:0]  serv_rst_cnt = 4'd0;
 always @(posedge mcu_clk)
     if (!sys_rst_n)                  begin serv_rst_cnt <= 4'd0; serv_rst <= 1'b1; end
+    else if (mcu_reset_pulse)        begin serv_rst_cnt <= 4'd0; serv_rst <= 1'b1; end
     else if (serv_rst_cnt != 4'hF)   begin serv_rst_cnt <= serv_rst_cnt + 4'd1; serv_rst <= 1'b1; end
     else                                   serv_rst <= 1'b0;
 
@@ -238,6 +254,7 @@ modbus_cam_backend #(
     .i2c_dout(i2c_data_out),
     .busy(be_busy),
     .cam_reinit(cam_reinit),
+    .mcu_reset(mcu_reset_sys),
     .osd_enable(osd_enable),
     .osd_wr_en(osd_wr_en),
     .osd_wr_addr(osd_wr_addr),

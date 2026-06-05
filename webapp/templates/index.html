@@ -197,7 +197,11 @@
       <div class="row">
         <input type="file" id="fw-file" accept=".bin,application/octet-stream">
         <button id="fw-upload" class="primary">Upload &amp; run</button>
+        <button id="fw-reset" class="ghost" title="Reset the SERV MCU back into its bootloader">Reset MCU</button>
       </div>
+      <p class="hint">Upload resets the MCU into the bootloader first, so it loads
+        over any running overlay (even one that parks). <b>Reset MCU</b> returns the
+        core to the bootloader on its own.</p>
       <div id="fw-status" class="hint"></div>
     </section>
   </div>

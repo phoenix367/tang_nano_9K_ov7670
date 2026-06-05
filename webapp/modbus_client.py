@@ -39,6 +39,7 @@ REG_STREAM  = 0x00F8   # write = rewind the download stream to pixel 0
 REG_HEARTBEAT = 0x00E0 # RW scratch; on a SERV_CONTROL build the SERV co-master
                        # increments it so the host can confirm the CPU is live
                        # on the bus. Reads 0 on a default (Modbus-only) build.
+REG_MCU_RESET   = 0x00E2   # write bit0 = reset the SERV MCU (-> bootloader); reads 0
 # SERV bootloader mailbox (SERV_CONTROL build). The bootloader polls these as a
 # bus master; the host pushes an overlay firmware word-by-word. See doc/serv.md.
 REG_BOOT_LEN    = 0x00E4   # write overlay length (16-bit words) -> begins upload
@@ -193,21 +194,36 @@ class ModbusRTU:
             "lcd_hang":    bool(v & 0x01),
         }
 
-    def serv_boot_load(self, blob, poll_timeout=2.0):
+    def serv_mcu_reset(self):
+        """Reset the SERV soft core (write 0xE2 bit0). The MCU restarts into its
+        bootloader regardless of what it was running -- so this recovers even an
+        overlay that parks (loops forever), letting the host then load any
+        firmware. Requires a SERV_CONTROL build; a no-op on a Modbus-only build
+        (the register reads 0 and nothing is wired to it)."""
+        self.write_single(REG_MCU_RESET, 0x0001)
+
+    def serv_boot_load(self, blob, reset_first=True, poll_timeout=2.0):
         """Upload an overlay firmware to the SERV bootloader and hand it control.
 
         `blob` is the raw overlay image (a .bin linked at 0x1000). It is packed
         into little-endian 16-bit words and streamed through the mailbox; the
         bootloader copies them into RAM and jumps to the overlay once it has
-        received all of them. An overlay that returns to the bootloader when done
-        (e.g. osd_hello) can be re-loaded without a reset; one that parks needs a
-        device reset first. Requires a SERV_CONTROL build running the bootloader
-        (see doc/serv.md). Returns the number of words sent.
+        received all of them.
+
+        With `reset_first` (default) the MCU is reset back into the bootloader
+        before the upload, so loading works regardless of what the MCU was running
+        -- including over an overlay that parks. Pass `reset_first=False` to rely
+        on the bootloader re-arming itself (only works if the running overlay
+        returned to the bootloader, e.g. osd_hello). Requires a SERV_CONTROL build
+        running the bootloader (see doc/serv.md). Returns the number of words sent.
         """
         data = bytes(blob)
         if len(data) % 2:
             data += b"\x00"                       # pad to a whole 16-bit word
         words = [data[i] | (data[i + 1] << 8) for i in range(0, len(data), 2)]
+        if reset_first:
+            self.serv_mcu_reset()                 # -> bootloader, waiting for an overlay
+            time.sleep(0.01)                      # let the CPU re-run its power-on hold
         self.write_single(REG_BOOT_LEN, len(words))   # length -> start the upload
         for w in words:
             deadline = time.monotonic() + poll_timeout

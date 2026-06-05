@@ -176,13 +176,51 @@ def test_serv_bootloader_reuploads_without_reset(dev):
         "OSD buffer not actually cleared before re-load"
 
     # ---- re-load (no reset): the overlay must run again and undo the disruption ----
-    assert dev.serv_boot_load(overlay) > 0, "re-load upload was rejected"
+    # reset_first=False so this exercises the bootloader RE-ARM path specifically
+    # (osd_hello returned to the bootloader), not the host MCU-reset.
+    assert dev.serv_boot_load(overlay, reset_first=False) > 0, "re-load upload was rejected"
     time.sleep(0.3)
     assert dev.osd_enabled(), \
         "re-load did not re-enable the OSD -- the overlay did not re-run " \
         "(bootloader re-arm / overlay-return-to-bootloader broken?)"
     assert "Hello from MCU!!!" in "\n".join(dev.osd_read_text()), \
         "re-load did not repaint the banner -- the overlay did not re-run"
+
+
+@pytest.mark.skipif(not os.environ.get("OV7670_SERV"),
+                    reason="set OV7670_SERV=1 for a SERV_CONTROL (co-master) bitstream")
+def test_serv_mcu_reset_recovers_parked_overlay(dev):
+    """The host MCU-reset register (0xE2) returns the soft core to the bootloader
+    from ANY state -- including an overlay that parks (loops forever) and so could
+    never re-arm the bootloader on its own. This is what makes 'load any firmware'
+    work unconditionally.
+
+    Load overlay_heartbeat, which parks incrementing 0xE0; confirm it's running
+    (0xE0 advances). Reset the MCU and confirm 0xE0 freezes (the overlay stopped --
+    the CPU is back in the bootloader). Then load osd_hello over the now-parked MCU
+    and confirm it runs -- proving recovery + load-anything."""
+    def hb_advances(dwell=0.25):
+        a = dev.read_reg(mc.REG_HEARTBEAT)
+        time.sleep(dwell)
+        return a != dev.read_reg(mc.REG_HEARTBEAT)
+
+    # overlay_heartbeat parks (infinite loop), so it can't re-arm the bootloader
+    dev.serv_boot_load(_serv_overlay("overlay_heartbeat.bin"))   # reset_first -> clean boot
+    time.sleep(0.2)
+    assert hb_advances(), "heartbeat overlay isn't running (0xE0 not advancing)"
+
+    # host reset -> bootloader; the parked overlay stops, so 0xE0 must freeze
+    dev.serv_mcu_reset()
+    time.sleep(0.1)
+    assert not hb_advances(), \
+        "0xE0 still advancing after MCU reset -- the overlay was not stopped"
+
+    # recovered: we can now load any firmware over the formerly-parked MCU
+    assert dev.serv_boot_load(_serv_overlay("osd_hello.bin")) > 0
+    time.sleep(0.3)
+    assert dev.osd_enabled(), "post-reset load: OSD not enabled"
+    assert "Hello from MCU!!!" in "\n".join(dev.osd_read_text()), \
+        "post-reset load: osd_hello did not run after recovering a parked MCU"
 
 
 # --------------------------------------------------------------- board health

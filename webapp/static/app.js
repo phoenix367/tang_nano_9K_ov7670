@@ -805,7 +805,7 @@ async function resetDefaults() {
 // --------------------------------------------------------------- SERV firmware
 // Upload an overlay firmware to the SERV bootloader (raw .bin, posted as
 // octet-stream). An overlay that returns to the bootloader (e.g. osd_hello)
-// re-loads without a reset; one that parks needs a device reset first.
+// reset first, so it loads over any running overlay (even one that parks).
 async function uploadFirmware() {
   const f = $("#fw-file").files[0];
   const status = $("#fw-status");
@@ -820,13 +820,25 @@ async function uploadFirmware() {
     });
     const j = await res.json();
     if (!j.ok) throw new Error(j.error || "upload failed");
-    status.textContent = `Loaded ${j.words} words (${j.bytes} bytes) — overlay running. ` +
-      `An overlay that returns to the bootloader (e.g. osd_hello) can be re-uploaded right away; ` +
-      `one that parks needs a device reset first.`;
+    status.textContent = `Loaded ${j.words} words (${j.bytes} bytes) — overlay running.`;
     toast("Firmware loaded");
   } catch (e) {
     status.textContent = `Upload failed: ${e.message}`;
     toast("Upload failed");
+  }
+}
+
+// Reset the SERV MCU back into its bootloader (recovers a parked overlay).
+async function resetMcu() {
+  const status = $("#fw-status");
+  status.textContent = "Resetting MCU…";
+  try {
+    await api("/api/serv/reset", { method: "POST" });
+    status.textContent = "MCU reset — back in the bootloader, ready for an upload.";
+    toast("MCU reset");
+  } catch (e) {
+    status.textContent = `Reset failed: ${e.message}`;
+    toast("Reset failed");
   }
 }
 
@@ -1104,6 +1116,7 @@ async function init() {
   $("#grab").addEventListener("click", grabFrame);
   $("#grab-cancel").addEventListener("click", cancelGrab);
   $("#fw-upload").addEventListener("click", uploadFirmware);
+  $("#fw-reset").addEventListener("click", resetMcu);
   $("#osd-send").addEventListener("click", sendOsd);
   $("#osd-clear").addEventListener("click", clearOsd);
   $("#osd-sparrow").addEventListener("click", () => drawArt(OSD_SPARROW));
