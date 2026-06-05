@@ -72,22 +72,30 @@ separable problem. Run it with:
 
 ## Baseline (does the pipeline even work?)
 
-Before any on-device capture, [`baseline_dataset.py`](baseline_dataset.py) converts a
-small public dataset into the **exact device format** (22×14 RGB565 patches, same
-JSONL) — Olivetti faces for the *face* class, random crops of natural photos for
-*no-face* — so `train_tm.py` trains on it unchanged:
+Before any on-device capture, [`baseline_dataset.py`](baseline_dataset.py) converts
+public datasets into the **exact device format** (22×14 RGB565 patches, same JSONL)
+so `train_tm.py` trains on them unchanged. Two source pairs:
 
 ```
-.venv/bin/python demo_mcu_apps/roi_tm/baseline_dataset.py
-.venv/bin/python demo_mcu_apps/roi_tm/train_tm.py -i demo_mcu_apps/roi_tm/samples_baseline.jsonl \
-    --header /tmp/tm_baseline.h --model /tmp/tm_baseline.json
+# easy: clean lab faces vs crops of two natural photos
+.venv/bin/python demo_mcu_apps/roi_tm/baseline_dataset.py -o demo_mcu_apps/roi_tm/samples_baseline.jsonl
+# hardened: LFW faces-in-the-wild vs CIFAR-10 (diverse scenes + animal-face hard negatives)
+.venv/bin/python demo_mcu_apps/roi_tm/baseline_dataset.py --hard -o demo_mcu_apps/roi_tm/samples_hard.jsonl
+.venv/bin/python demo_mcu_apps/roi_tm/train_tm.py -i <dataset> --header /tmp/tm.h --model /tmp/tm.json
 ```
 
-Result: **~98% (5-fold CV 0.979 ± 0.008)** with 64 clauses — the LBP features are
-clearly learnable by the TM at this resolution. This is an *optimistic* pipeline
-check (clean lab faces, only two non-face source photos); real accuracy on the
-board's camera + room backgrounds needs real captures (`collect_samples.py`).
-Needs `scikit-learn` + `pillow` (dev requirements).
+| dataset | face / no-face | 5-fold CV (64 clauses) |
+| --- | --- | --- |
+| easy   | Olivetti / 2-photo crops | **0.979 ± 0.008** |
+| hard   | LFW / CIFAR-10           | **0.944 ± 0.013** |
+
+The LBP features are clearly learnable at 22×14. More clauses help on the hard set
+(holdout: 64→0.93, 128→0.95, 200→0.965) but the masks grow `clauses × 23 × 4` B and
+must fit the ~15 KB overlay RAM — so **64 is the safe default, ~128 the practical
+ceiling** (~12 KB masks); 200 (18 KB) needs a bigger MCU RAM build. These are still
+*optimistic* (cropped/centred faces, dataset backgrounds ≠ your room); real accuracy
+needs `collect_samples.py` captures. Both downloads + `scikit-learn`/`pillow` are dev
+requirements (LFW ≈200 MB, CIFAR ≈170 MB, cached under the sklearn data home).
 
 ## Files
 

@@ -29,15 +29,20 @@ exact model will work on the board -- for that, collect real samples and retrain
 import argparse
 import json
 import os
+import pickle
+import tarfile
+import urllib.request
 
 import numpy as np
-from sklearn.datasets import fetch_olivetti_faces, load_sample_images
+from sklearn.datasets import (fetch_lfw_people, fetch_olivetti_faces,
+                              get_data_home, load_sample_images)
 
 # device ROI grid (must match collect_samples.py / tm_common.py)
 ROI_COLS, ROI_ROWS = 22, 14
 ROI_CELLS = ROI_COLS * ROI_ROWS
 
 DEFAULT_OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "samples_baseline.jsonl")
+CIFAR_URL = "https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz"
 
 
 def resize_area(img, out_h, out_w):
@@ -81,6 +86,23 @@ def face_patches(n, flip=True):
     return out
 
 
+def lfw_face_patches(n, seed=0):
+    """n LFW "faces in the wild" resized to the ROI grid, RGB565 (grayscale R=G=B).
+
+    Harder than Olivetti: varied pose, lighting, expression, and background. Uses
+    grayscale (the features are luma-only anyway) to keep the load light.
+    """
+    data = fetch_lfw_people(resize=0.4, color=False)             # (N, h, w) float
+    imgs = data.images
+    scale = 255.0 / float(imgs.max() or 1.0)
+    rng = np.random.default_rng(seed)
+    out = []
+    for k in rng.permutation(len(imgs))[:n]:
+        gray = resize_area(imgs[k] * scale, ROI_ROWS, ROI_COLS)
+        out.append(to_rgb565(np.repeat(gray[..., None], 3, axis=2)))
+    return out
+
+
 def nonface_patches(n, seed=1):
     """n random crops of the natural sample photos, resized to the ROI grid, RGB565."""
     imgs = [im.astype(np.float64) for im in load_sample_images().images]   # (427,640,3)
@@ -99,15 +121,54 @@ def nonface_patches(n, seed=1):
     return out
 
 
+def _cifar_images():
+    """Download (cached) + load all 50k CIFAR-10 train images as (N,32,32,3) uint8."""
+    tgz = os.path.join(get_data_home(), "cifar-10-python.tar.gz")
+    if not os.path.exists(tgz):
+        os.makedirs(os.path.dirname(tgz), exist_ok=True)
+        print(f"downloading CIFAR-10 (~170 MB) to {tgz} ...")
+        urllib.request.urlretrieve(CIFAR_URL, tgz)
+    batches = []
+    with tarfile.open(tgz) as tf:
+        for m in tf.getmembers():
+            if "/data_batch_" in m.name:
+                d = pickle.load(tf.extractfile(m), encoding="bytes")
+                batches.append(np.asarray(d[b"data"], dtype=np.uint8))
+    data = np.concatenate(batches).reshape(-1, 3, 32, 32).transpose(0, 2, 3, 1)
+    return data
+
+
+def cifar_nonface_patches(n, seed=1):
+    """n CIFAR-10 images resized to the ROI grid, RGB565.
+
+    CIFAR-10 has no person/face class (planes, cars, ships, trucks + animals), so
+    every image is a non-(human-)face. The animal classes are useful HARD negatives
+    (cat/dog faces look face-ish), forcing the classifier to be more discriminative.
+    """
+    imgs = _cifar_images().astype(np.float64)
+    rng = np.random.default_rng(seed)
+    return [to_rgb565(resize_area(imgs[k], ROI_ROWS, ROI_COLS))
+            for k in rng.permutation(len(imgs))[:n]]
+
+
 def main():
     ap = argparse.ArgumentParser(description="Build a face/no-face baseline dataset (device ROI format)")
     ap.add_argument("-o", "--out", default=DEFAULT_OUT)
     ap.add_argument("--faces", type=int, default=400)
     ap.add_argument("--nonfaces", type=int, default=400)
+    ap.add_argument("--face-source", choices=["olivetti", "lfw"], default="olivetti",
+                    help="olivetti = clean lab faces; lfw = harder faces-in-the-wild")
+    ap.add_argument("--nonface-source", choices=["samples", "cifar"], default="samples",
+                    help="samples = crops of 2 photos; cifar = diverse objects/scenes + hard negatives")
+    ap.add_argument("--hard", action="store_true",
+                    help="shortcut for --face-source lfw --nonface-source cifar")
     args = ap.parse_args()
 
-    faces = face_patches(args.faces)
-    nonfaces = nonface_patches(args.nonfaces)
+    fsrc = "lfw" if args.hard else args.face_source
+    nsrc = "cifar" if args.hard else args.nonface_source
+    faces = (lfw_face_patches if fsrc == "lfw" else face_patches)(args.faces)
+    nonfaces = (cifar_nonface_patches if nsrc == "cifar" else nonface_patches)(args.nonfaces)
+    print(f"faces: {fsrc}   no-faces: {nsrc}")
     assert all(len(p) == ROI_CELLS for p in faces + nonfaces), "patch size != ROI_CELLS"
 
     recs = [{"label": 1, "roi565": p} for p in faces] + \
