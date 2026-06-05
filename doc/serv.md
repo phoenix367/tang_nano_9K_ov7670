@@ -113,7 +113,11 @@ map within the 8 KB RAM: bootloader at `0x0000`, overlay loaded/run at `0x1000`
 
 Host side: `modbus_client.serv_boot_load(blob)` packs the overlay `.bin` into
 little-endian words and streams them with the per-word `pending` handshake; the
-bootloader jumps once it has received `BOOT_LEN` words. One-shot (reset to reload).
+bootloader jumps once it has received `BOOT_LEN` words. The bootloader **re-arms**
+(the `start` flag clears when SERV reads `BOOT_LEN`), so an overlay that jumps back
+to `0x0000` when done returns control to the bootloader and the host can load
+another overlay **without resetting the device**. An overlay that instead parks
+(infinite loop) is effectively one-shot until reset.
 
 `serv_soc/heartbeat.S` is built as a minimal **demo overlay**
 (`build/serv_fw/overlay_heartbeat.bin`, linked at 0x1000) — uploaded at runtime,

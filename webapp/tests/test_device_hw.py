@@ -130,12 +130,20 @@ def test_serv_bootloader_runs_osd_hello(dev):
     if not overlay.exists():
         pytest.skip(f"overlay not built ({overlay}); build the SERV firmware first")
 
-    n = dev.serv_boot_load(overlay.read_bytes())        # upload + hand over control
-    assert n > 0
-    time.sleep(0.2)                                     # let the overlay paint the OSD
-    text = "\n".join(dev.osd_read_text())
-    assert "Hello from MCU!!!" in text, \
-        f"osd_hello banner not on the OSD after load; read: {text!r}"
+    def load_and_check(label):
+        n = dev.serv_boot_load(overlay.read_bytes())    # upload + hand over control
+        assert n > 0
+        time.sleep(0.3)                                 # overlay clears+paints, then returns
+        assert dev.read_holding(mc.REG_OSD_CTRL, 1)[0] & 0x01, \
+            f"{label}: the demo did not enable the OSD"
+        text = "\n".join(dev.osd_read_text())
+        assert "Hello from MCU!!!" in text, \
+            f"{label}: banner not on the OSD after load; read: {text!r}"
+
+    load_and_check("first load")
+    # The overlay hands control back to the bootloader, so a second upload works
+    # WITHOUT resetting the device -- prove it re-loads.
+    load_and_check("re-load (no reset)")
 
 
 # --------------------------------------------------------------- board health

@@ -189,9 +189,11 @@
       <h2>SERV firmware overlay</h2>
       <p class="hint">Upload an overlay firmware (a <code>.bin</code> linked at
         0x1000) to the SERV soft-core bootloader. The MCU copies it into RAM over
-        the Modbus bus and jumps to it. <strong>One-shot</strong> — reset the
-        device to load again. Requires a SERV-enabled bitstream
-        (<code>serv_mcu.enable</code>); e.g. <code>build/serv_fw/overlay_heartbeat.bin</code>.</p>
+        the Modbus bus and jumps to it. An overlay that returns to the bootloader
+        when done (like <code>osd_hello</code>) can be re-loaded without a reset; one
+        that parks needs a device reset before the next upload. Requires a
+        SERV-enabled bitstream (<code>serv_mcu.enable</code>); e.g.
+        <code>build/serv_fw/osd_hello.bin</code>.</p>
       <div class="row">
         <input type="file" id="fw-file" accept=".bin,application/octet-stream">
         <button id="fw-upload" class="primary">Upload &amp; run</button>

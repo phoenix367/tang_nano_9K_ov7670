@@ -140,10 +140,15 @@ module wb_sysregs
                     heartbeat <= `WRAP_SIM(#1) wb_dat_i;
 
                 // --- bootloader mailbox ---
-                // host writes the overlay length -> begin upload
+                // host writes the overlay length -> begin upload (start). SERV
+                // reads BOOT_LEN to consume it, which CLEARS start -- so an overlay
+                // can jump back to the bootloader and it re-arms for the next upload
+                // (without this it would re-trigger on the stale length and hang).
                 if (wb_we_i && wb_adr_i == ADDR_BOOT_LEN) begin
                     boot_len   <= `WRAP_SIM(#1) wb_dat_i;
                     boot_start <= `WRAP_SIM(#1) 1'b1;
+                end else if (!wb_we_i && wb_adr_i == ADDR_BOOT_LEN) begin
+                    boot_start <= `WRAP_SIM(#1) 1'b0;
                 end
                 // host writes a word -> pending; SERV reads it -> consumed.
                 // (the arbiter serializes the bus, so write-set and read-clear of
@@ -206,9 +211,11 @@ module wb_sysregs
 
         // boot mailbox flags move only on their defined accesses:
         if (f_past_valid && reset_n && $past(reset_n)) begin
-            // start latches on a BOOT_LEN write and is otherwise sticky
+            // start sets on a BOOT_LEN write, clears on a BOOT_LEN read (re-arm)
             if (boot_start && !$past(boot_start))
                 assert ($past(sel) && $past(wb_we_i) && $past(wb_adr_i) == ADDR_BOOT_LEN);
+            if (!boot_start && $past(boot_start))
+                assert ($past(sel) && !$past(wb_we_i) && $past(wb_adr_i) == ADDR_BOOT_LEN);
             // pending sets on a BOOT_DATA write, clears on a BOOT_DATA read
             if (boot_pending && !$past(boot_pending))
                 assert ($past(sel) && $past(wb_we_i) && $past(wb_adr_i) == ADDR_BOOT_DATA);

@@ -14,8 +14,10 @@ word-aligned or not — is reachable with normal loads/stores.
 
 CMake builds each overlay to `build/serv_fw/<name>.bin` (part of the
 `serv_firmware` target). Upload one with the web app's **Firmware** tab or
-`modbus_client.serv_boot_load(open(path,'rb').read())`. One-shot: reset the
-device to load another.
+`modbus_client.serv_boot_load(open(path,'rb').read())`. An overlay that **jumps
+back to `0x0000`** when finished returns control to the bootloader, so the host
+can load another without resetting the device (`osd_hello` does this). An overlay
+that parks instead is one-shot until reset.
 
 ## Apps
 
