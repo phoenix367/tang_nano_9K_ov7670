@@ -25,18 +25,31 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 def mcu_mirror(roi565, masks, pos, threshold=tm.THRESHOLD):
     """Bit-exact reimplementation of roi_tm.c's integer inference, in Python.
 
-    Mirrors the C step for step: brightness, ROI mean by floor division, one
-    feature bit per cell (b > mean), literal packing (feature then negation,
-    LSB-first), clause AND-compare, signed vote. Must equal infer_packed.
+    Mirrors the C step for step: brightness, 2x2 block-average downsample (>>2),
+    8-neighbour LBP bits (neighbour >= centre, TL,T,TR,L,R,BL,B,BR order), literal
+    packing (feature then negation, LSB-first), clause AND-compare, signed vote.
+    Must equal infer_packed on the same featurization.
     """
-    n = len(roi565)
-    b = [tm.brightness(int(p)) for p in roi565]
-    mean = sum(b) // n                         # the C repeated-subtraction floor mean
+    b = [tm.brightness(int(p)) for p in roi565]   # row-major 14x22
+    # 2x2 block average -> DSH x DSW
+    ds = [[0] * tm.DSW for _ in range(tm.DSH)]
+    for r in range(tm.DSH):
+        for c in range(tm.DSW):
+            r0, c0 = 2 * r, 2 * c
+            s = (b[r0 * tm.ROI_COLS + c0] + b[r0 * tm.ROI_COLS + c0 + 1]
+                 + b[(r0 + 1) * tm.ROI_COLS + c0] + b[(r0 + 1) * tm.ROI_COLS + c0 + 1])
+            ds[r][c] = s >> 2
+    n = tm.N_FEATURES
     nwords = (2 * n + 31) // 32
     lit = [0] * nwords
-    for i in range(n):
-        k = i if b[i] > mean else (n + i)
-        lit[k >> 5] |= 1 << (k & 31)
+    idx = 0
+    for r in range(1, tm.DSH - 1):
+        for c in range(1, tm.DSW - 1):
+            ctr = ds[r][c]
+            for dr, dc in tm.LBP_OFFSETS:
+                k = idx if ds[r + dr][c + dc] >= ctr else (n + idx)
+                lit[k >> 5] |= 1 << (k & 31)
+                idx += 1
     vote = 0
     for j in range(masks.shape[0]):
         out = 1
@@ -65,23 +78,25 @@ def random_rois(n_samples, n_cells, seed=0):
     return [[int(p) for p in rng.integers(0, 0x10000, n_cells)] for _ in range(n_samples)]
 
 
-def test_feature_definition_is_division_free_and_exact():
-    rng = np.random.default_rng(1)
-    for _ in range(200):
-        b = rng.integers(0, 126, 308)
-        s = int(b.sum())
-        ref = (b * 308) > s                    # the documented b*N>sum definition
-        floor = b > (s // 308)                 # what the MCU computes (mean by floor)
-        assert np.array_equal(ref, floor)
+ROI_CELLS = tm.ROI_COLS * tm.ROI_ROWS      # 308 RGB565 cells per ROI patch
+
+
+def test_featurize_shape_and_determinism():
+    """LBP featurization yields exactly N_FEATURES bits and is deterministic."""
+    for roi in random_rois(20, ROI_CELLS, seed=11):
+        f = tm.featurize(roi)
+        assert f.shape == (tm.N_FEATURES,) and f.dtype == bool
+        assert np.array_equal(f, tm.featurize(roi))
+    assert tm.N_FEATURES == ((tm.DSW - 2) * (tm.DSH - 2)) * 8
 
 
 def test_mcu_mirror_matches_reference():
     """The Python mirror of roi_tm.c == the numpy inference (infer_packed)."""
-    machine = tm.TsetlinMachine(308, clauses=32, seed=2)
-    X, Y = _synth(120, 308, seed=2)
+    machine = tm.TsetlinMachine(tm.N_FEATURES, clauses=32, seed=2)
+    X, Y = _synth(120, tm.N_FEATURES, seed=2)
     machine.fit(X, Y, epochs=20)
     masks = machine.masks()
-    for roi in random_rois(80, 308, seed=7):
+    for roi in random_rois(80, ROI_CELLS, seed=7):
         feat = tm.featurize(roi)
         ref_pred, ref_vote = tm.infer_packed(masks, tm.pack_literals(feat), machine.pos)
         c_pred, c_vote = mcu_mirror(roi, masks, machine.pos)
@@ -89,15 +104,15 @@ def test_mcu_mirror_matches_reference():
 
 
 def test_exported_header_roundtrips():
-    machine = tm.TsetlinMachine(308, clauses=16, seed=4)
-    X, Y = _synth(60, 308, seed=4)
+    machine = tm.TsetlinMachine(tm.N_FEATURES, clauses=16, seed=4)
+    X, Y = _synth(60, tm.N_FEATURES, seed=4)
     machine.fit(X, Y, epochs=10)
     masks = machine.masks()
     out = os.path.join(HERE, "_test_model.h")
     try:
-        tm.export_header(out, masks, 308, machine.pos, meta="unit test")
+        tm.export_header(out, masks, tm.N_FEATURES, machine.pos, meta="unit test")
         sizes, parsed = parse_header(out)
-        assert sizes["TM_N"] == 308 and sizes["TM_CLAUSES"] == 16 and sizes["TM_POS"] == 8
+        assert sizes["TM_N"] == tm.N_FEATURES and sizes["TM_CLAUSES"] == 16 and sizes["TM_POS"] == 8
         assert sizes["TM_NWORDS"] == masks.shape[1]
         assert np.array_equal(parsed, masks)
     finally:
@@ -106,17 +121,17 @@ def test_exported_header_roundtrips():
 
 
 def test_committed_model_header_is_valid():
-    """The checked-in default tm_model.h parses and matches its sizes."""
+    """The checked-in default tm_model.h parses and matches the LBP feature count."""
     sizes, masks = parse_header(os.path.join(HERE, "tm_model.h"))
     assert masks.shape == (sizes["TM_CLAUSES"], sizes["TM_NWORDS"])
+    assert sizes["TM_N"] == tm.N_FEATURES
     assert sizes["TM_NLIT"] == 2 * sizes["TM_N"]
     assert sizes["TM_NWORDS"] == (sizes["TM_NLIT"] + 31) // 32
 
 
 def test_tm_learns_separable_problem():
-    X, Y = _synth(400, 308, seed=5)
-    n = X.shape[0]
-    machine = tm.TsetlinMachine(308, clauses=64, seed=5)
+    X, Y = _synth(400, tm.N_FEATURES, seed=5)
+    machine = tm.TsetlinMachine(tm.N_FEATURES, clauses=64, seed=5)
     machine.fit(X[:300], Y[:300], epochs=40)
     acc = float((machine.predict(X[300:]) == Y[300:]).mean())
     assert acc > 0.9, f"TM failed to learn separable data (acc={acc:.3f})"

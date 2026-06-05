@@ -56,7 +56,7 @@ def load_samples(path):
     return rois, np.asarray(labels, dtype=np.int8)
 
 
-def synthetic(n_features=308, n=400, seed=3):
+def synthetic(n_features=tm.N_FEATURES, n=400, seed=3):
     """A separable face/no-face-like dataset for self-test + a buildable default model.
 
     A "face" lights a fixed central band of feature bits with high probability; a

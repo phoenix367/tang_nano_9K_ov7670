@@ -50,11 +50,12 @@ room to spare (the model is a table of 32-bit clause masks).
 [`tm_common.py`](tm_common.py) is the single source of truth for the three things
 the host and MCU must agree on **bit-for-bit**:
 
-- **featurize** — one bit per ROI cell, `b[i] > ROI mean`. The host writes it as
-  `b[i]*N > sum`; the MCU computes `b[i] > sum / N` (integer floor division) — these
-  are exactly equal for integer brightness (proven in the tests). The divide pulls in
-  libgcc's `__divsi3` (~200 B; the overlay links with `-lgcc`); it runs once per
-  frame, so it's free against the 308 PSRAM reads.
+- **featurize** — an 8-neighbour **Local Binary Pattern**. The 22×14 ROI is
+  2×2 block-averaged to an 11×7 brightness grid, then each interior cell emits 8
+  bits (`neighbour ≥ centre`, in order TL,T,TR,L,R,BL,B,BR) → 45 cells × 8 = **360
+  boolean features**. LBP is relative to each local neighbourhood, so it captures
+  texture/edge structure and is robust to overall lighting. Integer compares only —
+  no multiply/divide/float, so the overlay is libgcc-free.
 - **literal layout** — literal `k<N` is feature `k`, `k≥N` is its negation; bit `k`
   is in word `k>>5` at position `k&31`. Same packing in `pack_literals()` and the C.
 - **voting** — clauses `0..TM_POS-1` vote +1, the rest −1; face when `vote ≥ TM_THRESHOLD`.

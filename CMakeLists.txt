@@ -503,7 +503,7 @@ if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
     set(SERV_ROI_TM_BIN "${SERV_FW_DIR}/roi_tm.bin")
     add_custom_command(
         OUTPUT  ${SERV_ROI_TM_BIN}
-        COMMAND ${SERV_C_BUILD} -I ${DEMO_DIR}/roi_tm ${DEMO_DIR}/roi_tm/roi_tm.c -lgcc -o ${SERV_FW_DIR}/roi_tm.elf
+        COMMAND ${SERV_C_BUILD} -I ${DEMO_DIR}/roi_tm ${DEMO_DIR}/roi_tm/roi_tm.c -o ${SERV_FW_DIR}/roi_tm.elf
         COMMAND ${RISCV_OBJCOPY} -O binary ${SERV_FW_DIR}/roi_tm.elf ${SERV_ROI_TM_BIN}
         DEPENDS ${DEMO_DIR}/roi_tm/roi_tm.c ${DEMO_DIR}/roi_tm/tm_model.h
                 ${SERV_C_CRT} ${SERV_C_HDR} ${SERV_SOC_DIR}/overlay_c.ld

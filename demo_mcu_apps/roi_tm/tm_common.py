@@ -34,20 +34,50 @@ def brightness(p):
     return ((p >> 11) & 0x1F) + ((p >> 5) & 0x3F) + (p & 0x1F)
 
 
-def featurize(roi565):
-    """One boolean feature per ROI cell: brighter than the ROI mean.
+# ---- LBP feature geometry (MUST match roi_tm.c) ----
+# The ROI grid as stored by collect_samples (22x14 = 308 RGB565 cells).
+ROI_COLS = 22
+ROI_ROWS = 14
+# 2x2 block-average downsample, then 8-neighbour LBP on the interior of the
+# downsampled grid -- each "neighbour >= centre" comparison is one boolean feature.
+DS = 2
+DSW = ROI_COLS // DS                  # 11
+DSH = ROI_ROWS // DS                  # 7
+LBP_CELLS = (DSW - 2) * (DSH - 2)     # 9*5 = 45 interior cells
+N_FEATURES = LBP_CELLS * 8            # 8 comparison bits per cell -> 360
+# neighbour scan order (dr, dc): TL, T, TR, L, R, BL, B, BR -- MUST match roi_tm.c
+LBP_OFFSETS = ((-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1))
 
-    Uses b[i]*N > sum(b) (integer-exact, division-free) so the MCU produces the
-    identical bit. `roi565` is the row-major ROI patch as stored by collect_samples.
-    Returns a (N,) bool array.
+
+def downsample(roi565):
+    """ROI RGB565 patch -> (DSH, DSW) brightness grid by 2x2 block average (>>2)."""
+    b = np.fromiter((brightness(int(p)) for p in roi565),
+                    dtype=np.int32, count=ROI_COLS * ROI_ROWS).reshape(ROI_ROWS, ROI_COLS)
+    return b.reshape(DSH, DS, DSW, DS).sum(axis=(1, 3)) >> 2
+
+
+def featurize(roi565):
+    """LBP boolean features of the ROI patch (N_FEATURES,) bool.
+
+    8-neighbour Local Binary Pattern over the downsampled grid's interior: for each
+    interior cell, 8 bits = (neighbour brightness >= centre), in LBP_OFFSETS order.
+    The MCU recomputes the identical bits (integer compares only). `roi565` is the
+    row-major ROI patch as stored by collect_samples.
     """
-    b = np.asarray([brightness(int(p)) for p in roi565], dtype=np.int64)
-    n = b.shape[0]
-    return (b * n) > int(b.sum())
+    ds = downsample(roi565)
+    feats = np.zeros(N_FEATURES, dtype=bool)
+    idx = 0
+    for r in range(1, DSH - 1):
+        for c in range(1, DSW - 1):
+            ctr = ds[r, c]
+            for dr, dc in LBP_OFFSETS:
+                feats[idx] = ds[r + dr, c + dc] >= ctr
+                idx += 1
+    return feats
 
 
 def featurize_matrix(rois):
-    """featurize() over a list of ROI patches -> (samples, N) bool matrix."""
+    """featurize() over a list of ROI patches -> (samples, N_FEATURES) bool matrix."""
     return np.stack([featurize(r) for r in rois]).astype(bool)
 
 
@@ -197,7 +227,7 @@ def export_header(path, masks, n_features, pos, threshold=THRESHOLD, meta=""):
         "#ifndef TM_MODEL_H",
         "#define TM_MODEL_H",
         "",
-        f"#define TM_N         {n_features}   /* ROI cells == features */",
+        f"#define TM_N         {n_features}   /* boolean features (LBP bits) */",
         f"#define TM_NLIT      {2 * n_features}   /* literals: feature then negation */",
         f"#define TM_NWORDS    {w}   /* uint32 words per literal/clause vector */",
         f"#define TM_CLAUSES   {m}",
