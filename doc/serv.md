@@ -142,9 +142,11 @@ Richer demos live in [`demo_mcu_apps/`](../demo_mcu_apps):
 MCU!!!"** onto the OSD after boot, and
 [`psram_test`](../demo_mcu_apps/psram_test/psram_test.S) writes a pseudo-random
 sequence into channel-1 PSRAM (via the `wb_grab` write port), reads it back,
-compares, and prints **"PSRAM test: PASS/FAIL"** — exercising both PSRAM and the
-OSD from the soft core (both have hardware tests that upload them and read the
-banner back). The OSD/grab control registers (0xF3..0xFD) aren't word-aligned, but
+compares, and prints **"PSRAM test: PASS/FAIL"** with live progress bars; and
+[`c_hello`](../demo_mcu_apps/c_hello/c_hello.c) is the same OSD demo written in
+**C** (a `crt0.S` startup + the C-aware `serv_soc/overlay_c.ld`) — proving the C
+toolchain path, not just hand asm. All have hardware tests that upload them and
+read the OSD back. The OSD/grab control registers (0xF3..0xFD) aren't word-aligned, but
 `serv_wb_cdc` resolves the register from SERV's word address + byte-enables
 (`word_addr + lane_offset(sel)`) and extracts/places the value at that lane, so
 SERV can drive **any** register with ordinary RV32I loads/stores.

@@ -26,12 +26,22 @@ button), so the host can always load any firmware over any running overlay.
 | App | What it does |
 | --- | ------------ |
 | [`osd_hello`](osd_hello/osd_hello.S) | After boot, writes **"Hello from MCU!!!"** centered on the OSD overlay (enable 0xFB, cursor 0xFC, chars 0xFD). |
-| [`psram_test`](psram_test/psram_test.S) | Writes a pseudo-random sequence into channel-1 PSRAM (write port 0xF3/0xF4-0xF7), reads it back, compares, and prints **"PSRAM test: PASS/FAIL"** on the OSD. |
+| [`psram_test`](psram_test/psram_test.S) | Writes a pseudo-random sequence into channel-1 PSRAM (write port 0xF3/0xF4-0xF7), reads it back, compares, and prints **"PSRAM test: PASS/FAIL"** on the OSD with live progress bars. |
+| [`c_hello`](c_hello/c_hello.c) | The `osd_hello` demo written in **C** instead of assembly — writes **"Hello from C!"** to the OSD. Shows the C-toolchain path (a `crt0.S` startup + the C-aware `overlay_c.ld`). |
 
 ## Adding an app
+
+**In assembly:**
 
 1. Write `demo_mcu_apps/<name>/<name>.S` (link-at-0x1000 assembly; set `sp` in
    `_start` if you need a stack — the OSD demo doesn't).
 2. Add an overlay build to the `serv_firmware` block in `CMakeLists.txt`
    (mirror `osd_hello`), producing `build/serv_fw/<name>.bin`.
 3. Upload it via the Firmware tab / `serv_boot_load`.
+
+**In C:** mirror [`c_hello`](c_hello): a tiny [`crt0.S`](c_hello/crt0.S) sets the
+stack (top of the 8 KB RAM, `0x2000`), zeroes `.bss`, calls `main()`, and returns
+to the bootloader; link with [`../serv_soc/overlay_c.ld`](../serv_soc/overlay_c.ld)
+(adds `.rodata` and the `__bss_*` symbols). Reach device registers through the
+`0x40000000` window with `volatile` pointers — a `uint8`/`uint16` store emits the
+`sb`/`sh` the byte-lane CDC expects (see the `c_hello` CMake command for flags).

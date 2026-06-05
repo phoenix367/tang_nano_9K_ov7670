@@ -392,8 +392,23 @@ if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
         COMMENT "Building demo_mcu_apps/psram_test overlay (RV32I, linked at 0x1000)"
         VERBATIM
     )
+    # C overlay: crt0.S (stack + .bss zero + return to bootloader) + the C source,
+    # linked at 0x1000 with the C-aware overlay_c.ld (adds .rodata / .bss symbols).
+    set(SERV_C_HELLO_BIN "${SERV_FW_DIR}/c_hello.bin")
+    add_custom_command(
+        OUTPUT  ${SERV_C_HELLO_BIN}
+        COMMAND ${RISCV_GCC} -nostartfiles -nostdlib -march=rv32i_zicsr -mabi=ilp32
+                -Os -ffreestanding -Wl,--build-id=none -T ${SERV_SOC_DIR}/overlay_c.ld
+                ${DEMO_DIR}/c_hello/crt0.S ${DEMO_DIR}/c_hello/c_hello.c
+                -o ${SERV_FW_DIR}/c_hello.elf
+        COMMAND ${RISCV_OBJCOPY} -O binary ${SERV_FW_DIR}/c_hello.elf ${SERV_C_HELLO_BIN}
+        DEPENDS ${DEMO_DIR}/c_hello/crt0.S ${DEMO_DIR}/c_hello/c_hello.c
+                ${SERV_SOC_DIR}/overlay_c.ld
+        COMMENT "Building demo_mcu_apps/c_hello overlay (C, linked at 0x1000)"
+        VERBATIM
+    )
     add_custom_target(serv_firmware DEPENDS ${SERV_BOOT_HEX} ${SERV_OVERLAY_BIN}
-                      ${SERV_OSD_HELLO_BIN} ${SERV_PSRAM_TEST_BIN})
+                      ${SERV_OSD_HELLO_BIN} ${SERV_PSRAM_TEST_BIN} ${SERV_C_HELLO_BIN})
     if (SERV_CONTROL)
         add_dependencies(hw_synth serv_firmware)
         add_dependencies(hw_all   serv_firmware)

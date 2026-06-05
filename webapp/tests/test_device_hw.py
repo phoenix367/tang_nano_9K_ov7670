@@ -189,6 +189,23 @@ def test_serv_bootloader_reuploads_without_reset(dev):
 
 @pytest.mark.skipif(not os.environ.get("OV7670_SERV"),
                     reason="set OV7670_SERV=1 for a SERV_CONTROL (co-master) bitstream")
+def test_serv_c_hello(dev):
+    """demo_mcu_apps/c_hello -- the osd_hello demo written in C (crt0 + C source,
+    linked at 0x1000). Proves the C toolchain path works on the soft core: upload
+    it, and it writes 'Hello from C!' onto the OSD, which the host reads back."""
+    overlay = _serv_overlay("c_hello.bin")
+    dev.osd_clear()                              # so stale text can't fool us
+    time.sleep(0.05)
+    assert dev.serv_boot_load(overlay) > 0       # reset -> bootloader -> run
+    time.sleep(0.3)
+    assert dev.osd_enabled(), "c_hello did not enable the OSD"
+    text = "\n".join(dev.osd_read_text())
+    assert "Hello from C!" in text, \
+        f"c_hello banner not on the OSD; read: {text!r}"
+
+
+@pytest.mark.skipif(not os.environ.get("OV7670_SERV"),
+                    reason="set OV7670_SERV=1 for a SERV_CONTROL (co-master) bitstream")
 def test_serv_mcu_reset_recovers_parked_overlay(dev):
     """The host MCU-reset register (0xE2) returns the soft core to the bootloader
     from ANY state -- including an overlay that parks (loops forever) and so could
