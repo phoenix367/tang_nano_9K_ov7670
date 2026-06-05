@@ -40,6 +40,8 @@
         <File path="src/build_config.vh" type="file.verilog" enable="1"/>
         <File path="src/modbus/be_arbiter.v" type="file.verilog" enable="@SERV_ENABLE@"/>
         <File path="src/serv/serv_cpu.v" type="file.verilog" enable="@SERV_ENABLE@"/>
+        <File path="src/serv/serv_wb_cdc.v" type="file.verilog" enable="@SERV_ENABLE@"/>
+        <File path="src/gowin_rpll/mcu_rpll.v" type="file.verilog" enable="@SERV_ENABLE@"/>
         <File path="serv/rtl/serv_bufreg.v" type="file.verilog" enable="@SERV_ENABLE@"/>
         <File path="serv/rtl/serv_bufreg2.v" type="file.verilog" enable="@SERV_ENABLE@"/>
         <File path="serv/rtl/serv_alu.v" type="file.verilog" enable="@SERV_ENABLE@"/>

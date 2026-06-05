@@ -188,6 +188,18 @@ else()
 endif()
 configure_file("${SRC_FOLDER}/build_config.vh.in"
                "${SRC_FOLDER}/build_config.vh" @ONLY)
+# The timing constraints are generated too: Gowin uses a single SDC, so the
+# SERV co-master's mcu_clk (30 MHz, mcu_rpll) constraints are injected here only
+# on a SERV_CONTROL build (empty otherwise -> the default SDC is unchanged).
+if (SERV_CONTROL)
+    set(SERV_SDC_BLOCK
+"create_generated_clock -name mcu_clk -source [get_ports {sys_clk}] -master_clock base -multiply_by 10 -divide_by 9 [get_pins {mcu_pll/rpll_inst/CLKOUT}]
+set_clock_groups -asynchronous -group [get_clocks {mcu_clk}]")
+else()
+    set(SERV_SDC_BLOCK "")
+endif()
+configure_file("${SRC_FOLDER}/camera_control.sdc.in"
+               "${SRC_FOLDER}/camera_control.sdc" @ONLY)
 # The Gowin project file is generated from a template: the SERV files carry
 # enable="${SERV_ENABLE}", so when SERV_CONTROL is off Gowin excludes them from
 # synthesis (they're not parsed, so they add no logic or phantom clocks).

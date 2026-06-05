@@ -72,13 +72,19 @@ wire [15:0] mb_be_addr, mb_be_wdata, mb_be_rdata;
 
 `ifdef SERV_CONTROL
 // ---- Phase 2: SERV soft core as a 2nd Wishbone master (build flag) ----
-// A power-on reset for the CPU (held ~16 cycles), the SERV CPU, a WB->be adapter,
-// and a 2-master arbiter (host priority) muxing modbus + SERV onto cam_bridge's
-// be_* port. SERV firmware increments the heartbeat register (0x00E0) that the
-// host reads over Modbus. See doc/serv.md.
+// SERV runs on its OWN 30 MHz clock domain (mcu_rpll), decoupled from the 27 MHz
+// camera bus. Its Wishbone master crosses into the 27 MHz domain through
+// serv_wb_cdc (an async handshake CDC), then a 2-master arbiter (host priority)
+// muxes modbus + SERV onto cam_bridge's be_* port. SERV firmware increments the
+// heartbeat register (0x00E0) the host reads over Modbus. See doc/serv.md.
+wire mcu_clk;
+MCU_rPLL mcu_pll (.clkin(sys_clk), .clkout(mcu_clk));
+
+// CPU reset, held ~16 mcu_clk cycles after release. mcu_clk only ticks once the
+// PLL locks, so the counter naturally waits for a stable clock.
 reg        serv_rst = 1'b1;
 reg [3:0]  serv_rst_cnt = 4'd0;
-always @(posedge sys_clk)
+always @(posedge mcu_clk)
     if (!sys_rst_n)                  begin serv_rst_cnt <= 4'd0; serv_rst <= 1'b1; end
     else if (serv_rst_cnt != 4'hF)   begin serv_rst_cnt <= serv_rst_cnt + 4'd1; serv_rst <= 1'b1; end
     else                                   serv_rst <= 1'b0;
@@ -87,24 +93,33 @@ wire [31:0] serv_adr, serv_wdat, serv_rdt;
 wire [3:0]  serv_sel;
 wire        serv_we, serv_stb, serv_ack;
 serv_cpu #(.memfile(`SERV_MEMFILE), .memsize(8192)) serv_inst (
-    .i_clk(sys_clk), .i_rst(serv_rst), .i_timer_irq(1'b0),
+    .i_clk(mcu_clk), .i_rst(serv_rst), .i_timer_irq(1'b0),
     .o_wb_ext_adr(serv_adr), .o_wb_ext_dat(serv_wdat), .o_wb_ext_sel(serv_sel),
     .o_wb_ext_we(serv_we), .o_wb_ext_stb(serv_stb),
     .i_wb_ext_rdt(serv_rdt), .i_wb_ext_ack(serv_ack)
 );
-// SERV's byte-addressed ext bus -> be-style master (low 16 adr bits = register;
-// word store -> data in dat[15:0]; validated in sim/unit, see two_master.sv).
-wire        s_ready;
-wire [15:0] s_rdata;
-assign serv_ack = s_ready;
-assign serv_rdt = {16'h0000, s_rdata};
+
+// mcu_clk -> sys_clk CDC. SERV's byte-addressed ext bus maps to a be-style
+// master (low 16 adr bits = register, word store -> dat[15:0]; validated in
+// sim/unit/serv_wb_cdc and sim/unit/be_arbiter).
+wire        s_m_req, s_m_we, s_m_ready;
+wire [15:0] s_m_addr, s_m_wdata, s_m_rdata, s_rdt16;
+assign serv_rdt = {16'h0000, s_rdt16};
+serv_wb_cdc serv_cdc (
+    .mcu_clk(mcu_clk), .mcu_rst(serv_rst),
+    .s_stb(serv_stb), .s_we(serv_we), .s_adr(serv_adr[15:0]), .s_dat(serv_wdat[15:0]),
+    .s_ack(serv_ack), .s_rdt(s_rdt16),
+    .sys_clk(sys_clk), .sys_rst_n(sys_rst_n),
+    .m_req(s_m_req), .m_we(s_m_we), .m_addr(s_m_addr), .m_wdata(s_m_wdata),
+    .m_ready(s_m_ready), .m_rdata(s_m_rdata)
+);
 
 be_arbiter be_arb (
     .clk(sys_clk), .reset_n(sys_rst_n),
     .m0_req(mb_be_req), .m0_we(mb_be_we), .m0_addr(mb_be_addr), .m0_wdata(mb_be_wdata),
     .m0_ready(mb_be_ready), .m0_rdata(mb_be_rdata),
-    .m1_req(serv_stb), .m1_we(serv_we), .m1_addr(serv_adr[15:0]), .m1_wdata(serv_wdat[15:0]),
-    .m1_ready(s_ready), .m1_rdata(s_rdata),
+    .m1_req(s_m_req), .m1_we(s_m_we), .m1_addr(s_m_addr), .m1_wdata(s_m_wdata),
+    .m1_ready(s_m_ready), .m1_rdata(s_m_rdata),
     .be_req(be_req), .be_we(be_we), .be_addr(be_addr), .be_wdata(be_wdata),
     .be_ready(be_ready), .be_rdata(be_rdata)
 );

@@ -76,8 +76,16 @@ peripherals on the live bus.
 How it fits together:
 - `src/serv/serv_cpu.v` — `servile` + the 32-bit `servant_ram` (firmware) +
   `serv_rf_ram`, exposing the Wishbone "ext" master bus.
+- **SERV runs on its own 30 MHz clock domain** (`mcu_rpll`, `src/gowin_rpll/mcu_rpll.v`),
+  decoupled from the 27 MHz camera bus. Its master crosses into the bus domain
+  through `src/serv/serv_wb_cdc.v` — an async 4-phase handshake CDC (2-FF
+  synchronizers on the req/done qualifiers; the held-stable addr/data are sampled
+  gated by the synced qualifier). The mcu↔sys crossing is declared async in the
+  SDC (`set_clock_groups`), so it isn't timed. Putting SERV on its own clock keeps
+  it off the 27 MHz critical path (base Fmax ~50 MHz vs ~41 when SERV shared
+  sys_clk).
 - `src/modbus/be_arbiter.v` — 2-master arbiter (host priority, owner-locked for
-  multi-cycle accesses) muxing the Modbus master and SERV onto
+  multi-cycle accesses) muxing the Modbus master and the CDC's bus-side port onto
   `modbus_cam_backend`'s `be_*` port. SERV's byte-addressed ext bus maps to a
   be-style master: `be_addr = adr[15:0]`, word store → data in `dat[15:0]`.
 - `wb_sysregs` gains the heartbeat register at 0x00E0 (host-RW scratch, reads 0

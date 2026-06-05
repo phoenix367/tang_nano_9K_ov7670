@@ -74,4 +74,9 @@ set_clock_groups -asynchronous -group [get_clocks {fb_clk}] -group [get_clocks {
 // constraint above); if a future IP regen mangles it, this line simply no-ops.
 set_false_path -from [get_pins {VGA_timing_inst/frame_buffer/u_psram_sync/cs_memsync_3_s0/Q}]
 
+// --- SERV co-master clock (Phase 2b). CMake fills this in only on a
+// SERV_CONTROL build; empty otherwise (Gowin uses a single SDC, so the mcu_clk
+// constraints must live here rather than in a second file). ---
+@SERV_SDC_BLOCK@
+
 report_high_fanout_nets -max_nets 10
