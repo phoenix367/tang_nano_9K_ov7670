@@ -116,28 +116,26 @@ def test_illegal_address_raises(dev):
 
 @pytest.mark.skipif(not os.environ.get("OV7670_SERV"),
                     reason="set OV7670_SERV=1 for a SERV_CONTROL (co-master) bitstream")
-def test_serv_bootloader_loads_overlay(dev):
-    """A SERV_CONTROL build boots a bootloader (the heartbeat 0xE0 is static while
-    it waits). Upload the heartbeat *overlay* over the mailbox; the bootloader
-    copies it into RAM and jumps to it, after which 0xE0 starts advancing -- proof
-    the host loaded an overlay firmware into the soft CPU and handed it control.
-    On a freshly flashed device 0xE0 starts static; the assertion that matters is
-    that it advances after the upload."""
+def test_serv_bootloader_runs_osd_hello(dev):
+    """Bootloader + first demo (demo_mcu_apps/osd_hello) end to end: a SERV_CONTROL
+    build boots a bootloader; upload the osd_hello overlay over the mailbox; the
+    bootloader copies it into RAM and jumps to it, and it writes 'Hello from MCU!!!'
+    onto the OSD -- which the host then reads back. Proves the host loaded firmware
+    into the soft CPU, it ran, and it drove a real peripheral. One-shot: a freshly
+    flashed (reset) device is in the bootloader. (Loading is one-shot per boot, so
+    this is the single overlay-load test per session.)"""
     import pathlib
     overlay = (pathlib.Path(__file__).resolve().parents[2]
-               / "build" / "serv_fw" / "overlay_heartbeat.bin")
+               / "build" / "serv_fw" / "osd_hello.bin")
     if not overlay.exists():
         pytest.skip(f"overlay not built ({overlay}); build the SERV firmware first")
 
-    before = dev.read_holding(mc.REG_HEARTBEAT, 1)[0]   # 0/static in the bootloader
     n = dev.serv_boot_load(overlay.read_bytes())        # upload + hand over control
     assert n > 0
-    time.sleep(0.1)
-    a = dev.read_holding(mc.REG_HEARTBEAT, 1)[0]
-    time.sleep(0.1)
-    b = dev.read_holding(mc.REG_HEARTBEAT, 1)[0]
-    assert a != b, (f"heartbeat not advancing after overlay load ({a}->{b}); "
-                    f"bootloader didn't jump? (was {before} before)")
+    time.sleep(0.2)                                     # let the overlay paint the OSD
+    text = "\n".join(dev.osd_read_text())
+    assert "Hello from MCU!!!" in text, \
+        f"osd_hello banner not on the OSD after load; read: {text!r}"
 
 
 # --------------------------------------------------------------- board health

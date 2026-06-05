@@ -20,9 +20,10 @@ module serv_wb_cdc
     input  wire        s_stb,
     input  wire        s_we,
     input  wire [15:0] s_adr,
-    input  wire [15:0] s_dat,
+    input  wire [31:0] s_dat,           // full store data (SERV lane-shifts it)
+    input  wire [3:0]  s_sel,           // byte enables (which lane holds the value)
     output reg         s_ack,
-    output reg  [15:0] s_rdt,
+    output reg  [31:0] s_rdt,           // read data, placed at the access's lane
 
     // sys domain -- be_arbiter m1 port
     input  wire        sys_clk,
@@ -41,6 +42,30 @@ module serv_wb_cdc
     wire       done_mcu;              // sync of done_sys into mcu domain
     reg [15:0] rdt_hold;              // sys: captured read data (stable while done_sys)
 
+    // SERV presents a WORD-aligned address + byte-enables; the byte/halfword
+    // offset within the word is encoded in sel, and store data is shifted to that
+    // lane (serv_bufreg2). So the device register being accessed is
+    //   word_addr + lane_offset(sel),
+    // and its value is the lane(s) sel marks. This lets SERV reach the
+    // non-word-aligned registers (e.g. OSD 0xFB/0xFD) -- word ops (sel=1111,
+    // offset 0) are unchanged, keeping heartbeat/mailbox/bootloader intact.
+    function [1:0] lane_off;            // index of the lowest set byte-enable
+        input [3:0] sel;
+        lane_off = sel[0] ? 2'd0 : sel[1] ? 2'd1 : sel[2] ? 2'd2 : 2'd3;
+    endfunction
+    function [15:0] lane16;             // the 16-bit value from the marked lane(s)
+        input [3:0]  sel;
+        input [31:0] d;
+        case (sel)
+            4'b1100: lane16 = d[31:16];
+            4'b0001: lane16 = {8'h00, d[7:0]};
+            4'b0010: lane16 = {8'h00, d[15:8]};
+            4'b0100: lane16 = {8'h00, d[23:16]};
+            4'b1000: lane16 = {8'h00, d[31:24]};
+            default: lane16 = d[15:0];     // word (1111) or low halfword (0011)
+        endcase
+    endfunction
+
     CDC_Bit_Synchronizer #(.EXTRA_DEPTH(0)) sync_req
         (.receiving_clock(sys_clk), .bit_in(req_level), .bit_out(req_sys));
     CDC_Bit_Synchronizer #(.EXTRA_DEPTH(0)) sync_done
@@ -51,13 +76,15 @@ module serv_wb_cdc
     reg [1:0] ustate;
     always @(posedge mcu_clk or posedge mcu_rst)
         if (mcu_rst) begin
-            ustate <= U_IDLE; req_level <= 1'b0; s_ack <= 1'b0; s_rdt <= 16'h0;
+            ustate <= U_IDLE; req_level <= 1'b0; s_ack <= 1'b0; s_rdt <= 32'h0;
         end else begin
             s_ack <= 1'b0;                          // 1-cycle ack by default
             case (ustate)
                 U_IDLE: if (s_stb) begin req_level <= 1'b1; ustate <= U_REQ; end
                 U_REQ:  if (done_mcu) begin          // bus access finished
-                            s_rdt     <= rdt_hold;   // stable (held while done)
+                            // place the value at the lane this access reads (so a
+                            // byte/half load at any offset gets it; lw -> low 16)
+                            s_rdt     <= {16'h0, rdt_hold} << {lane_off(s_sel), 3'b000};
                             s_ack     <= 1'b1;       // tell SERV (1 cycle)
                             req_level <= 1'b0;        // start return-to-zero
                             ustate    <= U_ACK;
@@ -78,8 +105,8 @@ module serv_wb_cdc
             case (vstate)
                 V_IDLE: if (req_sys) begin            // s_* are stable now
                             m_we    <= s_we;
-                            m_addr  <= s_adr;
-                            m_wdata <= s_dat;
+                            m_addr  <= {s_adr[15:2], lane_off(s_sel)};
+                            m_wdata <= lane16(s_sel, s_dat);
                             m_req   <= 1'b1;
                             vstate  <= V_RUN;
                         end

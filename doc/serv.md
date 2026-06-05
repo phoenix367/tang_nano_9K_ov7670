@@ -115,10 +115,17 @@ Host side: `modbus_client.serv_boot_load(blob)` packs the overlay `.bin` into
 little-endian words and streams them with the per-word `pending` handshake; the
 bootloader jumps once it has received `BOOT_LEN` words. One-shot (reset to reload).
 
-`serv_soc/heartbeat.S` is now built as the **demo overlay**
+`serv_soc/heartbeat.S` is built as a minimal **demo overlay**
 (`build/serv_fw/overlay_heartbeat.bin`, linked at 0x1000) — uploaded at runtime,
-not baked in. It writes the incrementing counter to `0x400000E0` (reg 0xE0), so
-after a successful load 0xE0 starts advancing.
+not baked in. It writes the incrementing counter to `0x400000E0` (reg 0xE0).
+
+Richer demos live in [`demo_mcu_apps/`](../demo_mcu_apps); the first,
+[`osd_hello`](../demo_mcu_apps/osd_hello/osd_hello.S), writes **"Hello from
+MCU!!!"** onto the OSD after boot (the hardware test uploads it and reads the
+banner back). The OSD control registers (0xFB/FC/FD) aren't word-aligned, but
+`serv_wb_cdc` resolves the register from SERV's word address + byte-enables
+(`word_addr + lane_offset(sel)`) and extracts/places the value at that lane, so
+SERV can drive **any** register with ordinary RV32I loads/stores.
 - `src/build_config.vh` (generated) carries the `SERV_CONTROL` define + firmware
   path; `camera_ov7670.gprj` is generated from `camera_ov7670.gprj.in` with the
   SERV files' `enable` tied to the flag, so a default build excludes them

@@ -99,16 +99,17 @@ serv_cpu #(.memfile(`SERV_MEMFILE), .memsize(8192)) serv_inst (
     .i_wb_ext_rdt(serv_rdt), .i_wb_ext_ack(serv_ack)
 );
 
-// mcu_clk -> sys_clk CDC. SERV's byte-addressed ext bus maps to a be-style
-// master (low 16 adr bits = register, word store -> dat[15:0]; validated in
-// sim/unit/serv_wb_cdc and sim/unit/be_arbiter).
+// mcu_clk -> sys_clk CDC. serv_wb_cdc maps SERV's word-aligned ext access
+// (word addr + byte-enables) onto the register backend: be_addr = word_addr +
+// lane_offset(sel), value extracted/placed at that lane. Lets SERV reach any
+// register, word-aligned or not (validated in sim/unit/serv_wb_cdc).
 wire        s_m_req, s_m_we, s_m_ready;
-wire [15:0] s_m_addr, s_m_wdata, s_m_rdata, s_rdt16;
-assign serv_rdt = {16'h0000, s_rdt16};
+wire [15:0] s_m_addr, s_m_wdata, s_m_rdata;
 serv_wb_cdc serv_cdc (
     .mcu_clk(mcu_clk), .mcu_rst(serv_rst),
-    .s_stb(serv_stb), .s_we(serv_we), .s_adr(serv_adr[15:0]), .s_dat(serv_wdat[15:0]),
-    .s_ack(serv_ack), .s_rdt(s_rdt16),
+    .s_stb(serv_stb), .s_we(serv_we), .s_adr(serv_adr[15:0]),
+    .s_dat(serv_wdat), .s_sel(serv_sel),
+    .s_ack(serv_ack), .s_rdt(serv_rdt),
     .sys_clk(sys_clk), .sys_rst_n(sys_rst_n),
     .m_req(s_m_req), .m_we(s_m_we), .m_addr(s_m_addr), .m_wdata(s_m_wdata),
     .m_ready(s_m_ready), .m_rdata(s_m_rdata)
