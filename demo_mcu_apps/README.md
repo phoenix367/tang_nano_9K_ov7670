@@ -26,6 +26,7 @@ button), so the host can always load any firmware over any running overlay.
 | App | What it does |
 | --- | ------------ |
 | [`osd_hello`](osd_hello/osd_hello.S) | After boot, writes **"Hello from MCU!!!"** centered on the OSD overlay (enable 0xFB, cursor 0xFC, chars 0xFD). |
+| [`psram_test`](psram_test/psram_test.S) | Writes a pseudo-random sequence into channel-1 PSRAM (write port 0xF3/0xF4-0xF7), reads it back, compares, and prints **"PSRAM test: PASS/FAIL"** on the OSD. |
 
 ## Adding an app
 

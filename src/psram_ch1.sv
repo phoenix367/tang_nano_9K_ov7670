@@ -50,6 +50,8 @@ module psram_ch1 #(
     input  wire        srst_n,
     input  wire        grab_arm,      // pulse: capture the next frame into ch1
     input  wire        rd_req,        // pulse: read the ch1 word at rd_addr
+    input  wire        wr_req,        // pulse: write wr_data to the burst at rd_addr
+    input  wire [31:0] wr_data,       // value written to every word of the target burst
     input  wire [20:0] rd_addr,       // ch1 burst address (matches the grab layout)
     output reg         busy,          // high from arm/req until the op completes
     output reg [255:0] rd_data_o,     // last read burst (8 words; valid once busy clears)
@@ -59,30 +61,50 @@ module psram_ch1 #(
     localparam [5:0]  WORDS  = burst_cycles(MEMORY_BURST);  // 8 for 32B
     localparam [20:0] BSTEP  = 21'd16;                      // ch0 addr increment per burst
     localparam [26:0] WD_MAX = 27'h7FF_FFFF;                // ~2 s watchdog at fb_clk
+    // arbitrary-write burst timing, mirrored from the proven FrameUploader/ch0
+    // path: a single cmd pulse at CACHE_DELAY into a window that holds the data
+    // stable across the whole IP write latency (TCMD) + burst. Because we drive
+    // ALL words of the burst with the same value, the exact cmd-vs-data beat
+    // alignment is immaterial -- whatever cycles the IP samples see one value.
+    localparam [5:0]  CACHE_DELAY = 6'd2;
+    localparam [5:0]  TCMD        = burst_delay(MEMORY_BURST);            // 19 for 32B
+    localparam [5:0]  WR_HOLD     = TCMD + WORDS + CACHE_DELAY;           // 29 for 32B
 
     // ------------------- CDC: sys_clk triggers -> fb_clk ---------------------
-    reg        arm_tgl_s, rd_tgl_s;
-    reg [20:0] rd_addr_s;
+    reg        arm_tgl_s, rd_tgl_s, wr_tgl_s;
+    reg [20:0] rd_addr_s, wr_addr_s;
+    reg [31:0] wr_data_s;
     always @(posedge sclk or negedge srst_n) begin
-        if (!srst_n) begin arm_tgl_s <= 1'b0; rd_tgl_s <= 1'b0; rd_addr_s <= 21'd0; end
-        else begin
+        if (!srst_n) begin
+            arm_tgl_s <= 1'b0; rd_tgl_s <= 1'b0; wr_tgl_s <= 1'b0;
+            rd_addr_s <= 21'd0; wr_addr_s <= 21'd0; wr_data_s <= 32'd0;
+        end else begin
             if (grab_arm) arm_tgl_s <= ~arm_tgl_s;
             if (rd_req)   begin rd_tgl_s <= ~rd_tgl_s; rd_addr_s <= rd_addr; end
+            if (wr_req)   begin wr_tgl_s <= ~wr_tgl_s; wr_addr_s <= rd_addr; wr_data_s <= wr_data; end
         end
     end
-    reg [2:0] arm_sync, rd_sync;
+    reg [2:0] arm_sync, rd_sync, wr_sync;
     always @(posedge fb_clk or negedge fb_rst_n) begin
-        if (!fb_rst_n) begin arm_sync <= 3'b0; rd_sync <= 3'b0; end
-        else begin arm_sync <= {arm_sync[1:0], arm_tgl_s}; rd_sync <= {rd_sync[1:0], rd_tgl_s}; end
+        if (!fb_rst_n) begin arm_sync <= 3'b0; rd_sync <= 3'b0; wr_sync <= 3'b0; end
+        else begin
+            arm_sync <= {arm_sync[1:0], arm_tgl_s};
+            rd_sync  <= {rd_sync[1:0],  rd_tgl_s};
+            wr_sync  <= {wr_sync[1:0],  wr_tgl_s};
+        end
     end
     wire grab_start = arm_sync[2] ^ arm_sync[1];
     wire rd_start   = rd_sync[2]  ^ rd_sync[1];
+    wire wr_start   = wr_sync[2]  ^ wr_sync[1];
 
     // ------------------- fb_clk operation FSM --------------------------------
     localparam [2:0] S_IDLE = 3'd0, S_GWAIT = 3'd1, S_GCAP = 3'd2,
-                     S_GDRAIN = 3'd3, S_RCMD = 3'd4, S_RDAT = 3'd5;
+                     S_GDRAIN = 3'd3, S_RCMD = 3'd4, S_RDAT = 3'd5,
+                     S_WBURST = 3'd6;
     reg [2:0]  state;
     reg [20:0] ch1_wptr;
+    reg [20:0] wr_addr_f;       // latched write burst address (fb domain)
+    reg [31:0] wr_data_f;       // latched value -> every word of the burst
     reg [5:0]  ridx;
     reg [2:0]  drain;
     reg [26:0] wd;
@@ -96,7 +118,8 @@ module psram_ch1 #(
         if (!fb_rst_n) begin
             state <= S_IDLE; cmd1 <= 1'b0; cmd_en1 <= 1'b0; addr1 <= 21'd0;
             wr_data1 <= 32'd0; data_mask1 <= 4'd0;
-            ch1_wptr <= 21'd0; ridx <= 6'd0; drain <= 3'd0; wd <= 27'd0;
+            ch1_wptr <= 21'd0; wr_addr_f <= 21'd0; wr_data_f <= 32'd0;
+            ridx <= 6'd0; drain <= 3'd0; wd <= 27'd0;
             done_tgl_f <= 1'b0; rd_burst_f <= 256'd0; tap_cmd_q <= 1'b0; tap_data_q <= 32'd0;
             grab_active_q <= 1'b0;
         end else begin
@@ -114,6 +137,11 @@ module psram_ch1 #(
                     else if (rd_start && calib1) begin
                         addr1 <= `WRAP_SIM(#1) rd_addr_s;
                         state <= `WRAP_SIM(#1) S_RCMD;
+                    end else if (wr_start && calib1) begin
+                        wr_addr_f <= `WRAP_SIM(#1) wr_addr_s;
+                        wr_data_f <= `WRAP_SIM(#1) wr_data_s;
+                        ridx      <= `WRAP_SIM(#1) 6'd0;
+                        state     <= `WRAP_SIM(#1) S_WBURST;
                     end
                 end
 
@@ -164,6 +192,24 @@ module psram_ch1 #(
                         ridx <= `WRAP_SIM(#1) ridx + 1'b1;
                 end
 
+                // ---- arbitrary write: drive one burst at wr_addr_f, all WORDS
+                //      words = wr_data_f. cmd pulses once (CACHE_DELAY into the
+                //      window); cmd1/addr1/wr_data1 are held stable for the whole
+                //      IP write window (WR_HOLD) so the data is valid whichever
+                //      cycles the IP samples (mirrors the ch0 write timing). ----
+                S_WBURST: begin
+                    cmd1       <= `WRAP_SIM(#1) 1'b1;
+                    data_mask1 <= `WRAP_SIM(#1) 4'h0;
+                    wr_data1   <= `WRAP_SIM(#1) wr_data_f;
+                    addr1      <= `WRAP_SIM(#1) wr_addr_f;
+                    cmd_en1    <= `WRAP_SIM(#1) (ridx == CACHE_DELAY);   // single write command
+                    if (ridx == WR_HOLD) begin
+                        done_tgl_f <= `WRAP_SIM(#1) ~done_tgl_f;
+                        state      <= `WRAP_SIM(#1) S_IDLE;
+                    end else
+                        ridx <= `WRAP_SIM(#1) ridx + 1'b1;
+                end
+
                 default: state <= `WRAP_SIM(#1) S_IDLE;
             endcase
 
@@ -186,7 +232,7 @@ module psram_ch1 #(
             done_sync <= {done_sync[1:0], done_tgl_f};
             cal_sync  <= {cal_sync[0], calib1};
             ch1_calib <= cal_sync[1];
-            if (grab_arm || rd_req) busy <= 1'b1;
+            if (grab_arm || rd_req || wr_req) busy <= 1'b1;
             if (done_sync[2] ^ done_sync[1]) begin
                 busy      <= 1'b0;
                 rd_data_o <= rd_burst_f;    // stable since before the done flip

@@ -137,10 +137,14 @@ own re-arm.)
 (`build/serv_fw/overlay_heartbeat.bin`, linked at 0x1000) — uploaded at runtime,
 not baked in. It writes the incrementing counter to `0x400000E0` (reg 0xE0).
 
-Richer demos live in [`demo_mcu_apps/`](../demo_mcu_apps); the first,
-[`osd_hello`](../demo_mcu_apps/osd_hello/osd_hello.S), writes **"Hello from
-MCU!!!"** onto the OSD after boot (the hardware test uploads it and reads the
-banner back). The OSD control registers (0xFB/FC/FD) aren't word-aligned, but
+Richer demos live in [`demo_mcu_apps/`](../demo_mcu_apps):
+[`osd_hello`](../demo_mcu_apps/osd_hello/osd_hello.S) writes **"Hello from
+MCU!!!"** onto the OSD after boot, and
+[`psram_test`](../demo_mcu_apps/psram_test/psram_test.S) writes a pseudo-random
+sequence into channel-1 PSRAM (via the `wb_grab` write port), reads it back,
+compares, and prints **"PSRAM test: PASS/FAIL"** — exercising both PSRAM and the
+OSD from the soft core (both have hardware tests that upload them and read the
+banner back). The OSD/grab control registers (0xF3..0xFD) aren't word-aligned, but
 `serv_wb_cdc` resolves the register from SERV's word address + byte-enables
 (`word_addr + lane_offset(sel)`) and extracts/places the value at that lane, so
 SERV can drive **any** register with ordinary RV32I loads/stores.

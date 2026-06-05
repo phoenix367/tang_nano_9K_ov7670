@@ -235,11 +235,19 @@ a stream pointer and a 256-bit burst buffer:
 
 | Addr        | Action                                                          |
 | ----------- | --------------------------------------------------------------- |
-| `0xF3`      | write 1 = arm a grab; write 2 = single-word ch1 read; read = `{calib,busy}` |
-| `0xF4/0xF5` | write the single-read ch1 address lo/hi (debug)                 |
-| `0xF6/0xF7` | read the single-read ch1 word hi/lo halves (debug)              |
+| `0xF3`      | write 1 = arm a grab; 2 = single-word ch1 read; 3 = single-burst ch1 write; read = `{calib,busy}` |
+| `0xF4/0xF5` | write the ch1 read/write burst address lo/hi (debug)            |
+| `0xF6/0xF7` | read = the ch1 read-back word hi/lo; **write = the ch1 write-data hi/lo** |
 | `0xF8`      | write = rewind the download stream pointer to pixel 0           |
 | `≥0x1000` (read) | return the next 16-bit frame pixel, advance the pointer    |
+
+The **write path** (`0xF6/0xF7` value, `0xF4/0xF5` address, then `0xF3<=3`) makes
+`psram_ch1` write that 32-bit value to every word of the target burst, so a host
+or the SERV MCU can write a known sequence and read it back (the read path above)
+to verify PSRAM — used by `demo_mcu_apps/psram_test` and
+`modbus_client.psram_write`/`psram_read`. (`0xF6/0xF7` keep their read-as-ch1-word
+meaning; the write meaning is new and non-conflicting, so the OV7670/Modbus map is
+unchanged.)
 
 ```mermaid
 stateDiagram-v2

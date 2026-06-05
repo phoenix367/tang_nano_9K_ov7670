@@ -381,7 +381,19 @@ if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
         COMMENT "Building demo_mcu_apps/osd_hello overlay (RV32I, linked at 0x1000)"
         VERBATIM
     )
-    add_custom_target(serv_firmware DEPENDS ${SERV_BOOT_HEX} ${SERV_OVERLAY_BIN} ${SERV_OSD_HELLO_BIN})
+    set(SERV_PSRAM_TEST_BIN "${SERV_FW_DIR}/psram_test.bin")
+    add_custom_command(
+        OUTPUT  ${SERV_PSRAM_TEST_BIN}
+        COMMAND ${RISCV_GCC} -nostartfiles -nostdlib -march=rv32i_zicsr -mabi=ilp32
+                -Wl,--build-id=none -T ${SERV_SOC_DIR}/overlay.ld
+                ${DEMO_DIR}/psram_test/psram_test.S -o ${SERV_FW_DIR}/psram_test.elf
+        COMMAND ${RISCV_OBJCOPY} -O binary ${SERV_FW_DIR}/psram_test.elf ${SERV_PSRAM_TEST_BIN}
+        DEPENDS ${DEMO_DIR}/psram_test/psram_test.S ${SERV_SOC_DIR}/overlay.ld
+        COMMENT "Building demo_mcu_apps/psram_test overlay (RV32I, linked at 0x1000)"
+        VERBATIM
+    )
+    add_custom_target(serv_firmware DEPENDS ${SERV_BOOT_HEX} ${SERV_OVERLAY_BIN}
+                      ${SERV_OSD_HELLO_BIN} ${SERV_PSRAM_TEST_BIN})
     if (SERV_CONTROL)
         add_dependencies(hw_synth serv_firmware)
         add_dependencies(hw_all   serv_firmware)

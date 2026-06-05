@@ -167,6 +167,8 @@ wire [7:0]  osd_rb_data;
 // channel-1 PSRAM bring-up loopback (Modbus backend <-> VGA_timing/psram_ch1)
 wire        grab_arm;
 wire        grab_rd_req;
+wire        grab_wr_req;
+wire [31:0] grab_wr_data;
 wire [20:0] grab_rd_addr;
 wire        grab_busy;
 wire [255:0] grab_rd_data;
@@ -263,6 +265,8 @@ modbus_cam_backend #(
     .osd_rb_data(osd_rb_data),
     .grab_arm(grab_arm),
     .grab_rd_req(grab_rd_req),
+    .grab_wr_req(grab_wr_req),
+    .grab_wr_data(grab_wr_data),
     .grab_rd_addr(grab_rd_addr),
     .grab_busy(grab_busy),
     .grab_rd_data(grab_rd_data),
@@ -409,6 +413,8 @@ VGA_timing	VGA_timing_inst(
     .O_psram_cs_n(O_psram_cs_n),
     .grab_arm(grab_arm),
     .grab_rd_req(grab_rd_req),
+    .grab_wr_req(grab_wr_req),
+    .grab_wr_data(grab_wr_data),
     .grab_rd_addr(grab_rd_addr),
     .grab_busy(grab_busy),
     .grab_rd_data(grab_rd_data),

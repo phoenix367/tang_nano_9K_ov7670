@@ -76,6 +76,8 @@ module modbus_cam_backend
     // channel-1 PSRAM bring-up loopback (wb_grab, to/from psram_ch1 via VGA_timing)
     output wire        grab_arm,
     output wire        grab_rd_req,
+    output wire        grab_wr_req,
+    output wire [31:0] grab_wr_data,
     output wire [20:0] grab_rd_addr,
     input  wire        grab_busy,
     input  wire [255:0] grab_rd_data,
@@ -141,7 +143,9 @@ module modbus_cam_backend
         .clk(clk), .reset_n(reset_n),
         .wb_adr_i(m_adr), .wb_dat_i(m_dat_w), .wb_dat_o(grab_dat),
         .wb_we_i(m_we), .wb_stb_i(grab_stb), .wb_cyc_i(m_cyc), .wb_ack_o(grab_ack),
-        .grab_arm(grab_arm), .grab_rd_req(grab_rd_req), .grab_rd_addr(grab_rd_addr),
+        .grab_arm(grab_arm), .grab_rd_req(grab_rd_req),
+        .grab_wr_req(grab_wr_req), .grab_wr_data(grab_wr_data),
+        .grab_rd_addr(grab_rd_addr),
         .grab_busy(grab_busy), .grab_rd_data(grab_rd_data), .grab_calib(grab_calib)
     );
 

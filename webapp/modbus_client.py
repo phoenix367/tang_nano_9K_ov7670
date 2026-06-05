@@ -34,7 +34,12 @@ MODBUS_MAX_READ_QTY = _platform.MODBUS_MAX_READ_QTY
 # src/modbus/modbus_cam_backend.sv). The frame-grab feature captures a camera frame
 # into PSRAM channel 1 and streams it back over FC03.
 CAM_REG_MAX = 0x00C9   # highest OV7670 register (the 1:1-mapped camera range is 0x00..0xC9)
-REG_GRAB    = 0x00F3   # write 1 = arm a grab; read bit0 = busy, bit1 = ch1 calibrated
+REG_GRAB    = 0x00F3   # write 1 = arm a grab, 2 = ch1 read, 3 = ch1 write;
+                       # read bit0 = busy, bit1 = ch1 calibrated
+REG_GRAB_ADDR_LO = 0x00F4   # write: ch1 read/write burst address [15:0]
+REG_GRAB_ADDR_HI = 0x00F5   # write: ch1 read/write burst address [20:16]
+REG_GRAB_DATA_HI = 0x00F6   # read: ch1 word [31:16]; write: ch1 write-data [31:16]
+REG_GRAB_DATA_LO = 0x00F7   # read: ch1 word [15:0];  write: ch1 write-data [15:0]
 REG_STREAM  = 0x00F8   # write = rewind the download stream to pixel 0
 REG_HEARTBEAT = 0x00E0 # RW scratch; on a SERV_CONTROL build the SERV co-master
                        # increments it so the host can confirm the CPU is live
@@ -326,6 +331,37 @@ class ModbusRTU:
     def grab_busy(self):
         """True while a grab is still capturing into ch1."""
         return bool(self.read_holding(REG_GRAB, 1)[0] & 0x01)
+
+    def _grab_wait_idle(self, timeout=1.0):
+        deadline = time.monotonic() + timeout
+        while self.grab_busy():
+            if time.monotonic() > deadline:
+                raise TimeoutError("ch1 PSRAM op did not complete (busy stuck)")
+            time.sleep(0.001)
+
+    def psram_write(self, addr, value, timeout=1.0):
+        """Write a 32-bit `value` to every word of the ch1 PSRAM burst at `addr`
+        (burst-aligned, step 16). Loads the value (0xF6/0xF7) + address (0xF4/0xF5)
+        then triggers the write (0xF3<=3) and waits for completion. SERV_CONTROL
+        is not required -- the write port is unconditional gateware."""
+        value &= 0xFFFFFFFF
+        self.write_single(REG_GRAB_DATA_HI, (value >> 16) & 0xFFFF)
+        self.write_single(REG_GRAB_DATA_LO, value & 0xFFFF)
+        self.write_single(REG_GRAB_ADDR_LO, addr & 0xFFFF)
+        self.write_single(REG_GRAB_ADDR_HI, (addr >> 16) & 0x1F)
+        self.write_single(REG_GRAB, 3)              # write-trigger
+        self._grab_wait_idle(timeout)
+
+    def psram_read(self, addr, timeout=1.0):
+        """Read word 0 of the ch1 PSRAM burst at `addr` and return it as a 32-bit
+        int (0xF6 = high half, 0xF7 = low half). Pairs with psram_write."""
+        self.write_single(REG_GRAB_ADDR_LO, addr & 0xFFFF)
+        self.write_single(REG_GRAB_ADDR_HI, (addr >> 16) & 0x1F)
+        self.write_single(REG_GRAB, 2)              # read-trigger
+        self._grab_wait_idle(timeout)
+        hi = self.read_holding(REG_GRAB_DATA_HI, 1)[0] & 0xFFFF
+        lo = self.read_holding(REG_GRAB_DATA_LO, 1)[0] & 0xFFFF
+        return (hi << 16) | lo
 
     def grab_frame(self, progress=None, timeout=3.0, should_cancel=None):
         """Capture a fresh camera frame into ch1 and stream it to the host.

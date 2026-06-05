@@ -223,6 +223,42 @@ def test_serv_mcu_reset_recovers_parked_overlay(dev):
         "post-reset load: osd_hello did not run after recovering a parked MCU"
 
 
+def test_psram_write_read_roundtrip(dev):
+    """The arbitrary ch1 PSRAM write port (wb_grab 0xF3<=3 + 0xF4-0xF7): write a
+    pseudo-random 32-bit sequence into a run of bursts and read each back. This
+    validates the RTL write path directly from the host (no SERV needed)."""
+    if not (dev.read_holding(mc.REG_GRAB, 1)[0] & 0x02):
+        pytest.skip("ch1 PSRAM not calibrated (0xF3 bit1) on this bitstream")
+
+    def seq(i):
+        return ((i * 0x9E3779B1) ^ 0x5A5A1234) & 0xFFFFFFFF
+
+    N = 32
+    for i in range(N):
+        dev.psram_write(i * 16, seq(i))          # all 8 words of burst i <- seq(i)
+    for i in range(N):
+        got = dev.psram_read(i * 16)             # word 0 of burst i
+        assert got == seq(i), \
+            f"PSRAM[{i * 16}] read 0x{got:08X}, wrote 0x{seq(i):08X}"
+
+
+@pytest.mark.skipif(not os.environ.get("OV7670_SERV"),
+                    reason="set OV7670_SERV=1 for a SERV_CONTROL (co-master) bitstream")
+def test_serv_psram_demo(dev):
+    """demo_mcu_apps/psram_test on the soft core: it writes a pseudo-random
+    sequence into ch1 PSRAM, reads it back, compares, and prints the verdict on
+    the OSD. Upload it and read the banner back -- a healthy PSRAM path shows
+    'PSRAM test: PASS'."""
+    overlay = _serv_overlay("psram_test.bin")
+    dev.osd_clear()                              # so a stale PASS can't fool us
+    time.sleep(0.05)
+    assert dev.serv_boot_load(overlay) > 0       # reset -> bootloader -> run
+    time.sleep(0.5)                              # bit-serial write+read of 32 bursts
+    text = "\n".join(dev.osd_read_text())
+    assert "PSRAM test: PASS" in text, \
+        f"MCU PSRAM demo did not report PASS; OSD read: {text!r}"
+
+
 # --------------------------------------------------------------- board health
 def test_board_health(dev):
     """The watchdog reports a healthy, monitoring board with no stuck subsystems."""
