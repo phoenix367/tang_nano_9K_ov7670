@@ -367,6 +367,43 @@ def test_serv_roi_presence(dev):
 
 @pytest.mark.skipif(not os.environ.get("OV7670_SERV"),
                     reason="set OV7670_SERV=1 for a SERV_CONTROL (co-master) bitstream")
+def test_serv_roi_collect(dev):
+    """demo_mcu_apps/roi_collect -- the sample-collection alignment guide. It draws
+    the same fixed ROI box as roi_presence, sets heartbeat 0x42, then PARKS without
+    touching the bus so the host can drive the grab port (collect_samples.py reads
+    the ROI out of ch1 PSRAM). We assert: the liveness marker (0xE0 == 0x42), the
+    box is drawn (a box glyph at OSD (3,22)), and -- the demo's whole point -- the
+    host can still arm a grab + read a ROI cell while the overlay is parked."""
+    overlay = _serv_overlay("roi_collect.bin")
+    try:
+        assert dev.serv_boot_load(overlay) > 0
+        time.sleep(0.5)
+        assert (dev.read_reg(mc.REG_HEARTBEAT) & 0xFF) == 0x42, "roi_collect liveness marker missing"
+        glyph = 0
+        for _ in range(20):
+            glyph = dev.osd_read_cells(3, 22, 1)[0] & 0xFF
+            if 0x80 <= glyph <= 0x85:
+                break
+            time.sleep(0.1)
+        assert 0x80 <= glyph <= 0x85, f"ROI box not drawn on the OSD (cell=0x{glyph:02X})"
+        # the parked overlay makes no bus accesses -> the host owns the grab port:
+        # arm a capture and read a ROI cell out of ch1 PSRAM (the collect path).
+        dev.write_single(mc.REG_GRAB, 1)
+        for _ in range(500):
+            if not dev.grab_busy():
+                break
+            time.sleep(0.002)
+        assert not dev.grab_busy(), "host grab did not complete (overlay contending for the bus?)"
+        addr = 3 * 19200 + 13 * 16            # ROI top-left cell (rr=3, cc=13)
+        word = dev.psram_read(addr)           # must not hang -> grab port is free
+        assert 0 <= ((word >> 16) & 0xFFFF) <= 0xFFFF
+    finally:
+        dev.serv_mcu_reset()
+        time.sleep(0.05)
+
+
+@pytest.mark.skipif(not os.environ.get("OV7670_SERV"),
+                    reason="set OV7670_SERV=1 for a SERV_CONTROL (co-master) bitstream")
 def test_serv_lbph_bench(dev):
     """demo_mcu_apps/lbph_bench -- benchmark of LBPH feature computation on the soft
     core (the heart of OpenCV's LBPH face recogniser). It loops computing the LBPH
