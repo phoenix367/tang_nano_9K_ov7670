@@ -98,11 +98,15 @@ How it fits together:
   SERV files' `enable` tied to the flag, so a default build excludes them
   entirely (no extra logic, no phantom clocks).
 
-Build + verify the SERV variant:
+Whether the SERV co-master is in the camera build is controlled by
+**`platform.json`'s `serv_mcu.enable`** (default `true`) — the single source of
+truth, like the rest of the platform config. It needs the RISC-V toolchain + the
+`serv/` submodule; if those are missing CMake **warns and builds without SERV**
+(so a toolchain-less checkout still works) rather than failing.
 
 ```sh
 cmake -S . -B build -D IVerilog_PATH=/usr/bin -D Gowin_PATH=/opt/gowin/IDE \
-      -D RISCV_PATH=/path/to/riscv/bin -D SERV_CONTROL=ON
+      -D RISCV_PATH=/path/to/riscv/bin       # serv_mcu.enable=true -> SERV included
 cmake --build build --target hw_all          # camera bitstream with SERV co-master
 cmake --build build --target hw_program
 # then, on hardware:
@@ -110,10 +114,14 @@ OV7670_PORT=/dev/ttyGowin OV7670_SERV=1 .venv/bin/python -m pytest \
     webapp/tests/test_device_hw.py::test_serv_heartbeat_advances -v
 ```
 
-Measured: the SERV variant fits at ~63% logic / 87% CLS / 77% BSRAM and closes
-timing at 27 MHz (base Fmax ×1.51, all clocks OK); the default build is unchanged
-on real paths (`setup<0 = 0`). Reconfigure with `-D SERV_CONTROL=OFF` (the
-default) for the normal Modbus-only camera.
+To build the plain Modbus-only camera, set `"serv_mcu": { "enable": false }` in
+`platform.json` and reconfigure.
+
+Measured: the SERV build fits at ~63% logic / 87% CLS / 77% BSRAM; `mcu_clk`
+closes 30 MHz (×2.09) and the mcu↔sys crossings are false-pathed (`setup<0 = 0`);
+with SERV on its own clock the 27 MHz base Fmax sits ~50 MHz (vs ~41 when SERV
+shared sys_clk). With `serv_mcu.enable=false` the camera is unchanged on real
+paths.
 
 ## Next steps (not yet implemented)
 

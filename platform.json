@@ -21,5 +21,8 @@
     "data_bits": 8,
     "parity": "even",
     "stop_bits": 1
+  },
+  "serv_mcu": {
+    "enable": true
   }
 }

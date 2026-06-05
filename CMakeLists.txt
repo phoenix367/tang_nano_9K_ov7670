@@ -138,6 +138,19 @@ macro(platform_json_enum key outvar)
     endif()
 endmacro()
 
+# Extract a boolean-valued key (true/false) into ON/OFF.
+macro(platform_json_bool key outvar)
+    if (_PLATFORM_JSON_CONTENT MATCHES "\"${key}\"[ \t\r\n]*:[ \t\r\n]*(true|false)")
+        if (CMAKE_MATCH_1 STREQUAL "true")
+            set(${outvar} ON)
+        else()
+            set(${outvar} OFF)
+        endif()
+    else()
+        message(FATAL_ERROR "platform.json: key '${key}' is missing or not a boolean")
+    endif()
+endmacro()
+
 # geometry
 platform_json_int("input_frame_width"  PLATFORM_INPUT_FRAME_WIDTH)
 platform_json_int("input_frame_height" PLATFORM_INPUT_FRAME_HEIGHT)
@@ -169,12 +182,29 @@ configure_file("${SRC_FOLDER}/platform_config.vh.in"
                "${SRC_FOLDER}/platform_config.vh" @ONLY)
 
 # ---------------------------------------------------------------------------
-# Build-variant config (src/build_config.vh). SERV_CONTROL=ON adds the SERV soft
-# core as a 2nd Wishbone master in the camera design (Phase 2; see doc/serv.md);
-# the firmware hex it loads is built in the SERV block below. Generated
-# unconditionally so camera_control.v's `include always resolves.
+# SERV co-master (Phase 2). Whether the camera design includes the SERV soft
+# core as a 2nd Wishbone master is controlled by platform.json's serv_mcu.enable
+# (default true) -- the single source of truth, like the rest of the platform
+# config. Building it needs the RISC-V toolchain + the serv/ submodule; if those
+# are absent we WARN and build without SERV rather than fail, so a toolchain-less
+# checkout still builds the camera. (The hw_serv_* standalone bring-up below is
+# independent and stays gated purely on the toolchain.)
 # ---------------------------------------------------------------------------
-option(SERV_CONTROL "Add the SERV soft core as a 2nd Wishbone master (Phase 2)" OFF)
+platform_json_bool("enable"            PLATFORM_SERV_MCU_ENABLE)
+find_program(RISCV_GCC NAMES riscv64-unknown-elf-gcc riscv32-unknown-elf-gcc
+             HINTS ${RISCV_PATH})
+set(SERV_DIR "${CMAKE_CURRENT_SOURCE_DIR}/serv")
+if (PLATFORM_SERV_MCU_ENABLE AND RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
+    set(SERV_CONTROL TRUE)
+    message(STATUS "SERV co-master ENABLED (platform.json serv_mcu.enable) -- heartbeat @0x00E0, mcu_clk 30 MHz")
+else()
+    set(SERV_CONTROL FALSE)
+    if (PLATFORM_SERV_MCU_ENABLE)
+        message(WARNING "platform.json serv_mcu.enable=true but RISC-V gcc / serv submodule not found "
+                        "-> building the camera WITHOUT the SERV co-master "
+                        "(set -D RISCV_PATH=<bin> and run: git submodule update --init serv)")
+    endif()
+endif()
 set(SERV_HEARTBEAT_HEX "${CMAKE_CURRENT_BINARY_DIR}/serv_fw/heartbeat.hex")
 if (SERV_CONTROL)
     set(SERV_CONTROL_DEFINE "`define SERV_CONTROL")
@@ -287,10 +317,8 @@ endif()
 # hw_serv_* Gowin targets driving the ISOLATED serv_soc/serv_blink.gprj (its own
 # impl/ dir). The camera design is completely untouched. See doc/serv.md.
 # Provide RISCV_PATH if riscv*-elf-gcc isn't on PATH (e.g. a Vitis gnu/riscv bin).
+# (RISCV_GCC / SERV_DIR were already resolved above for the SERV co-master gate.)
 # ---------------------------------------------------------------------------
-find_program(RISCV_GCC NAMES riscv64-unknown-elf-gcc riscv32-unknown-elf-gcc
-             HINTS ${RISCV_PATH})
-set(SERV_DIR "${CMAKE_CURRENT_SOURCE_DIR}/serv")
 if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
     message(STATUS "Found RISC-V gcc at ${RISCV_GCC} - SERV bring-up targets enabled (hw_serv_*)")
     string(REPLACE "gcc" "objcopy" RISCV_OBJCOPY "${RISCV_GCC}")
@@ -365,10 +393,8 @@ if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
             COMMENT "Programming SERV blinky to embedded flash (persistent)" USES_TERMINAL)
     endif()
 else()
-    if (SERV_CONTROL)
-        message(FATAL_ERROR "SERV_CONTROL=ON needs a RISC-V toolchain + the serv/ submodule "
-                            "(set -D RISCV_PATH=<bin> and run git submodule update --init serv)")
-    endif()
+    # SERV_CONTROL was already forced FALSE above when the toolchain/submodule is
+    # missing (with a warning if serv_mcu.enable=true), so the camera still builds.
     message(STATUS "RISC-V gcc or serv/ submodule not found - SERV bring-up targets "
                    "disabled (set -D RISCV_PATH=<...> and run git submodule update --init serv)")
 endif()
