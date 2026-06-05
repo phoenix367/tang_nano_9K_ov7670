@@ -455,8 +455,8 @@ def api_serv_upload():
     blob = request.get_data()                    # raw octet-stream
     if not blob:
         return _error("no firmware uploaded")
-    if len(blob) > 4096:                         # overlay region is 0x1000..0x1FFF
-        return _error(f"overlay too large ({len(blob)} bytes; max 4096)")
+    if len(blob) > 12288:                        # overlay region 0x1000..0x3FFF (16 KB RAM)
+        return _error(f"overlay too large ({len(blob)} bytes; max 12288)")
     with _lock:
         try:
             client = _require_client()
