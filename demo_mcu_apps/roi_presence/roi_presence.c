@@ -24,13 +24,13 @@
 #define COL_STEP 16
 #define ROW_STEP 19200
 
-/* fixed ROI in grid cells (centred where a face sits): cols 13..27, rows 3..12 */
-#define ROI_C0 13
-#define ROI_C1 27
-#define ROI_R0 3
-#define ROI_R1 12
-#define ROI_CELLS ((ROI_C1 - ROI_C0 + 1) * (ROI_R1 - ROI_R0 + 1))   /* 15*10 = 150 */
-#define PRESENCE_THRESH 25     /* >= this many skin cells in the ROI -> face present */
+/* fixed ROI in grid cells (centred where a face sits): cols 9..30, rows 1..14 */
+#define ROI_C0 9
+#define ROI_C1 30
+#define ROI_R0 1
+#define ROI_R1 14
+#define ROI_CELLS ((ROI_C1 - ROI_C0 + 1) * (ROI_R1 - ROI_R0 + 1))   /* 22*14 = 308 */
+#define PRESENCE_THRESH 50     /* >= this many skin cells in the ROI -> face present */
 
 /* OSD box-drawing glyphs */
 #define BX_H 0x80

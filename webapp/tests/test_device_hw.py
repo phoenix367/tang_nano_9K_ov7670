@@ -350,12 +350,12 @@ def test_serv_roi_presence(dev):
         assert dev.serv_boot_load(overlay) > 0
         time.sleep(0.5)
         count = (dev.read_reg(mc.REG_HEARTBEAT) & 0xFF) >> 1
-        assert 0 <= count <= 150, f"ROI skin count out of range ({count})"
-        # the fixed ROI box top-left corner is at OSD (row 3, col 22); it's drawn
+        assert 0 <= count <= 127, f"ROI skin count out of range ({count})"  # clamped to 127 on 0xE0
+        # the fixed ROI box top-left corner is at OSD (row 1, col 17); it's drawn
         # once and static -> readable. Expect a box-drawing glyph (0x80..0x85).
         glyph = 0
         for _ in range(20):
-            glyph = dev.osd_read_cells(3, 22, 1)[0] & 0xFF
+            glyph = dev.osd_read_cells(1, 17, 1)[0] & 0xFF
             if 0x80 <= glyph <= 0x85:
                 break
             time.sleep(0.1)
@@ -381,7 +381,7 @@ def test_serv_roi_collect(dev):
         assert (dev.read_reg(mc.REG_HEARTBEAT) & 0xFF) == 0x42, "roi_collect liveness marker missing"
         glyph = 0
         for _ in range(20):
-            glyph = dev.osd_read_cells(3, 22, 1)[0] & 0xFF
+            glyph = dev.osd_read_cells(1, 17, 1)[0] & 0xFF
             if 0x80 <= glyph <= 0x85:
                 break
             time.sleep(0.1)
@@ -394,7 +394,7 @@ def test_serv_roi_collect(dev):
                 break
             time.sleep(0.002)
         assert not dev.grab_busy(), "host grab did not complete (overlay contending for the bus?)"
-        addr = 3 * 19200 + 13 * 16            # ROI top-left cell (rr=3, cc=13)
+        addr = 1 * 19200 + 9 * 16             # ROI top-left cell (rr=1, cc=9)
         word = dev.psram_read(addr)           # must not hang -> grab port is free
         assert 0 <= ((word >> 16) & 0xFFFF) <= 0xFFFF
     finally:

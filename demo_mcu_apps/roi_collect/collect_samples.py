@@ -6,7 +6,7 @@ and to roi_presence (which will run the trained classifier). Skin-colour gating 
 unreliable for this camera, so instead we harvest labelled ROI patches here and
 train a real classifier offline.
 
-Each sample is the SAME 15x10 grid of ROI cells that roi_presence scans -- read
+Each sample is the SAME 22x14 grid of ROI cells that roi_presence scans -- read
 straight out of channel-1 PSRAM after a host-armed frame grab -- so the data
 matches the deployed input exactly. The MCU is not involved in the read: the
 roi_collect overlay just draws the box and parks (no bus traffic), leaving the
@@ -25,7 +25,7 @@ Usage:
     .venv/bin/python demo_mcu_apps/roi_collect/collect_samples.py -p /dev/ttyGowin --no-load --draw-box
 
 Dataset: demo_mcu_apps/roi_collect/samples.jsonl (override with -o). Each line:
-    {"label": 0|1, "roi565": [<150 RGB565 ints, row-major over the ROI grid>]}
+    {"label": 0|1, "roi565": [<308 RGB565 ints, row-major over the ROI grid>]}
 The ROI geometry is fixed below and must stay in sync with roi_collect.c /
 roi_presence.c.
 """
@@ -46,11 +46,11 @@ from modbus_client import (  # noqa: E402
 # ---- fixed ROI geometry: MUST match roi_collect.c / roi_presence.c ----
 COL_STEP = 16          # PSRAM burst-address step per grid column (cam_col = cc*16)
 ROW_STEP = 19200       # per grid row (30 source rows * 640; cam_row = rr*30)
-ROI_C0, ROI_C1 = 13, 27
-ROI_R0, ROI_R1 = 3, 12
-ROI_COLS = ROI_C1 - ROI_C0 + 1     # 15
-ROI_ROWS = ROI_R1 - ROI_R0 + 1     # 10
-ROI_CELLS = ROI_COLS * ROI_ROWS    # 150
+ROI_C0, ROI_C1 = 9, 30
+ROI_R0, ROI_R1 = 1, 14
+ROI_COLS = ROI_C1 - ROI_C0 + 1     # 22
+ROI_ROWS = ROI_R1 - ROI_R0 + 1     # 14
+ROI_CELLS = ROI_COLS * ROI_ROWS    # 308
 
 # pillarbox-correct OSD mapping (grid col/row -> OSD cell), matching roi_collect.c
 COL_LUT = [7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 19, 20, 21, 22, 23, 24, 25, 27, 28, 29,

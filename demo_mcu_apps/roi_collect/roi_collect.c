@@ -22,10 +22,10 @@
 #include "serv_io.h"
 
 /* fixed ROI in grid cells -- MUST match roi_presence.c (cam_col = cc*16, cam_row = rr*30) */
-#define ROI_C0 13
-#define ROI_C1 27
-#define ROI_R0 3
-#define ROI_R1 12
+#define ROI_C0 9
+#define ROI_C1 30
+#define ROI_R0 1
+#define ROI_R1 14
 
 /* OSD box-drawing glyphs (OSD charset C1 codes) */
 #define BX_H 0x80
