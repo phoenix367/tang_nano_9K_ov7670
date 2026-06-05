@@ -3,8 +3,8 @@
  *
  * The hand-written asm overlays need no runtime, but C code needs a stack and
  * zeroed .bss, so this startup:
- *   - points sp at the top of the 8 KB RAM (0x2000; the overlay lives at 0x1000,
- *     its data grows up, the stack grows down -- no collision for a small demo),
+ *   - points sp at the top of the 16 KB RAM (0x4000; the overlay lives at 0x1000,
+ *     its data grows up, the stack grows down -- no collision),
  *   - zeroes the .bss section (__bss_start/__bss_end from overlay_c.ld),
  *   - calls main(),
  *   - and on return hands control back to the bootloader at 0x0000, so the
@@ -16,7 +16,7 @@
 	.section .text.init, "ax"
 	.globl _start
 _start:
-	li   sp, 0x2000             /* top of RAM */
+	li   sp, 0x4000             /* top of the 16 KB RAM */
 
 	la   t0, __bss_start
 	la   t1, __bss_end

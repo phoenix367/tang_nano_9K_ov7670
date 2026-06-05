@@ -248,6 +248,39 @@ def test_serv_c_hello(dev):
 
 @pytest.mark.skipif(not os.environ.get("OV7670_SERV"),
                     reason="set OV7670_SERV=1 for a SERV_CONTROL (co-master) bitstream")
+def test_serv_calc(dev):
+    """demo_mcu_apps/calc -- host-driven IEEE-754 float calculator on the soft core
+    (libgcc soft-float, 16 KB RAM build). Load it, send arithmetic / sqrt / 1-over-x
+    / integer-power ops over the mailbox, and check each float result (returned as
+    raw IEEE-754 bytes via the OSD) matches -- verifying the soft-float math end to
+    end."""
+    import math
+    overlay = _serv_overlay("calc.bin")
+    cases = [
+        (mc.CALC_ADD,   2.5,  4.0, 6.5),
+        (mc.CALC_SUB,  10.0,  3.5, 6.5),
+        (mc.CALC_MUL,   3.0,  7.0, 21.0),
+        (mc.CALC_DIV,   1.0,  3.0, 1.0 / 3.0),
+        (mc.CALC_SQRT,  2.0,  0.0, math.sqrt(2.0)),
+        (mc.CALC_RECIP, 8.0,  0.0, 0.125),
+        (mc.CALC_POW,   2.0, 10.0, 1024.0),
+        (mc.CALC_POW,   3.0, -2.0, 1.0 / 9.0),
+    ]
+    try:
+        assert dev.serv_boot_load(overlay) > 0       # reset -> bootloader -> run calc
+        time.sleep(0.3)
+        for op, a, b, want in cases:
+            got = dev.serv_calc(op, a, b)
+            tol = 1e-3 * max(1.0, abs(want))         # single-precision soft-float
+            assert abs(got - want) <= tol, \
+                f"calc op={op} a={a} b={b}: got {got!r}, want {want!r}"
+    finally:
+        dev.serv_mcu_reset()                         # stop the parked calc loop
+        time.sleep(0.05)
+
+
+@pytest.mark.skipif(not os.environ.get("OV7670_SERV"),
+                    reason="set OV7670_SERV=1 for a SERV_CONTROL (co-master) bitstream")
 def test_serv_motion_detect(dev):
     """demo_mcu_apps/motion (assembly): grabs a frame, builds a background model in
     FREE PSRAM, then loops grabbing + comparing and reports Movement: YES/NO on the

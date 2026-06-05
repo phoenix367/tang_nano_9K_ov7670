@@ -108,7 +108,10 @@ always @(posedge mcu_clk)
 wire [31:0] serv_adr, serv_wdat, serv_rdt;
 wire [3:0]  serv_sel;
 wire        serv_we, serv_stb, serv_ack;
-serv_cpu #(.memfile(`SERV_MEMFILE), .memsize(8192)) serv_inst (
+// 16 KB unified I/D RAM: 4 KB bootloader at 0x0000 + up to 12 KB for the loaded
+// overlay/stack at 0x1000. The larger size lets FP overlays (libgcc soft-float,
+// ~6 KB) fit -- e.g. demo_mcu_apps/calc. (~8 BSRAM vs ~4 for the old 8 KB.)
+serv_cpu #(.memfile(`SERV_MEMFILE), .memsize(16384)) serv_inst (
     .i_clk(mcu_clk), .i_rst(serv_rst), .i_timer_irq(1'b0),
     .o_wb_ext_adr(serv_adr), .o_wb_ext_dat(serv_wdat), .o_wb_ext_sel(serv_sel),
     .o_wb_ext_we(serv_we), .o_wb_ext_stb(serv_stb),

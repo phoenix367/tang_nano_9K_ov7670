@@ -437,9 +437,20 @@ if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
         COMMENT "Building demo_mcu_apps/motion_c overlay (C, linked at 0x1000)"
         VERBATIM
     )
+    # calc: host-driven floating-point calculator (C). Needs libgcc (soft-float +
+    # soft integer divide), so it links -lgcc and relies on the 16 KB MCU RAM.
+    set(SERV_CALC_BIN "${SERV_FW_DIR}/calc.bin")
+    add_custom_command(
+        OUTPUT  ${SERV_CALC_BIN}
+        COMMAND ${SERV_C_BUILD} ${DEMO_DIR}/calc/calc.c -lgcc -o ${SERV_FW_DIR}/calc.elf
+        COMMAND ${RISCV_OBJCOPY} -O binary ${SERV_FW_DIR}/calc.elf ${SERV_CALC_BIN}
+        DEPENDS ${DEMO_DIR}/calc/calc.c ${SERV_C_CRT} ${SERV_C_HDR} ${SERV_SOC_DIR}/overlay_c.ld
+        COMMENT "Building demo_mcu_apps/calc overlay (C + libgcc soft-float, linked at 0x1000)"
+        VERBATIM
+    )
     add_custom_target(serv_firmware DEPENDS ${SERV_BOOT_HEX} ${SERV_OVERLAY_BIN}
                       ${SERV_OSD_HELLO_BIN} ${SERV_PSRAM_TEST_BIN} ${SERV_C_HELLO_BIN}
-                      ${SERV_MOTION_BIN} ${SERV_MOTION_C_BIN})
+                      ${SERV_MOTION_BIN} ${SERV_MOTION_C_BIN} ${SERV_CALC_BIN})
     if (SERV_CONTROL)
         add_dependencies(hw_synth serv_firmware)
         add_dependencies(hw_all   serv_firmware)

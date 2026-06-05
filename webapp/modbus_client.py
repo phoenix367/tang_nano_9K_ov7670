@@ -9,6 +9,7 @@ pymodbus responses/exceptions to the small API the app and tests use.
 """
 
 import os
+import struct
 import sys
 import time
 
@@ -45,6 +46,8 @@ REG_HEARTBEAT = 0x00E0 # RW scratch; on a SERV_CONTROL build the SERV co-master
                        # increments it so the host can confirm the CPU is live
                        # on the bus. Reads 0 on a default (Modbus-only) build.
 REG_MCU_RESET   = 0x00E2   # write bit0 = reset the SERV MCU (-> bootloader); reads 0
+# demo_mcu_apps/calc opcodes (host -> MCU command word0)
+CALC_ADD, CALC_SUB, CALC_MUL, CALC_DIV, CALC_SQRT, CALC_RECIP, CALC_POW = range(7)
 # SERV bootloader mailbox (SERV_CONTROL build). The bootloader polls these as a
 # bus master; the host pushes an overlay firmware word-by-word. See doc/serv.md.
 REG_BOOT_LEN    = 0x00E4   # write overlay length (16-bit words) -> begins upload
@@ -241,6 +244,31 @@ class ModbusRTU:
                         "parks needs a device reset first (or this isn't a SERV build)")
             self.write_single(REG_BOOT_DATA, w)
         return len(words)
+
+    def serv_calc(self, op, a, b=0.0, timeout=2.0):
+        """Send a floating-point operation to the `calc` overlay and read the result.
+
+        `op` is one of the CALC_* opcodes; `a`,`b` are floats (b ignored by unary
+        ops). The command is 5 little-endian 16-bit words (opcode + the two operands
+        as IEEE-754 bits) streamed through the bootloader mailbox; the MCU writes the
+        32-bit result as 4 raw bytes to OSD row 16 and bumps the heartbeat as a done
+        signal. Returns the float result. Requires the calc overlay loaded (and the
+        16 KB SERV RAM build). See demo_mcu_apps/calc."""
+        self.write_single(REG_HEARTBEAT, 0xFF)        # done-sentinel
+        pa = struct.unpack("<HH", struct.pack("<f", float(a)))
+        pb = struct.unpack("<HH", struct.pack("<f", float(b)))
+        for w in (op, pa[0], pa[1], pb[0], pb[1]):
+            deadline = time.monotonic() + timeout
+            while self.read_holding(REG_BOOT_STATUS, 1)[0] & 0x01:   # wait drained
+                if time.monotonic() > deadline:
+                    raise TimeoutError("calc mailbox not drained (is the calc overlay running?)")
+            self.write_single(REG_BOOT_DATA, w)
+        deadline = time.monotonic() + timeout
+        while (self.read_reg(REG_HEARTBEAT) & 0xFF) == 0xFF:         # wait for done
+            if time.monotonic() > deadline:
+                raise TimeoutError("calc did not complete")
+        cells = self.osd_read_cells(16, 0, 4)                       # raw IEEE-754 bytes
+        return struct.unpack("<f", bytes(c & 0xFF for c in cells))[0]
 
     def dump_registers(self):
         """Read every OV7670 register (0x00..0xC9) and return {addr: value}.

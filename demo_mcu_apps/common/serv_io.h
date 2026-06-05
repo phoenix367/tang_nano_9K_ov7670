@@ -28,6 +28,21 @@
 #define UPTIME_HI (*(volatile uint8_t *)(EXT + 0xF1u))
 #define UPTIME_LO (*(volatile uint8_t *)(EXT + 0xF2u))
 
+/* Host -> MCU mailbox (the bootloader's, reused once an overlay is running): the
+ * host writes a 16-bit word to BOOT_DATA (sets pending); the MCU reads it (clears
+ * pending). BOOT_STATUS bit0 = a word is waiting. A simple host->MCU command
+ * channel that needs no extra RTL. */
+#define BOOT_DATA   (*(volatile uint16_t *)(EXT + 0xE8u))
+#define BOOT_STATUS (*(volatile uint8_t  *)(EXT + 0xECu))
+
+/* block until the host posts a word, return it (and clear pending) */
+static inline uint16_t mailbox_get(void)
+{
+	while (!(BOOT_STATUS & 0x01u))
+		;
+	return BOOT_DATA;
+}
+
 /* ---- OSD text overlay ---- */
 #define OSD_CTRL (*(volatile uint8_t  *)(EXT + 0xFBu))  /* bit0=enable, bit1=clear */
 #define OSD_ADDR (*(volatile uint16_t *)(EXT + 0xFCu))  /* cursor = row*OSD_COLS + col */

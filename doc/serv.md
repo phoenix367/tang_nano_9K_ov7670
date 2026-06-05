@@ -108,7 +108,7 @@ master:
 | `0xEC` | `BOOT_STATUS` | poll: bit1=`start`, bit0=`pending` | same |
 
 (Word-aligned register numbers so SERV's RV32I `lw`/`sw` are aligned.) Memory
-map within the 8 KB RAM: bootloader at `0x0000`, overlay loaded/run at `0x1000`
+map within the 16 KB RAM: bootloader at `0x0000`, overlay loaded/run at `0x1000`
 (overlays are linked there — `serv_soc/overlay.ld`).
 
 Host side: `modbus_client.serv_boot_load(blob)` packs the overlay `.bin` into
@@ -156,7 +156,13 @@ runs at the **same FPS** — the loop is grab-bound (each frame waits on the
 camera), so hand-asm vs compiler overhead is hidden. The C demos share
 [`demo_mcu_apps/common/`](../demo_mcu_apps/common) (a `crt0.S` startup + a
 `serv_io.h` register/helper header) and link with the C-aware
-`serv_soc/overlay_c.ld` — proving the C toolchain path, not just hand asm. All
+`serv_soc/overlay_c.ld` — proving the C toolchain path, not just hand asm.
+[`calc`](../demo_mcu_apps/calc/calc.c) is a host-driven **floating-point
+calculator**: the host streams `op, a, b` over the bootloader mailbox, the MCU
+computes in IEEE-754 single precision (`+ - * /`, `sqrt`, `1/x`, integer `pow`)
+and returns the result on the OSD + as raw bytes the host reads back. SERV has no
+FPU, so the math is **libgcc soft-float** (`-lgcc`) — ~6 KB, which is why the MCU
+RAM was grown from 8 KB to **16 KB** (`serv_cpu memsize`; ~24/26 BSRAM). All demos
 have hardware tests that upload them and check the result. The OSD/grab control registers (0xF3..0xFD) aren't word-aligned, but
 `serv_wb_cdc` resolves the register from SERV's word address + byte-enables
 (`word_addr + lane_offset(sel)`) and extracts/places the value at that lane, so
