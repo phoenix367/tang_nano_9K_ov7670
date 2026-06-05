@@ -340,6 +340,30 @@ def test_serv_skin_detect(dev):
 
 @pytest.mark.skipif(not os.environ.get("OV7670_SERV"),
                     reason="set OV7670_SERV=1 for a SERV_CONTROL (co-master) bitstream")
+def test_serv_lbph_bench(dev):
+    """demo_mcu_apps/lbph_bench -- benchmark of LBPH feature computation on the soft
+    core (the heart of OpenCV's LBPH face recogniser). It loops computing the LBPH
+    feature of a 32x32 downscaled face and reports features/second on the heartbeat
+    (0xE0). We assert it reports a plausible rate (proves the read + LBP + histogram
+    pipeline runs); measured ~7-8/s on hardware."""
+    overlay = _serv_overlay("lbph_bench.bin")
+    try:
+        assert dev.serv_boot_load(overlay) > 0
+        rate = 0
+        deadline = time.monotonic() + 8.0           # need >1 s for the first tick
+        while time.monotonic() < deadline:
+            rate = dev.read_reg(mc.REG_HEARTBEAT) & 0xFF
+            if 2 <= rate <= 40:
+                break
+            time.sleep(0.4)
+        assert 2 <= rate <= 40, f"lbph_bench did not report a plausible rate (0xE0={rate})"
+    finally:
+        dev.serv_mcu_reset()
+        time.sleep(0.05)
+
+
+@pytest.mark.skipif(not os.environ.get("OV7670_SERV"),
+                    reason="set OV7670_SERV=1 for a SERV_CONTROL (co-master) bitstream")
 def test_serv_mcu_reset_recovers_parked_overlay(dev):
     """The host MCU-reset register (0xE2) returns the soft core to the bootloader
     from ANY state -- including an overlay that parks (loops forever) and so could

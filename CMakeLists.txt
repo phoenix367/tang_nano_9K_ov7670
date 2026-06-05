@@ -467,9 +467,20 @@ if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
         COMMENT "Building demo_mcu_apps/skin_detect overlay (C, linked at the overlay base)"
         VERBATIM
     )
+    # lbph_bench: benchmark LBPH feature computation on the soft core (C, no libgcc).
+    set(SERV_LBPH_BIN "${SERV_FW_DIR}/lbph_bench.bin")
+    add_custom_command(
+        OUTPUT  ${SERV_LBPH_BIN}
+        COMMAND ${SERV_C_BUILD} ${DEMO_DIR}/lbph_bench/lbph_bench.c -o ${SERV_FW_DIR}/lbph_bench.elf
+        COMMAND ${RISCV_OBJCOPY} -O binary ${SERV_FW_DIR}/lbph_bench.elf ${SERV_LBPH_BIN}
+        DEPENDS ${DEMO_DIR}/lbph_bench/lbph_bench.c ${SERV_C_CRT} ${SERV_C_HDR} ${SERV_SOC_DIR}/overlay_c.ld
+        COMMENT "Building demo_mcu_apps/lbph_bench overlay (C, linked at the overlay base)"
+        VERBATIM
+    )
     add_custom_target(serv_firmware DEPENDS ${SERV_BOOT_HEX} ${SERV_OVERLAY_BIN}
                       ${SERV_OSD_HELLO_BIN} ${SERV_PSRAM_TEST_BIN} ${SERV_C_HELLO_BIN}
-                      ${SERV_MOTION_BIN} ${SERV_MOTION_C_BIN} ${SERV_CALC_BIN} ${SERV_SKIN_BIN})
+                      ${SERV_MOTION_BIN} ${SERV_MOTION_C_BIN} ${SERV_CALC_BIN} ${SERV_SKIN_BIN}
+                      ${SERV_LBPH_BIN})
     if (SERV_CONTROL)
         add_dependencies(hw_synth serv_firmware)
         add_dependencies(hw_all   serv_firmware)
