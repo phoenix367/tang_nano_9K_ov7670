@@ -16,6 +16,7 @@ was found (except the deliberately-disruptive re-init test, which is `slow`).
 """
 
 import os
+import pathlib
 import time
 
 import modbus_client as mc
@@ -23,6 +24,14 @@ import ov7670
 import pytest
 
 PORT = os.environ.get("OV7670_PORT")
+
+
+def _serv_overlay(name):
+    """Bytes of a built SERV overlay (build/serv_fw/<name>); skip if not built."""
+    path = pathlib.Path(__file__).resolve().parents[2] / "build" / "serv_fw" / name
+    if not path.exists():
+        pytest.skip(f"overlay not built ({path}); build the SERV firmware first")
+    return path.read_bytes()
 
 pytestmark = [
     pytest.mark.hardware,
@@ -121,29 +130,59 @@ def test_serv_bootloader_runs_osd_hello(dev):
     build boots a bootloader; upload the osd_hello overlay over the mailbox; the
     bootloader copies it into RAM and jumps to it, and it writes 'Hello from MCU!!!'
     onto the OSD -- which the host then reads back. Proves the host loaded firmware
-    into the soft CPU, it ran, and it drove a real peripheral. One-shot: a freshly
-    flashed (reset) device is in the bootloader. (Loading is one-shot per boot, so
-    this is the single overlay-load test per session.)"""
-    import pathlib
-    overlay = (pathlib.Path(__file__).resolve().parents[2]
-               / "build" / "serv_fw" / "osd_hello.bin")
-    if not overlay.exists():
-        pytest.skip(f"overlay not built ({overlay}); build the SERV firmware first")
+    into the soft CPU, it ran, and it drove a real peripheral. A freshly flashed
+    (reset) device is in the bootloader."""
+    overlay = _serv_overlay("osd_hello.bin")
 
-    def load_and_check(label):
-        n = dev.serv_boot_load(overlay.read_bytes())    # upload + hand over control
-        assert n > 0
-        time.sleep(0.3)                                 # overlay clears+paints, then returns
-        assert dev.read_holding(mc.REG_OSD_CTRL, 1)[0] & 0x01, \
-            f"{label}: the demo did not enable the OSD"
-        text = "\n".join(dev.osd_read_text())
-        assert "Hello from MCU!!!" in text, \
-            f"{label}: banner not on the OSD after load; read: {text!r}"
+    n = dev.serv_boot_load(overlay)                  # upload + hand over control
+    assert n > 0
+    time.sleep(0.3)                                  # overlay clears+paints, then returns
+    assert dev.osd_enabled(), "the demo did not enable the OSD"
+    text = "\n".join(dev.osd_read_text())
+    assert "Hello from MCU!!!" in text, \
+        f"banner not on the OSD after load; read: {text!r}"
 
-    load_and_check("first load")
-    # The overlay hands control back to the bootloader, so a second upload works
-    # WITHOUT resetting the device -- prove it re-loads.
-    load_and_check("re-load (no reset)")
+
+@pytest.mark.skipif(not os.environ.get("OV7670_SERV"),
+                    reason="set OV7670_SERV=1 for a SERV_CONTROL (co-master) bitstream")
+def test_serv_bootloader_reuploads_without_reset(dev):
+    """Re-upload an overlay WITHOUT resetting the device, and prove the second load
+    actually RAN (not a false pass off the first load's residue).
+
+    osd_hello returns control to the bootloader when done, and the bootloader
+    re-arms (it clears `start` when it reads BOOT_LEN). So after a first load we
+    can load again with no reset. The trap this test avoids: the OSD buffer keeps
+    the first load's text, so re-reading the banner proves nothing on its own. To
+    make the second load observable we first DISRUPT the OSD from the host --
+    disable it and blank the buffer -- confirm it's really off/blank, THEN
+    re-upload. Only a re-load that actually executes will re-enable the OSD and
+    repaint the banner; a silent no-op (bootloader didn't re-arm, overlay didn't
+    re-run) leaves it disabled+blank and fails here."""
+    overlay = _serv_overlay("osd_hello.bin")
+
+    # ---- first load: get the banner up ----
+    assert dev.serv_boot_load(overlay) > 0
+    time.sleep(0.3)
+    assert dev.osd_enabled(), "first load: OSD not enabled"
+    assert "Hello from MCU!!!" in "\n".join(dev.osd_read_text()), \
+        "first load: banner missing"
+
+    # ---- disrupt from the host so a no-op re-load would be visibly wrong ----
+    dev.osd_set_enabled(False)
+    dev.osd_clear()
+    time.sleep(0.05)                                 # hardware blank sweep is ~tens of us
+    assert not dev.osd_enabled(), "OSD did not disable before re-load"
+    assert "Hello from MCU!!!" not in "\n".join(dev.osd_read_text()), \
+        "OSD buffer not actually cleared before re-load"
+
+    # ---- re-load (no reset): the overlay must run again and undo the disruption ----
+    assert dev.serv_boot_load(overlay) > 0, "re-load upload was rejected"
+    time.sleep(0.3)
+    assert dev.osd_enabled(), \
+        "re-load did not re-enable the OSD -- the overlay did not re-run " \
+        "(bootloader re-arm / overlay-return-to-bootloader broken?)"
+    assert "Hello from MCU!!!" in "\n".join(dev.osd_read_text()), \
+        "re-load did not repaint the banner -- the overlay did not re-run"
 
 
 # --------------------------------------------------------------- board health

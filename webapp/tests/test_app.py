@@ -50,9 +50,10 @@ def test_serv_upload_empty_rejected(client):
 
 
 def test_serv_upload_timeout_keeps_connection(client, monkeypatch):
-    """A mailbox-drain timeout (e.g. the bootloader was already used -- one-shot)
-    must surface as an error WITHOUT dropping the connection. TimeoutError is an
-    OSError subclass, so this guards against it being misread as a lost port."""
+    """A mailbox-drain timeout (e.g. the bootloader isn't waiting -- a parked
+    overlay is running, or this isn't a SERV build) must surface as an error
+    WITHOUT dropping the connection. TimeoutError is an OSError subclass, so this
+    guards against it being misread as a lost port."""
     import modbus_client
 
     tc, _ = client

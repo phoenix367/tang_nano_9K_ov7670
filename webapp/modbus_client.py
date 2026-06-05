@@ -199,9 +199,10 @@ class ModbusRTU:
         `blob` is the raw overlay image (a .bin linked at 0x1000). It is packed
         into little-endian 16-bit words and streamed through the mailbox; the
         bootloader copies them into RAM and jumps to the overlay once it has
-        received all of them. One-shot: reset the device to load again. Requires a
-        SERV_CONTROL build running the bootloader (see doc/serv.md). Returns the
-        number of words sent.
+        received all of them. An overlay that returns to the bootloader when done
+        (e.g. osd_hello) can be re-loaded without a reset; one that parks needs a
+        device reset first. Requires a SERV_CONTROL build running the bootloader
+        (see doc/serv.md). Returns the number of words sent.
         """
         data = bytes(blob)
         if len(data) % 2:
@@ -213,9 +214,10 @@ class ModbusRTU:
             while self.read_holding(REG_BOOT_STATUS, 1)[0] & 0x01:   # wait empty
                 if time.monotonic() > deadline:
                     raise TimeoutError(
-                        "SERV bootloader did not drain the mailbox -- it is one-shot "
-                        "per boot, so reset the device to return to the bootloader "
-                        "before loading an overlay (or this isn't a SERV build)")
+                        "SERV bootloader did not drain the mailbox -- the bootloader "
+                        "isn't waiting for an overlay. An overlay that returns to the "
+                        "bootloader (e.g. osd_hello) re-loads without a reset; one that "
+                        "parks needs a device reset first (or this isn't a SERV build)")
             self.write_single(REG_BOOT_DATA, w)
         return len(words)
 

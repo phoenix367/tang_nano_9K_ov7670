@@ -804,7 +804,8 @@ async function resetDefaults() {
 
 // --------------------------------------------------------------- SERV firmware
 // Upload an overlay firmware to the SERV bootloader (raw .bin, posted as
-// octet-stream). One-shot: the device must be reset to load another.
+// octet-stream). An overlay that returns to the bootloader (e.g. osd_hello)
+// re-loads without a reset; one that parks needs a device reset first.
 async function uploadFirmware() {
   const f = $("#fw-file").files[0];
   const status = $("#fw-status");
@@ -819,7 +820,9 @@ async function uploadFirmware() {
     });
     const j = await res.json();
     if (!j.ok) throw new Error(j.error || "upload failed");
-    status.textContent = `Loaded ${j.words} words (${j.bytes} bytes) — overlay running. Reset the device to load another.`;
+    status.textContent = `Loaded ${j.words} words (${j.bytes} bytes) — overlay running. ` +
+      `An overlay that returns to the bootloader (e.g. osd_hello) can be re-uploaded right away; ` +
+      `one that parks needs a device reset first.`;
     toast("Firmware loaded");
   } catch (e) {
     status.textContent = `Upload failed: ${e.message}`;

@@ -109,9 +109,12 @@ device boots a bootloader for its on-board RISC-V soft core. The **Firmware** ta
 uploads an **overlay firmware** (a `.bin` linked at 0x1000, e.g.
 `build/serv_fw/overlay_heartbeat.bin`): pick the file and press **Upload & run**.
 The app streams it word-by-word over Modbus to the bootloader, which copies it
-into the MCU's RAM and jumps to it. It's **one-shot** — reset the device to load
-a different overlay. On a non-SERV bitstream the upload times out (the bootloader
-mailbox never drains), reported as an error in the status line.
+into the MCU's RAM and jumps to it. An overlay that **returns to the bootloader**
+when done (e.g. `osd_hello`) can be **re-uploaded without a reset** — the
+bootloader re-arms and the next upload runs immediately; an overlay that **parks**
+(loops forever) needs a device reset before the next upload. On a non-SERV
+bitstream the upload times out (the bootloader mailbox never drains), reported as
+an error in the status line.
 
 ## Resilience
 
