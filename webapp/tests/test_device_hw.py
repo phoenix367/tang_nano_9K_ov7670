@@ -327,12 +327,12 @@ def test_serv_skin_detect(dev):
         assert advanced, "skin_detect loop not advancing (grab/scan stuck)"
 
         header = ""
-        for _ in range(30):                          # row 0 is static -> readable on retry
-            header = "".join(mc.osd_char(c & 0xFF) for c in dev.osd_read_cells(0, 20, 20))
-            if "Skin region" in header:
+        for _ in range(30):                          # the "SKIN" label sits in the
+            header = "".join(mc.osd_char(c & 0xFF) for c in dev.osd_read_cells(0, 0, 7))
+            if "SKIN" in header:                     # left border, never under the box
                 break
             time.sleep(0.1)
-        assert "Skin region" in header, f"skin_detect OSD header missing ({header!r})"
+        assert "SKIN" in header, f"skin_detect OSD label missing ({header!r})"
     finally:
         dev.serv_mcu_reset()
         time.sleep(0.05)

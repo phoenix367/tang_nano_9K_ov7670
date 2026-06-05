@@ -39,6 +39,18 @@
 
 static uint8_t skin[GH * GW];  /* per-cell skin classification (.bss, zeroed by crt0) */
 
+/* grid -> OSD cell maps that account for the LCD pillarbox: the 640x480 camera is
+ * shown as a ~363-px-wide region centred in the 480-px LCD (cols ~7..52) at full
+ * height (rows 0..16). Precomputed (no runtime multiply); see the comment table in
+ * the commit that added them. col cc=0..39, row rr=0..15. */
+static const uint8_t col_lut[GW] = {
+	7, 8,10,11,12,13,14,15,16,17,19,20,21,22,23,24,25,27,28,29,
+	30,31,32,33,34,36,37,38,39,40,41,42,44,45,46,47,48,49,50,51
+};
+static const uint8_t row_lut[GH] = {
+	0, 1, 2, 3, 4, 5, 6, 7, 9,10,11,12,13,14,15,16
+};
+
 /* OV7670 camera registers reachable through the EXT window (0x00..0xC9 -> wb_sccb).
  * The MCU writes them once at startup to get a usable exposure for skin detection. */
 #define CAM(reg) (*(volatile uint8_t *)(EXT + (reg)))
@@ -97,8 +109,10 @@ void main(void)
 	CAM(CAM_COM9) = 0x3A;             /* AGC ceiling -> 16x */
 	CAM(CAM_COM8) = 0xE7;             /* AEC + AWB + AGC + fast-AEC */
 
-	osd_at(0, 20);
-	osd_puts("Skin region detector");
+	/* label in the left pillarbox border (cols 0..6) -- the box maps to cols >=7
+	 * (the camera image region), so it never overlaps the label. */
+	osd_at(0, 1);
+	osd_puts("SKIN");
 
 	int pv = 0;                       /* a box is currently drawn */
 	unsigned pt = 0, pb = 0, pl = 0, pr = 0;
@@ -143,15 +157,15 @@ void main(void)
 			off += GW;
 		}
 
-		/* the new region box: grid col cc -> OSD col cc*1.5 (cc + cc>>1),
-		 * grid row rr -> OSD row rr+1 (row 0 is the header) */
+		/* map the grid bbox to OSD cells through col_lut/row_lut, which account
+		 * for the LCD's pillarbox (the camera image isn't the full OSD width). */
 		int detect = (count >= MINCELLS);
 		unsigned top = 0, bot = 0, left = 0, right = 0;
 		if (detect) {
-			left  = (unsigned)minc + ((unsigned)minc >> 1);
-			right = (unsigned)maxc + ((unsigned)maxc >> 1);
-			top   = (unsigned)minr + 1;
-			bot   = (unsigned)maxr + 1;
+			left  = col_lut[minc];
+			right = col_lut[maxc];
+			top   = row_lut[minr];
+			bot   = row_lut[maxr];
 			if (right <= left) right = left + 1;
 			if (bot <= top)    bot = top + 1;
 		}
