@@ -70,6 +70,25 @@ separable problem. Run it with:
 .venv/bin/python -m pytest demo_mcu_apps/roi_tm/test_tm_pipeline.py -v
 ```
 
+## Baseline (does the pipeline even work?)
+
+Before any on-device capture, [`baseline_dataset.py`](baseline_dataset.py) converts a
+small public dataset into the **exact device format** (22×14 RGB565 patches, same
+JSONL) — Olivetti faces for the *face* class, random crops of natural photos for
+*no-face* — so `train_tm.py` trains on it unchanged:
+
+```
+.venv/bin/python demo_mcu_apps/roi_tm/baseline_dataset.py
+.venv/bin/python demo_mcu_apps/roi_tm/train_tm.py -i demo_mcu_apps/roi_tm/samples_baseline.jsonl \
+    --header /tmp/tm_baseline.h --model /tmp/tm_baseline.json
+```
+
+Result: **~98% (5-fold CV 0.979 ± 0.008)** with 64 clauses — the LBP features are
+clearly learnable by the TM at this resolution. This is an *optimistic* pipeline
+check (clean lab faces, only two non-face source photos); real accuracy on the
+board's camera + room backgrounds needs real captures (`collect_samples.py`).
+Needs `scikit-learn` + `pillow` (dev requirements).
+
 ## Files
 
 | File | Role |
