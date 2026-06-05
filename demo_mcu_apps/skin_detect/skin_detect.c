@@ -26,7 +26,7 @@
 #define GH       16            /* sample rows:    cam_row = rr*30 (0..450) */
 #define COL_STEP 16            /* pixel-address step per sample column */
 #define ROW_STEP 19200         /* pixel-address step per sample row (30*640) */
-#define MINCELLS 4             /* >= this many skin cells -> draw a region box */
+#define MINCELLS 6             /* >= this many skin cells -> draw a region box */
 
 /* OSD box-drawing glyphs (charset 0x80..0x9F; see webapp/osd_charset.py) */
 #define BX_H  0x80             /* horizontal -- */
@@ -37,13 +37,23 @@
 #define BX_BR 0x85             /* corner -' */
 #define SP    0x20             /* space (erase) */
 
-/* RGB565 skin-tone test: warm/reddish, R > G > B, mid brightness. Tunable. */
+static uint8_t skin[GH * GW];  /* per-cell skin classification (.bss, zeroed by crt0) */
+
+/* OV7670 camera registers reachable through the EXT window (0x00..0xC9 -> wb_sccb).
+ * The MCU writes them once at startup to get a usable exposure for skin detection. */
+#define CAM(reg) (*(volatile uint8_t *)(EXT + (reg)))
+#define CAM_COM8 0x13     /* AEC/AWB/AGC enables */
+#define CAM_COM9 0x14     /* AGC gain ceiling */
+
+/* RGB565 skin-tone test: warm (R > G > B by a margin), bright enough but not
+ * blown-out white. Tuned against captured frames; thresholds are easy to retune
+ * here for your lighting. */
 static int is_skin(uint16_t p)
 {
 	int r  = (p >> 11) & 0x1F;        /* R 0..31 */
 	int g5 = (p >> 6)  & 0x1F;        /* G 0..63 -> top 5 bits, comparable to R/B */
 	int b  =  p        & 0x1F;        /* B 0..31 */
-	return (r > g5) && (g5 >= b) && (r - b >= 3) && (r >= 10) && (r <= 30);
+	return (r > g5) && (g5 >= b) && (r - b >= 4) && (r >= 11) && (r <= 26);
 }
 
 /* set the OSD cursor to (row,col) without a multiply: 60*row = (row<<6)-(row<<2) */
@@ -80,6 +90,13 @@ void main(void)
 	osd_clear_enable();
 	while (!psram_calibrated())
 		;
+
+	/* brighten the camera for skin detection: raise the AGC gain ceiling
+	 * (default ~4x is too dark) and enable auto white balance (fixes a green
+	 * cast). These are SCCB writes to the live camera via wb_sccb. */
+	CAM(CAM_COM9) = 0x3A;             /* AGC ceiling -> 16x */
+	CAM(CAM_COM8) = 0xE7;             /* AEC + AWB + AGC + fast-AEC */
+
 	osd_at(0, 20);
 	osd_puts("Skin region detector");
 
@@ -89,22 +106,41 @@ void main(void)
 	for (unsigned frame = 0; ; frame++) {
 		psram_grab_frame();
 
-		/* scan the grid, accumulate the skin bounding box */
-		int count = 0, minc = GW, maxc = -1, minr = GH, maxr = -1;
+		/* 1) classify every grid cell into `skin[]` */
 		uint32_t rowbase = 0;
+		unsigned off = 0;
 		for (int rr = 0; rr < GH; rr++) {
 			uint32_t addr = rowbase;
 			for (int cc = 0; cc < GW; cc++) {
-				if (is_skin(psram_read16(addr))) {
-					count++;
-					if (cc < minc) minc = cc;
-					if (cc > maxc) maxc = cc;
-					if (rr < minr) minr = rr;
-					if (rr > maxr) maxr = rr;
-				}
+				skin[off + cc] = is_skin(psram_read16(addr));
 				addr += COL_STEP;
 			}
 			rowbase += ROW_STEP;
+			off += GW;
+		}
+
+		/* 2) erode + bound: a cell counts only if it has >= 1 skin neighbour, so
+		 * isolated noise cells don't stretch the box to the whole frame. */
+		int count = 0, minc = GW, maxc = -1, minr = GH, maxr = -1;
+		off = 0;
+		for (int rr = 0; rr < GH; rr++) {
+			for (int cc = 0; cc < GW; cc++) {
+				if (skin[off + cc]) {
+					int nb = 0;
+					if (cc > 0      && skin[off + cc - 1])  nb++;
+					if (cc < GW - 1 && skin[off + cc + 1])  nb++;
+					if (rr > 0      && skin[off + cc - GW]) nb++;
+					if (rr < GH - 1 && skin[off + cc + GW]) nb++;
+					if (nb >= 1) {
+						count++;
+						if (cc < minc) minc = cc;
+						if (cc > maxc) maxc = cc;
+						if (rr < minr) minr = rr;
+						if (rr > maxr) maxr = rr;
+					}
+				}
+			}
+			off += GW;
 		}
 
 		/* the new region box: grid col cc -> OSD col cc*1.5 (cc + cc>>1),
