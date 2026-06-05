@@ -17,6 +17,10 @@
 
 #define EXT 0x40000000u
 
+/* RW scratch / co-master "heartbeat" register -- the host reads it over Modbus as
+ * a race-free side channel (a single 16-bit access, unlike the OSD cursor). */
+#define HEARTBEAT (*(volatile uint16_t *)(EXT + 0xE0u))
+
 /* ---- OSD text overlay ---- */
 #define OSD_CTRL (*(volatile uint8_t  *)(EXT + 0xFBu))  /* bit0=enable, bit1=clear */
 #define OSD_ADDR (*(volatile uint16_t *)(EXT + 0xFCu))  /* cursor = row*OSD_COLS + col */
@@ -73,6 +77,14 @@ static inline void psram_wait_idle(void)
 static inline int psram_calibrated(void)
 {
 	return (GRAB & 0x02u) != 0;     /* bit1 = ch1 calibrated */
+}
+
+/* Capture a fresh camera frame into ch1 PSRAM, laid out contiguously from
+ * address 0 (640x480 RGB565: burst k = 16 pixels starting at pixel 16*k). */
+static inline void psram_grab_frame(void)
+{
+	GRAB = 1;                       /* arm a grab */
+	psram_wait_idle();
 }
 
 static inline void psram_write16(uint32_t addr, uint16_t val)

@@ -412,8 +412,19 @@ if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
         COMMENT "Building demo_mcu_apps/psram_test overlay (C, linked at 0x1000)"
         VERBATIM
     )
+    # motion: background-subtraction motion detector (grab + free-PSRAM bg model).
+    set(SERV_MOTION_BIN "${SERV_FW_DIR}/motion.bin")
+    add_custom_command(
+        OUTPUT  ${SERV_MOTION_BIN}
+        COMMAND ${SERV_C_BUILD} ${DEMO_DIR}/motion/motion.c -o ${SERV_FW_DIR}/motion.elf
+        COMMAND ${RISCV_OBJCOPY} -O binary ${SERV_FW_DIR}/motion.elf ${SERV_MOTION_BIN}
+        DEPENDS ${DEMO_DIR}/motion/motion.c ${SERV_C_CRT} ${SERV_C_HDR} ${SERV_SOC_DIR}/overlay_c.ld
+        COMMENT "Building demo_mcu_apps/motion overlay (C, linked at 0x1000)"
+        VERBATIM
+    )
     add_custom_target(serv_firmware DEPENDS ${SERV_BOOT_HEX} ${SERV_OVERLAY_BIN}
-                      ${SERV_OSD_HELLO_BIN} ${SERV_PSRAM_TEST_BIN} ${SERV_C_HELLO_BIN})
+                      ${SERV_OSD_HELLO_BIN} ${SERV_PSRAM_TEST_BIN} ${SERV_C_HELLO_BIN}
+                      ${SERV_MOTION_BIN})
     if (SERV_CONTROL)
         add_dependencies(hw_synth serv_firmware)
         add_dependencies(hw_all   serv_firmware)

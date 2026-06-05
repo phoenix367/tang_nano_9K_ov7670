@@ -28,6 +28,7 @@ button), so the host can always load any firmware over any running overlay.
 | [`osd_hello`](osd_hello/osd_hello.S) | (assembly) After boot, writes **"Hello from MCU!!!"** centered on the OSD overlay (enable 0xFB, cursor 0xFC, chars 0xFD). |
 | [`c_hello`](c_hello/c_hello.c) | (C) The `osd_hello` greeting in **C** — writes **"Hello from C!"** to the OSD. The smallest C overlay. |
 | [`psram_test`](psram_test/psram_test.c) | (C) Writes a pseudo-random sequence into channel-1 PSRAM (write port 0xF3/0xF4-0xF7), reads it back, compares, and prints **"PSRAM test: PASS/FAIL"** on the OSD with live progress bars. |
+| [`motion`](motion/motion.c) | (C) Background-subtraction **motion detector**: grabs a frame, saves a sampled background model in *free* PSRAM, then loops grabbing + comparing and reports **"Movement: YES/NO"** on the OSD (and a status word on heartbeat 0xE0). Parks — reset the MCU to stop it. |
 
 ## [`common/`](common) — shared C runtime
 

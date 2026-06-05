@@ -143,11 +143,15 @@ MCU!!!"** onto the OSD after boot, and
 [`psram_test`](../demo_mcu_apps/psram_test/psram_test.c) writes a pseudo-random
 sequence into channel-1 PSRAM (via the `wb_grab` write port), reads it back,
 compares, and prints **"PSRAM test: PASS/FAIL"** with live progress bars; and
-[`c_hello`](../demo_mcu_apps/c_hello/c_hello.c) is the OSD greeting in **C**. The
-C demos share [`demo_mcu_apps/common/`](../demo_mcu_apps/common) (a `crt0.S`
-startup + a `serv_io.h` register/helper header) and link with the C-aware
+[`c_hello`](../demo_mcu_apps/c_hello/c_hello.c) is the OSD greeting in **C**; and
+[`motion`](../demo_mcu_apps/motion/motion.c) is a background-subtraction **motion
+detector** — it grabs a frame, saves a sampled background model in *free* PSRAM,
+then loops grabbing + comparing and reports **"Movement: YES/NO"** on the OSD
+(with a race-free status word on heartbeat 0xE0). The C demos share
+[`demo_mcu_apps/common/`](../demo_mcu_apps/common) (a `crt0.S` startup + a
+`serv_io.h` register/helper header) and link with the C-aware
 `serv_soc/overlay_c.ld` — proving the C toolchain path, not just hand asm. All
-have hardware tests that upload them and read the OSD back. The OSD/grab control registers (0xF3..0xFD) aren't word-aligned, but
+have hardware tests that upload them and check the result. The OSD/grab control registers (0xF3..0xFD) aren't word-aligned, but
 `serv_wb_cdc` resolves the register from SERV's word address + byte-enables
 (`word_addr + lane_offset(sel)`) and extracts/places the value at that lane, so
 SERV can drive **any** register with ordinary RV32I loads/stores.
