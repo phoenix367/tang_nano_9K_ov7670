@@ -307,6 +307,39 @@ def test_serv_motion_detect_c(dev):
 
 @pytest.mark.skipif(not os.environ.get("OV7670_SERV"),
                     reason="set OV7670_SERV=1 for a SERV_CONTROL (co-master) bitstream")
+def test_serv_skin_detect(dev):
+    """demo_mcu_apps/skin_detect -- grabs a frame, samples a grid, classifies skin
+    pixels and draws a bounding box on the OSD with box-drawing glyphs. We can't put
+    a face in front of the camera, so we assert the pipeline RUNS (heartbeat frame
+    counter advances -> grab + scan + classify all ran) and the static OSD header is
+    present. The box itself (rows 1..16) is verified visually on the LCD; reading it
+    back races the MCU's cursor, so it's not asserted here."""
+    overlay = _serv_overlay("skin_detect.bin")
+    try:
+        assert dev.serv_boot_load(overlay) > 0       # reset -> bootloader -> run
+        first = dev.read_reg(mc.REG_HEARTBEAT) & 0xFF
+        advanced = False
+        deadline = time.monotonic() + 6.0
+        while time.monotonic() < deadline and not advanced:
+            time.sleep(0.3)
+            if (dev.read_reg(mc.REG_HEARTBEAT) & 0xFF) != first:
+                advanced = True
+        assert advanced, "skin_detect loop not advancing (grab/scan stuck)"
+
+        header = ""
+        for _ in range(30):                          # row 0 is static -> readable on retry
+            header = "".join(mc.osd_char(c & 0xFF) for c in dev.osd_read_cells(0, 20, 20))
+            if "Skin region" in header:
+                break
+            time.sleep(0.1)
+        assert "Skin region" in header, f"skin_detect OSD header missing ({header!r})"
+    finally:
+        dev.serv_mcu_reset()
+        time.sleep(0.05)
+
+
+@pytest.mark.skipif(not os.environ.get("OV7670_SERV"),
+                    reason="set OV7670_SERV=1 for a SERV_CONTROL (co-master) bitstream")
 def test_serv_mcu_reset_recovers_parked_overlay(dev):
     """The host MCU-reset register (0xE2) returns the soft core to the bootloader
     from ANY state -- including an overlay that parks (loops forever) and so could
