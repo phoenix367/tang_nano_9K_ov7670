@@ -45,6 +45,7 @@
     <button class="tab" data-tab="color">Color</button>
     <button class="tab" data-tab="capture">Capture</button>
     <button class="tab" data-tab="overlay">OSD overlay</button>
+    <button class="tab" data-tab="firmware">Firmware</button>
   </nav>
 
   <div class="tab-content" id="tab-basic" hidden>
@@ -180,6 +181,22 @@
           <div id="osd-pseudo" class="osd-grid"></div>
         </div>
       </div>
+    </section>
+  </div>
+
+  <div class="tab-content" id="tab-firmware" hidden>
+    <section class="panel">
+      <h2>SERV firmware overlay</h2>
+      <p class="hint">Upload an overlay firmware (a <code>.bin</code> linked at
+        0x1000) to the SERV soft-core bootloader. The MCU copies it into RAM over
+        the Modbus bus and jumps to it. <strong>One-shot</strong> — reset the
+        device to load again. Requires a SERV-enabled bitstream
+        (<code>serv_mcu.enable</code>); e.g. <code>build/serv_fw/overlay_heartbeat.bin</code>.</p>
+      <div class="row">
+        <input type="file" id="fw-file" accept=".bin,application/octet-stream">
+        <button id="fw-upload" class="primary">Upload &amp; run</button>
+      </div>
+      <div id="fw-status" class="hint"></div>
     </section>
   </div>
 

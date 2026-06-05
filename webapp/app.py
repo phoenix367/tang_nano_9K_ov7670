@@ -440,6 +440,26 @@ def api_reset_defaults():
     return jsonify(ok=True)
 
 
+@app.route("/api/serv/upload", methods=["POST"])
+def api_serv_upload():
+    """Upload an overlay firmware (raw .bin body) to the SERV bootloader and hand
+    it control. One-shot: reset the device to load again. Requires a SERV-enabled
+    bitstream running the bootloader; otherwise the mailbox never drains and the
+    upload times out (surfaced as an error)."""
+    blob = request.get_data()                    # raw octet-stream
+    if not blob:
+        return _error("no firmware uploaded")
+    if len(blob) > 4096:                         # overlay region is 0x1000..0x1FFF
+        return _error(f"overlay too large ({len(blob)} bytes; max 4096)")
+    with _lock:
+        try:
+            client = _require_client()
+            words = client.serv_boot_load(blob)
+        except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError) as e:
+            return _classify(e)
+    return jsonify(ok=True, bytes=len(blob), words=words)
+
+
 @app.route("/api/osd", methods=["GET", "POST"])
 def api_osd():
     """OSD text overlay control.

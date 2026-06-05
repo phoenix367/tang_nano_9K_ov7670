@@ -32,6 +32,23 @@ def test_state_disconnected(client):
     assert isinstance(r["controls"], list) and r["controls"]
 
 
+def test_serv_upload(client):
+    tc, _ = client
+    _connect(tc)
+    blob = bytes(range(8))                       # 8 bytes -> 4 16-bit words
+    r = tc.post("/api/serv/upload", data=blob,
+                content_type="application/octet-stream").get_json()
+    assert r["ok"] and r["bytes"] == 8 and r["words"] == 4
+
+
+def test_serv_upload_empty_rejected(client):
+    tc, _ = client
+    _connect(tc)
+    r = tc.post("/api/serv/upload", data=b"",
+                content_type="application/octet-stream").get_json()
+    assert not r["ok"]
+
+
 def test_connect_then_state(client):
     tc, _ = client
     assert _connect(tc)["pid"] == 0x76

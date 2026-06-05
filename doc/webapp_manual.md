@@ -22,8 +22,9 @@ Pick the serial **Port** (auto-detected, plus the `/dev/ttyGowin` symlink), set
 **Baud** (1000000) and **Slave id** (7), and press **Connect**. The connect step
 sanity-reads the Product ID, so a successful connect confirms the link end-to-end.
 
-Once connected, four tabs appear (**Basic controls**, **Color**, **Capture**,
-**OSD overlay**) and a **Board health** row is shown under the connection status.
+Once connected, five tabs appear (**Basic controls**, **Color**, **Capture**,
+**OSD overlay**, **Firmware**) and a **Board health** row is shown under the
+connection status.
 
 ![Basic controls tab](images/webapp_basic.png)
 
@@ -99,6 +100,18 @@ a small editor for it:
 
 The character buffer crosses to the LCD clock domain in hardware, so the text
 appears composited over the camera image in real time.
+
+## Firmware
+
+On a SERV-enabled bitstream (`serv_mcu.enable`, see
+[serv.md](serv.md#bootloader-load-an-overlay-from-the-host-at-runtime)) the
+device boots a bootloader for its on-board RISC-V soft core. The **Firmware** tab
+uploads an **overlay firmware** (a `.bin` linked at 0x1000, e.g.
+`build/serv_fw/overlay_heartbeat.bin`): pick the file and press **Upload & run**.
+The app streams it word-by-word over Modbus to the bootloader, which copies it
+into the MCU's RAM and jumps to it. It's **one-shot** — reset the device to load
+a different overlay. On a non-SERV bitstream the upload times out (the bootloader
+mailbox never drains), reported as an error in the status line.
 
 ## Resilience
 
