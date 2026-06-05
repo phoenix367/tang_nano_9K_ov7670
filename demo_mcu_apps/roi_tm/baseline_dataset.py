@@ -86,25 +86,33 @@ def face_patches(n, flip=True):
     return out
 
 
-def lfw_face_patches(n, seed=0):
-    """n LFW "faces in the wild" resized to the ROI grid, RGB565 (grayscale R=G=B).
+def _to_gray(rgb):
+    """(...,3) RGB -> grayscale broadcast back to 3 channels (Rec.601 luma)."""
+    luma = rgb @ np.array([0.299, 0.587, 0.114])
+    return np.repeat(luma[..., None], 3, axis=2)
 
-    Harder than Olivetti: varied pose, lighting, expression, and background. Uses
-    grayscale (the features are luma-only anyway) to keep the load light.
+
+def lfw_face_patches(n, seed=0):
+    """n LFW "faces in the wild" (COLOR) resized to the ROI grid, RGB565.
+
+    Harder than Olivetti: varied pose, lighting, expression, background. Color, to
+    match the board's RGB565 camera and to avoid a grayscale-vs-color class artifact
+    against the color no-face sets.
     """
-    data = fetch_lfw_people(resize=0.4, color=False)             # (N, h, w) float
+    data = fetch_lfw_people(resize=0.4, color=True)              # (N, h, w, 3) float
     imgs = data.images
     scale = 255.0 / float(imgs.max() or 1.0)
     rng = np.random.default_rng(seed)
-    out = []
-    for k in rng.permutation(len(imgs))[:n]:
-        gray = resize_area(imgs[k] * scale, ROI_ROWS, ROI_COLS)
-        out.append(to_rgb565(np.repeat(gray[..., None], 3, axis=2)))
-    return out
+    return [to_rgb565(resize_area(imgs[k] * scale, ROI_ROWS, ROI_COLS))
+            for k in rng.permutation(len(imgs))[:n]]
 
 
-def nonface_patches(n, seed=1):
-    """n random crops of the natural sample photos, resized to the ROI grid, RGB565."""
+def nonface_patches(n, seed=1, gray=False):
+    """n random crops of the natural sample photos, resized to the ROI grid, RGB565.
+
+    `gray` grayscales them (to match a grayscale face set, e.g. Olivetti) so the two
+    classes don't differ by a colour artifact.
+    """
     imgs = [im.astype(np.float64) for im in load_sample_images().images]   # (427,640,3)
     rng = np.random.default_rng(seed)
     out = []
@@ -117,6 +125,8 @@ def nonface_patches(n, seed=1):
         y = int(rng.integers(0, H - ch + 1))
         x = int(rng.integers(0, W - cw + 1))
         crop = img[y:y + ch, x:x + cw]
+        if gray:
+            crop = _to_gray(crop)
         out.append(to_rgb565(resize_area(crop, ROI_ROWS, ROI_COLS)))
     return out
 
@@ -138,17 +148,21 @@ def _cifar_images():
     return data
 
 
-def cifar_nonface_patches(n, seed=1):
+def cifar_nonface_patches(n, seed=1, gray=False):
     """n CIFAR-10 images resized to the ROI grid, RGB565.
 
     CIFAR-10 has no person/face class (planes, cars, ships, trucks + animals), so
     every image is a non-(human-)face. The animal classes are useful HARD negatives
     (cat/dog faces look face-ish), forcing the classifier to be more discriminative.
+    `gray` grayscales them to match a grayscale face set.
     """
     imgs = _cifar_images().astype(np.float64)
     rng = np.random.default_rng(seed)
-    return [to_rgb565(resize_area(imgs[k], ROI_ROWS, ROI_COLS))
-            for k in rng.permutation(len(imgs))[:n]]
+    out = []
+    for k in rng.permutation(len(imgs))[:n]:
+        im = _to_gray(imgs[k]) if gray else imgs[k]
+        out.append(to_rgb565(resize_area(im, ROI_ROWS, ROI_COLS)))
+    return out
 
 
 def main():
@@ -166,9 +180,12 @@ def main():
 
     fsrc = "lfw" if args.hard else args.face_source
     nsrc = "cifar" if args.hard else args.nonface_source
+    # match the no-face colour treatment to the face set: Olivetti is grayscale, so
+    # grayscale the no-faces too; LFW is colour, so keep colour (and match the camera).
+    gray = (fsrc == "olivetti")
     faces = (lfw_face_patches if fsrc == "lfw" else face_patches)(args.faces)
-    nonfaces = (cifar_nonface_patches if nsrc == "cifar" else nonface_patches)(args.nonfaces)
-    print(f"faces: {fsrc}   no-faces: {nsrc}")
+    nonfaces = (cifar_nonface_patches if nsrc == "cifar" else nonface_patches)(args.nonfaces, gray=gray)
+    print(f"faces: {fsrc}   no-faces: {nsrc}   ({'grayscale' if gray else 'colour'} both)")
     assert all(len(p) == ROI_CELLS for p in faces + nonfaces), "patch size != ROI_CELLS"
 
     recs = [{"label": 1, "roi565": p} for p in faces] + \
