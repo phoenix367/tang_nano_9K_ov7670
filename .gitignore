@@ -14,3 +14,5 @@ node_modules/
 sby/*/
 *.bkp
 
+serv_soc/overlay.ld
+serv_soc/overlay_c.ld

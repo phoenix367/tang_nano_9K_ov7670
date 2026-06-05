@@ -108,7 +108,7 @@ master:
 | `0xEC` | `BOOT_STATUS` | poll: bit1=`start`, bit0=`pending` | same |
 
 (Word-aligned register numbers so SERV's RV32I `lw`/`sw` are aligned.) Memory
-map within the 16 KB RAM: bootloader at `0x0000`, overlay loaded/run at `0x1000`
+map within the 16 KB RAM: bootloader at `0x0000`, overlay loaded/run at `0x400`
 (overlays are linked there — `serv_soc/overlay.ld`).
 
 Host side: `modbus_client.serv_boot_load(blob)` packs the overlay `.bin` into
@@ -134,7 +134,7 @@ webapp's **Firmware** tab also exposes a standalone **Reset MCU** button.
 own re-arm.)
 
 `serv_soc/heartbeat.S` is built as a minimal **demo overlay**
-(`build/serv_fw/overlay_heartbeat.bin`, linked at 0x1000) — uploaded at runtime,
+(`build/serv_fw/overlay_heartbeat.bin`, linked at the overlay base) — uploaded at runtime,
 not baked in. It writes the incrementing counter to `0x400000E0` (reg 0xE0).
 
 Richer demos live in [`demo_mcu_apps/`](../demo_mcu_apps):

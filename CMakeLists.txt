@@ -328,6 +328,15 @@ if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
     file(MAKE_DIRECTORY "${SERV_FW_DIR}")
     set(SERV_BLINK_DELAY "0x40000" CACHE STRING "blinky busy-loop delay (~1.5 s/toggle at 27 MHz)")
 
+    # SERV memory layout: the overlay load/run base address (so the bootloader-
+    # reserved region below it stays small -- the bootloader is only ~72 bytes).
+    # Single source of truth: platform.json serv_mcu.overlay_base. The bootloader
+    # copies overlays here + jumps here (-DOVERLAY); the overlay linker scripts are
+    # generated from .in to link here -- so all three can never drift.
+    platform_json_hex("overlay_base" SERV_OVERLAY_BASE)   # e.g. "0x400" -> 1024
+    configure_file("${SERV_SOC_DIR}/overlay.ld.in"   "${SERV_SOC_DIR}/overlay.ld"   @ONLY)
+    configure_file("${SERV_SOC_DIR}/overlay_c.ld.in" "${SERV_SOC_DIR}/overlay_c.ld" @ONLY)
+
     # Firmware: blinky.S -> elf -> bin -> 32-bit-word hex for servant_ram.
     set(SERV_FW_HEX "${SERV_FW_DIR}/blinky.hex")
     add_custom_command(
@@ -345,12 +354,12 @@ if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
     add_custom_target(serv_blink_firmware DEPENDS ${SERV_FW_HEX})
 
     # SERV bootloader (baked into BSRAM, the path build_config.vh points $readmemh
-    # at) + the heartbeat OVERLAY (linked at 0x1000, emitted as a .bin the host
+    # at) + the heartbeat OVERLAY (linked at the overlay base, emitted as a .bin the host
     # uploads at runtime -- not baked in). See doc/serv.md.
     add_custom_command(
         OUTPUT  ${SERV_BOOT_HEX}
         COMMAND ${RISCV_GCC} -nostartfiles -nostdlib -march=rv32i_zicsr -mabi=ilp32
-                -Wl,--build-id=none -T ${SERV_DIR}/sw/link.ld
+                -Wl,--build-id=none -T ${SERV_DIR}/sw/link.ld -DOVERLAY=${SERV_OVERLAY_BASE}
                 ${SERV_SOC_DIR}/bootloader.S -o ${SERV_FW_DIR}/bootloader.elf
         COMMAND ${RISCV_OBJCOPY} -O binary ${SERV_FW_DIR}/bootloader.elf ${SERV_FW_DIR}/bootloader.bin
         COMMAND python3 ${SERV_SOC_DIR}/bin2hex.py ${SERV_FW_DIR}/bootloader.bin ${SERV_BOOT_HEX}
@@ -365,10 +374,10 @@ if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
                 ${SERV_SOC_DIR}/heartbeat.S -o ${SERV_FW_DIR}/overlay_heartbeat.elf
         COMMAND ${RISCV_OBJCOPY} -O binary ${SERV_FW_DIR}/overlay_heartbeat.elf ${SERV_OVERLAY_BIN}
         DEPENDS ${SERV_SOC_DIR}/heartbeat.S ${SERV_SOC_DIR}/overlay.ld
-        COMMENT "Building SERV heartbeat overlay (RV32I, linked at 0x1000)"
+        COMMENT "Building SERV heartbeat overlay (RV32I, linked at the overlay base)"
         VERBATIM
     )
-    # demo_mcu_apps overlays (host-uploadable, linked at 0x1000).
+    # demo_mcu_apps overlays (host-uploadable, linked at the overlay base).
     set(DEMO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/demo_mcu_apps")
     set(SERV_OSD_HELLO_BIN "${SERV_FW_DIR}/osd_hello.bin")
     add_custom_command(
@@ -378,12 +387,12 @@ if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
                 ${DEMO_DIR}/osd_hello/osd_hello.S -o ${SERV_FW_DIR}/osd_hello.elf
         COMMAND ${RISCV_OBJCOPY} -O binary ${SERV_FW_DIR}/osd_hello.elf ${SERV_OSD_HELLO_BIN}
         DEPENDS ${DEMO_DIR}/osd_hello/osd_hello.S ${SERV_SOC_DIR}/overlay.ld
-        COMMENT "Building demo_mcu_apps/osd_hello overlay (RV32I, linked at 0x1000)"
+        COMMENT "Building demo_mcu_apps/osd_hello overlay (RV32I, linked at the overlay base)"
         VERBATIM
     )
     # C overlays share demo_mcu_apps/common: crt0.S (stack + .bss zero + return to
     # the bootloader) and serv_io.h (device registers + helpers). They link at
-    # 0x1000 with the C-aware overlay_c.ld (adds .rodata + __bss_* symbols).
+    # the overlay base with the C-aware overlay_c.ld (adds .rodata + __bss_* symbols).
     set(DEMO_COMMON "${DEMO_DIR}/common")
     set(SERV_C_CRT  "${DEMO_COMMON}/crt0.S")
     set(SERV_C_HDR  "${DEMO_COMMON}/serv_io.h")
@@ -398,7 +407,7 @@ if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
         COMMAND ${SERV_C_BUILD} ${DEMO_DIR}/c_hello/c_hello.c -o ${SERV_FW_DIR}/c_hello.elf
         COMMAND ${RISCV_OBJCOPY} -O binary ${SERV_FW_DIR}/c_hello.elf ${SERV_C_HELLO_BIN}
         DEPENDS ${DEMO_DIR}/c_hello/c_hello.c ${SERV_C_CRT} ${SERV_C_HDR} ${SERV_SOC_DIR}/overlay_c.ld
-        COMMENT "Building demo_mcu_apps/c_hello overlay (C, linked at 0x1000)"
+        COMMENT "Building demo_mcu_apps/c_hello overlay (C, linked at the overlay base)"
         VERBATIM
     )
 
@@ -409,7 +418,7 @@ if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
         COMMAND ${SERV_C_BUILD} ${DEMO_DIR}/psram_test/psram_test.c -o ${SERV_FW_DIR}/psram_test.elf
         COMMAND ${RISCV_OBJCOPY} -O binary ${SERV_FW_DIR}/psram_test.elf ${SERV_PSRAM_TEST_BIN}
         DEPENDS ${DEMO_DIR}/psram_test/psram_test.c ${SERV_C_CRT} ${SERV_C_HDR} ${SERV_SOC_DIR}/overlay_c.ld
-        COMMENT "Building demo_mcu_apps/psram_test overlay (C, linked at 0x1000)"
+        COMMENT "Building demo_mcu_apps/psram_test overlay (C, linked at the overlay base)"
         VERBATIM
     )
     # motion: background-subtraction motion detector (grab + free-PSRAM bg model).
@@ -424,7 +433,7 @@ if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
                 ${DEMO_DIR}/motion/motion.S -o ${SERV_FW_DIR}/motion.elf
         COMMAND ${RISCV_OBJCOPY} -O binary ${SERV_FW_DIR}/motion.elf ${SERV_MOTION_BIN}
         DEPENDS ${DEMO_DIR}/motion/motion.S ${SERV_SOC_DIR}/overlay.ld
-        COMMENT "Building demo_mcu_apps/motion overlay (assembly, linked at 0x1000)"
+        COMMENT "Building demo_mcu_apps/motion overlay (assembly, linked at the overlay base)"
         VERBATIM
     )
     # motion_c: the motion detector in C, to compare FPS against the asm motion.
@@ -434,7 +443,7 @@ if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
         COMMAND ${SERV_C_BUILD} ${DEMO_DIR}/motion_c/motion_c.c -o ${SERV_FW_DIR}/motion_c.elf
         COMMAND ${RISCV_OBJCOPY} -O binary ${SERV_FW_DIR}/motion_c.elf ${SERV_MOTION_C_BIN}
         DEPENDS ${DEMO_DIR}/motion_c/motion_c.c ${SERV_C_CRT} ${SERV_C_HDR} ${SERV_SOC_DIR}/overlay_c.ld
-        COMMENT "Building demo_mcu_apps/motion_c overlay (C, linked at 0x1000)"
+        COMMENT "Building demo_mcu_apps/motion_c overlay (C, linked at the overlay base)"
         VERBATIM
     )
     # calc: host-driven floating-point calculator (C). Needs libgcc (soft-float +
@@ -445,7 +454,7 @@ if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
         COMMAND ${SERV_C_BUILD} ${DEMO_DIR}/calc/calc.c -lgcc -o ${SERV_FW_DIR}/calc.elf
         COMMAND ${RISCV_OBJCOPY} -O binary ${SERV_FW_DIR}/calc.elf ${SERV_CALC_BIN}
         DEPENDS ${DEMO_DIR}/calc/calc.c ${SERV_C_CRT} ${SERV_C_HDR} ${SERV_SOC_DIR}/overlay_c.ld
-        COMMENT "Building demo_mcu_apps/calc overlay (C + libgcc soft-float, linked at 0x1000)"
+        COMMENT "Building demo_mcu_apps/calc overlay (C + libgcc soft-float, linked at the overlay base)"
         VERBATIM
     )
     add_custom_target(serv_firmware DEPENDS ${SERV_BOOT_HEX} ${SERV_OVERLAY_BIN}

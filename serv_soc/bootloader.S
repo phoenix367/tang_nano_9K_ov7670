@@ -17,7 +17,9 @@
 #define BOOT_LEN     0xE4         /* byte offset within the window */
 #define BOOT_DATA    0xE8
 #define BOOT_STATUS  0xEC
-#define OVERLAY      0x1000       /* overlay load/run address (within the 8 KB RAM) */
+#ifndef OVERLAY                  /* overlay load/run address; CMake passes -DOVERLAY= */
+#define OVERLAY      0x400        /* from platform.json serv_mcu.overlay_base */
+#endif
 
 	.globl _start
 _start:

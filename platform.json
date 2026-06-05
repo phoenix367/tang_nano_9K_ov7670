@@ -23,6 +23,7 @@
     "stop_bits": 1
   },
   "serv_mcu": {
-    "enable": true
+    "enable": true,
+    "overlay_base": "0x400"
   }
 }

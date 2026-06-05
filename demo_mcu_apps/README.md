@@ -5,7 +5,7 @@ Example firmware **overlays** for the SERV soft core. On a SERV-enabled bitstrea
 bootloader that loads an overlay from the host at runtime and jumps to it — so
 these run without re-synthesizing the FPGA.
 
-Each overlay is RISC-V (RV32I) assembly linked at `0x1000`
+Each overlay is RISC-V (RV32I) assembly linked at the overlay base (`0x400`, from `platform.json`)
 (`../serv_soc/overlay.ld`). It runs on SERV as a Wishbone master: it reaches the
 device registers through the `0x40000000` window (low 16 bits = register number).
 SERV presents word-aligned accesses + byte-enables; `serv_wb_cdc` resolves the
@@ -43,7 +43,7 @@ C overlays share one module:
   `volatile` pointers) plus `static inline` helpers (`osd_*`, `psram_*`, `delay`).
   A `uint8`/`uint16` store emits the `sb`/`sh` the byte-lane CDC expects.
 
-Both link at 0x1000 with [`../serv_soc/overlay_c.ld`](../serv_soc/overlay_c.ld)
+Both link at the overlay base with [`../serv_soc/overlay_c.ld`](../serv_soc/overlay_c.ld)
 (adds `.rodata` and the `__bss_*` symbols).
 
 ## Adding an app
@@ -54,6 +54,6 @@ Both link at 0x1000 with [`../serv_soc/overlay_c.ld`](../serv_soc/overlay_c.ld)
 = crt0 + flags + `overlay_c.ld`), producing `build/serv_fw/<name>.bin`. Upload it
 via the Firmware tab / `serv_boot_load`.
 
-**In assembly:** write `demo_mcu_apps/<name>/<name>.S` (link-at-0x1000; set `sp` in
+**In assembly:** write `demo_mcu_apps/<name>/<name>.S` (link-at-overlay-base; set `sp` in
 `_start` only if you need a stack — the asm OSD demo doesn't) and add a build
 mirroring `osd_hello` (uses `overlay.ld`).

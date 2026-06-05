@@ -1,0 +1,14 @@
+/* GENERATED from overlay.ld.in by CMake (do not edit). Linker script for SERV
+ * overlay firmware: links at the overlay base (platform.json serv_mcu.overlay_base),
+ * where the bootloader copies it and jumps. Must match OVERLAY in bootloader.S --
+ * both come from the same platform.json key. */
+OUTPUT_ARCH( "riscv" )
+ENTRY(_start)
+
+SECTIONS
+{
+  . = @SERV_OVERLAY_BASE@;
+  .text : { *(.text) }
+  .data : { *(.data) }
+  .bss  : { *(.bss) }
+}
