@@ -1,15 +1,17 @@
 /*
- * Minimal C runtime for SERV overlays. Unlike the hand-written asm overlays, C
- * code needs a stack and zeroed .bss, so this startup:
+ * Common C runtime for SERV overlays (shared by every C demo in demo_mcu_apps).
+ *
+ * The hand-written asm overlays need no runtime, but C code needs a stack and
+ * zeroed .bss, so this startup:
  *   - points sp at the top of the 8 KB RAM (0x2000; the overlay lives at 0x1000,
- *     its data grows up, the stack grows down -- no collision for a tiny demo),
- *   - zeroes the .bss section,
+ *     its data grows up, the stack grows down -- no collision for a small demo),
+ *   - zeroes the .bss section (__bss_start/__bss_end from overlay_c.ld),
  *   - calls main(),
  *   - and on return hands control back to the bootloader at 0x0000, so the
  *     overlay is re-loadable without a device reset (like the asm demos).
  *
- * Placed in .text.init, which the C overlay linker script puts first, so _start
- * sits at the overlay entry (0x1000) where the bootloader jumps.
+ * Placed in .text.init, which overlay_c.ld puts first, so _start sits at the
+ * overlay entry (0x1000) where the bootloader jumps.
  */
 	.section .text.init, "ax"
 	.globl _start

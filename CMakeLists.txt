@@ -381,30 +381,35 @@ if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
         COMMENT "Building demo_mcu_apps/osd_hello overlay (RV32I, linked at 0x1000)"
         VERBATIM
     )
-    set(SERV_PSRAM_TEST_BIN "${SERV_FW_DIR}/psram_test.bin")
-    add_custom_command(
-        OUTPUT  ${SERV_PSRAM_TEST_BIN}
-        COMMAND ${RISCV_GCC} -nostartfiles -nostdlib -march=rv32i_zicsr -mabi=ilp32
-                -Wl,--build-id=none -T ${SERV_SOC_DIR}/overlay.ld
-                ${DEMO_DIR}/psram_test/psram_test.S -o ${SERV_FW_DIR}/psram_test.elf
-        COMMAND ${RISCV_OBJCOPY} -O binary ${SERV_FW_DIR}/psram_test.elf ${SERV_PSRAM_TEST_BIN}
-        DEPENDS ${DEMO_DIR}/psram_test/psram_test.S ${SERV_SOC_DIR}/overlay.ld
-        COMMENT "Building demo_mcu_apps/psram_test overlay (RV32I, linked at 0x1000)"
-        VERBATIM
-    )
-    # C overlay: crt0.S (stack + .bss zero + return to bootloader) + the C source,
-    # linked at 0x1000 with the C-aware overlay_c.ld (adds .rodata / .bss symbols).
+    # C overlays share demo_mcu_apps/common: crt0.S (stack + .bss zero + return to
+    # the bootloader) and serv_io.h (device registers + helpers). They link at
+    # 0x1000 with the C-aware overlay_c.ld (adds .rodata + __bss_* symbols).
+    set(DEMO_COMMON "${DEMO_DIR}/common")
+    set(SERV_C_CRT  "${DEMO_COMMON}/crt0.S")
+    set(SERV_C_HDR  "${DEMO_COMMON}/serv_io.h")
+    set(SERV_C_BUILD ${RISCV_GCC} -nostartfiles -nostdlib -march=rv32i_zicsr -mabi=ilp32
+                     -Os -ffreestanding -I ${DEMO_COMMON}
+                     -Wl,--build-id=none -T ${SERV_SOC_DIR}/overlay_c.ld ${SERV_C_CRT})
+
+    # c_hello: the OSD greeting in C.
     set(SERV_C_HELLO_BIN "${SERV_FW_DIR}/c_hello.bin")
     add_custom_command(
         OUTPUT  ${SERV_C_HELLO_BIN}
-        COMMAND ${RISCV_GCC} -nostartfiles -nostdlib -march=rv32i_zicsr -mabi=ilp32
-                -Os -ffreestanding -Wl,--build-id=none -T ${SERV_SOC_DIR}/overlay_c.ld
-                ${DEMO_DIR}/c_hello/crt0.S ${DEMO_DIR}/c_hello/c_hello.c
-                -o ${SERV_FW_DIR}/c_hello.elf
+        COMMAND ${SERV_C_BUILD} ${DEMO_DIR}/c_hello/c_hello.c -o ${SERV_FW_DIR}/c_hello.elf
         COMMAND ${RISCV_OBJCOPY} -O binary ${SERV_FW_DIR}/c_hello.elf ${SERV_C_HELLO_BIN}
-        DEPENDS ${DEMO_DIR}/c_hello/crt0.S ${DEMO_DIR}/c_hello/c_hello.c
-                ${SERV_SOC_DIR}/overlay_c.ld
+        DEPENDS ${DEMO_DIR}/c_hello/c_hello.c ${SERV_C_CRT} ${SERV_C_HDR} ${SERV_SOC_DIR}/overlay_c.ld
         COMMENT "Building demo_mcu_apps/c_hello overlay (C, linked at 0x1000)"
+        VERBATIM
+    )
+
+    # psram_test: PSRAM write/read/verify with progress bars, in C.
+    set(SERV_PSRAM_TEST_BIN "${SERV_FW_DIR}/psram_test.bin")
+    add_custom_command(
+        OUTPUT  ${SERV_PSRAM_TEST_BIN}
+        COMMAND ${SERV_C_BUILD} ${DEMO_DIR}/psram_test/psram_test.c -o ${SERV_FW_DIR}/psram_test.elf
+        COMMAND ${RISCV_OBJCOPY} -O binary ${SERV_FW_DIR}/psram_test.elf ${SERV_PSRAM_TEST_BIN}
+        DEPENDS ${DEMO_DIR}/psram_test/psram_test.c ${SERV_C_CRT} ${SERV_C_HDR} ${SERV_SOC_DIR}/overlay_c.ld
+        COMMENT "Building demo_mcu_apps/psram_test overlay (C, linked at 0x1000)"
         VERBATIM
     )
     add_custom_target(serv_firmware DEPENDS ${SERV_BOOT_HEX} ${SERV_OVERLAY_BIN}
