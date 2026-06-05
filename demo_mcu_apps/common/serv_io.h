@@ -18,8 +18,15 @@
 #define EXT 0x40000000u
 
 /* RW scratch / co-master "heartbeat" register -- the host reads it over Modbus as
- * a race-free side channel (a single 16-bit access, unlike the OSD cursor). */
+ * a race-free side channel (a single access, unlike the OSD cursor). NOTE: 0xE0
+ * only round-trips its LOW BYTE on the live bus, so keep payloads < 256. */
 #define HEARTBEAT (*(volatile uint16_t *)(EXT + 0xE0u))
+
+/* Free-running ~1 Hz uptime: a read of 0xF1 latches the 16-bit counter and returns
+ * its high byte; 0xF2 then returns the latched low byte. A handy time base (no RTC
+ * needed) -- e.g. count loop iterations between seconds for an FPS measurement. */
+#define UPTIME_HI (*(volatile uint8_t *)(EXT + 0xF1u))
+#define UPTIME_LO (*(volatile uint8_t *)(EXT + 0xF2u))
 
 /* ---- OSD text overlay ---- */
 #define OSD_CTRL (*(volatile uint8_t  *)(EXT + 0xFBu))  /* bit0=enable, bit1=clear */
@@ -62,6 +69,23 @@ static inline void osd_puts(const char *s)
 {
 	while (*s)
 		OSD_DATA = (uint8_t)*s++;   /* cursor auto-increments per char */
+}
+
+/* print v as two decimal digits at the cursor (v < 100). Subtraction, not a
+ * divide -- RV32I has no division, and `/10` would pull in libgcc. */
+static inline void osd_put_dec2(unsigned v)
+{
+	unsigned tens = 0;
+	while (v >= 10u) { v -= 10u; tens++; }
+	osd_putc((char)('0' + tens));
+	osd_putc((char)('0' + v));
+}
+
+/* current uptime second (low byte): read 0xF1 to latch, then 0xF2. */
+static inline unsigned uptime_lo(void)
+{
+	(void)UPTIME_HI;                /* volatile read latches the counter */
+	return UPTIME_LO;
 }
 
 /* ---- ch1 PSRAM helpers ----

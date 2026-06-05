@@ -150,7 +150,10 @@ detector** (assembly) — it grabs a frame, saves a sampled background model in
 on the OSD, periodically refreshing the background. It also measures its own
 **processing FPS** (monitor-loop iterations between 1 Hz uptime ticks — no RTC
 needed) and shows **"FPS: NN"**, publishing it on heartbeat 0xE0 (low byte; note
-0xE0 only round-trips its low byte). The C demos share
+0xE0 only round-trips its low byte). A C twin
+[`motion_c`](../demo_mcu_apps/motion_c/motion_c.c) is functionally identical and
+runs at the **same FPS** — the loop is grab-bound (each frame waits on the
+camera), so hand-asm vs compiler overhead is hidden. The C demos share
 [`demo_mcu_apps/common/`](../demo_mcu_apps/common) (a `crt0.S` startup + a
 `serv_io.h` register/helper header) and link with the C-aware
 `serv_soc/overlay_c.ld` — proving the C toolchain path, not just hand asm. All

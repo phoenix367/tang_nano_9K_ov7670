@@ -33,6 +33,48 @@ def _serv_overlay(name):
         pytest.skip(f"overlay not built ({path}); build the SERV firmware first")
     return path.read_bytes()
 
+
+def _run_motion_overlay(dev, binname):
+    """Upload a motion-detector overlay (asm or C) and verify it: the heartbeat
+    (0xE0 low byte) reports a plausible processing FPS -- which proves the whole
+    pipeline ran (grab + bg-in-PSRAM + compare + the 1 Hz uptime time base) -- and
+    the OSD shows the "FPS:" and "Movement:" lines (best-effort short reads, since
+    the OSD readback races the MCU on the cursor). The overlay parks, so reset the
+    MCU afterward so it stops driving the OSD/ch1 for later tests."""
+    overlay = _serv_overlay(binname)
+    try:
+        assert dev.serv_boot_load(overlay) > 0       # reset -> bootloader -> run
+
+        fps = 0
+        deadline = time.monotonic() + 8.0            # need >1 s for the first tick
+        while time.monotonic() < deadline:
+            fps = dev.read_reg(mc.REG_HEARTBEAT) & 0xFF
+            if 5 <= fps <= 120:
+                break
+            time.sleep(0.3)
+        assert 5 <= fps <= 120, \
+            f"{binname}: no plausible processing FPS reported (0xE0={fps})"
+
+        line = ""
+        for _ in range(30):
+            line = "".join(mc.osd_char(c & 0xFF) for c in dev.osd_read_cells(9, 23, 8))
+            if line.startswith("FPS:"):
+                break
+            time.sleep(0.1)
+        assert line.startswith("FPS:"), f"{binname}: OSD FPS line not found ({line!r})"
+
+        verdict = ""
+        for _ in range(30):
+            verdict = "".join(mc.osd_char(c & 0xFF) for c in dev.osd_read_cells(10, 23, 13))
+            if verdict.startswith("Movement:"):
+                break
+            time.sleep(0.1)
+        assert verdict.startswith("Movement:"), \
+            f"{binname}: OSD verdict not found ({verdict!r})"
+    finally:
+        dev.serv_mcu_reset()                         # stop the parked monitor loop
+        time.sleep(0.05)
+
 pytestmark = [
     pytest.mark.hardware,
     pytest.mark.skipif(not PORT, reason="set OV7670_PORT to a connected board"),
@@ -218,45 +260,16 @@ def test_serv_motion_detect(dev):
     best-effort confirm the OSD shows "FPS:" and a "Movement:" verdict. The overlay
     parks, so reset the MCU afterward so it stops driving the OSD/ch1 for later
     tests."""
-    overlay = _serv_overlay("motion.bin")
-    try:
-        assert dev.serv_boot_load(overlay) > 0       # reset -> bootloader -> run
+    _run_motion_overlay(dev, "motion.bin")
 
-        # 0xE0 low byte = measured FPS (0 until the first uptime-second tick).
-        # Wait for a settled, plausible processing rate.
-        fps = 0
-        deadline = time.monotonic() + 8.0           # need >1 s for the first tick
-        while time.monotonic() < deadline:
-            fps = dev.read_reg(mc.REG_HEARTBEAT) & 0xFF
-            if 5 <= fps <= 120:
-                break
-            time.sleep(0.3)
-        assert 5 <= fps <= 120, \
-            f"motion demo did not report a plausible processing FPS (0xE0={fps})"
 
-        # best-effort: the OSD shows the FPS line (read the short cell run, retry
-        # since the MCU drives the same cursor)
-        for _ in range(30):
-            line = "".join(mc.osd_char(c & 0xFF) for c in dev.osd_read_cells(9, 23, 8))
-            if line.startswith("FPS:"):
-                break
-            time.sleep(0.1)
-        assert line.startswith("FPS:"), f"OSD FPS line not found; last read: {line!r}"
-
-        # OSD verdict (short cell read to minimize the cursor race; retry since
-        # the MCU drives the same cursor and can corrupt an overlapping read)
-        verdict = ""
-        for _ in range(30):
-            cells = dev.osd_read_cells(10, 23, 13)
-            verdict = "".join(mc.osd_char(c & 0xFF) for c in cells)
-            if verdict.startswith("Movement:"):
-                break
-            time.sleep(0.1)
-        assert verdict.startswith("Movement:"), \
-            f"motion demo OSD verdict not found; last read: {verdict!r}"
-    finally:
-        dev.serv_mcu_reset()                         # stop the parked monitor loop
-        time.sleep(0.05)
+@pytest.mark.skipif(not os.environ.get("OV7670_SERV"),
+                    reason="set OV7670_SERV=1 for a SERV_CONTROL (co-master) bitstream")
+def test_serv_motion_detect_c(dev):
+    """demo_mcu_apps/motion_c -- the motion detector in C (vs the asm `motion`).
+    Functionally identical; runs at the same FPS since the loop is grab-bound. Same
+    checks as the asm version (heartbeat FPS + OSD lines)."""
+    _run_motion_overlay(dev, "motion_c.bin")
 
 
 @pytest.mark.skipif(not os.environ.get("OV7670_SERV"),

@@ -1,11 +1,12 @@
 /*
  * demo_mcu_apps / motion  --  background-subtraction motion detector (assembly)
  *
- * Ported from C: at -Os the compiler strength-reduced the monitor loop's counter
- * into several induction variables that desynced on SERV (the reported refresh
- * count tracked a different register than the frame counter), so the periodic
- * background refresh never fired. This hand-written version keeps every loop
- * variable in an explicit saved register, so the schedule is exact.
+ * Hand-written reference implementation. The C twin `demo_mcu_apps/motion_c` is
+ * functionally identical and runs at the same FPS (the monitor loop is grab-bound
+ * -- each iteration waits for a fresh camera frame -- so compiler vs hand-asm
+ * overhead is hidden). Keep both as an asm-vs-C comparison. (An earlier belief
+ * that gcc miscompiled this loop turned out to be the 0xE0 register only
+ * round-tripping its low byte, masking a status field -- not a codegen bug.)
  *
  * What it does (runs on the SERV soft core as a Wishbone master):
  *   1. grab a camera frame into ch1 PSRAM,
