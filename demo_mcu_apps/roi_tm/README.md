@@ -51,8 +51,10 @@ room to spare (the model is a table of 32-bit clause masks).
 the host and MCU must agree on **bit-for-bit**:
 
 - **featurize** — one bit per ROI cell, `b[i] > ROI mean`. The host writes it as
-  `b[i]*N > sum`; the MCU computes the mean by repeated subtraction (no divide) —
-  these are exactly equal for integer brightness (proven in the tests).
+  `b[i]*N > sum`; the MCU computes `b[i] > sum / N` (integer floor division) — these
+  are exactly equal for integer brightness (proven in the tests). The divide pulls in
+  libgcc's `__divsi3` (~200 B; the overlay links with `-lgcc`); it runs once per
+  frame, so it's free against the 308 PSRAM reads.
 - **literal layout** — literal `k<N` is feature `k`, `k≥N` is its negation; bit `k`
   is in word `k>>5` at position `k&31`. Same packing in `pack_literals()` and the C.
 - **voting** — clauses `0..TM_POS-1` vote +1, the rest −1; face when `vote ≥ TM_THRESHOLD`.

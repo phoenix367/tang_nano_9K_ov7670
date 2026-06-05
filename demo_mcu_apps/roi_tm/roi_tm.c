@@ -93,11 +93,10 @@ static void featurize(void)
 		}
 		rowbase += ROW_STEP;
 	}
-	/* ROI mean by repeated subtraction (no mul/div -> no libgcc). b[i] > floor(sum/N)
-	 * is bit-identical to the host's b[i]*N > sum for integer brightness. */
-	int mean = 0;
-	for (int32_t acc = sum; acc >= TM_N; acc -= TM_N)
-		mean++;
+	/* ROI mean. b[i] > floor(sum/N) is bit-identical to the host's b[i]*N > sum for
+	 * integer brightness. The divide pulls in libgcc's __divsi3 (RV32I has no DIV) --
+	 * linked with -lgcc; cleaner than a repeated-subtraction loop. */
+	int mean = sum / TM_N;
 
 	for (unsigned w = 0; w < TM_NWORDS; w++)
 		lit[w] = 0;
