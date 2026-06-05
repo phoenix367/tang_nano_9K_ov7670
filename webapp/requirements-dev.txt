@@ -1,3 +1,4 @@
 -r requirements.txt
 pytest>=7
 ruff>=0.5
+numpy>=1.24   # demo_mcu_apps/roi_tm Tsetlin Machine trainer + pipeline tests

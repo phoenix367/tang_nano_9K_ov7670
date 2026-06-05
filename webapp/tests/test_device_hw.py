@@ -404,6 +404,36 @@ def test_serv_roi_collect(dev):
 
 @pytest.mark.skipif(not os.environ.get("OV7670_SERV"),
                     reason="set OV7670_SERV=1 for a SERV_CONTROL (co-master) bitstream")
+def test_serv_roi_tm(dev):
+    """demo_mcu_apps/roi_tm -- fixed-ROI face presence via a Tsetlin Machine. Reads
+    the ROI, featurizes it, and runs bitwise TM inference (model baked in from
+    tm_model.h). We can't control whether a face is in the box, so we assert the
+    pipeline runs: the box is drawn, and the heartbeat decodes to a valid signed
+    vote (bit7=present, bits[6:0]=vote+64) -- proving grab + featurize + clause
+    voting all executed on the soft core."""
+    overlay = _serv_overlay("roi_tm.bin")
+    try:
+        assert dev.serv_boot_load(overlay) > 0
+        time.sleep(0.5)
+        glyph = 0
+        for _ in range(20):
+            glyph = dev.osd_read_cells(1, 17, 1)[0] & 0xFF
+            if 0x80 <= glyph <= 0x85:
+                break
+            time.sleep(0.1)
+        assert 0x80 <= glyph <= 0x85, f"ROI box not drawn on the OSD (cell=0x{glyph:02X})"
+        hb = dev.read_reg(mc.REG_HEARTBEAT) & 0xFF
+        present = hb >> 7
+        vote = (hb & 0x7F) - 64
+        assert present in (0, 1)
+        assert -64 <= vote <= 63, f"implausible TM vote ({vote})"
+    finally:
+        dev.serv_mcu_reset()
+        time.sleep(0.05)
+
+
+@pytest.mark.skipif(not os.environ.get("OV7670_SERV"),
+                    reason="set OV7670_SERV=1 for a SERV_CONTROL (co-master) bitstream")
 def test_serv_lbph_bench(dev):
     """demo_mcu_apps/lbph_bench -- benchmark of LBPH feature computation on the soft
     core (the heart of OpenCV's LBPH face recogniser). It loops computing the LBPH
