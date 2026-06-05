@@ -7,7 +7,7 @@ operation is streamed to the MCU, computed there in IEEE-754 single precision
 (libgcc soft-float -- SERV has no FPU), and the 32-bit result is read back.
 
 Interactive (a REPL):
-    scripts/calc.py -p /dev/ttyGowin
+    demo_mcu_apps/calc/calc_host_client.py -p /dev/ttyGowin
     calc> 2.5 + 4.0
     = 6.5
     calc> sqrt 2
@@ -18,8 +18,8 @@ Interactive (a REPL):
     = 0.125
 
 One-shot (quote * and ^ for the shell):
-    scripts/calc.py -p /dev/ttyGowin '3 * 7'
-    scripts/calc.py -p /dev/ttyGowin sqrt 2
+    demo_mcu_apps/calc/calc_host_client.py -p /dev/ttyGowin '3 * 7'
+    demo_mcu_apps/calc/calc_host_client.py -p /dev/ttyGowin sqrt 2
 
 Operators: + - * /  and  ^ (integer power).  Functions: sqrt <x>, 1/x <x>
 (aliases recip/inv). Requires the calc overlay built (cmake --build build --target
@@ -32,7 +32,10 @@ import struct
 import sys
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# repo root is two dirs up (demo_mcu_apps/calc/ -> repo); reuse the pyserial-only
+# Modbus client from scripts/ (no pymodbus dependency).
+_REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(_REPO, "scripts"))
 from modbus_test import DEFAULT_BAUD, DEFAULT_SLAVE, ModbusRTU  # noqa: E402
 
 # --- register map (see doc/modbus_server.md) ---
@@ -46,9 +49,7 @@ RESULT_CELL = 16 * OSD_COLS + 0          # calc writes 4 raw result bytes here
 OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_SQRT, OP_RECIP, OP_POW = range(7)
 BINARY = {"+": OP_ADD, "-": OP_SUB, "*": OP_MUL, "/": OP_DIV, "^": OP_POW}
 UNARY = {"sqrt": OP_SQRT, "1/x": OP_RECIP, "recip": OP_RECIP, "inv": OP_RECIP}
-DEFAULT_BIN = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "build", "serv_fw", "calc.bin")
+DEFAULT_BIN = os.path.join(_REPO, "build", "serv_fw", "calc.bin")
 
 
 def reset_mcu(mb):

@@ -163,7 +163,7 @@ computes in IEEE-754 single precision (`+ - * /`, `sqrt`, `1/x`, integer `pow`)
 and returns the result on the OSD + as raw bytes the host reads back. SERV has no
 FPU, so the math is **libgcc soft-float** (`-lgcc`) — ~6 KB, which is why the MCU
 RAM was grown from 8 KB to **16 KB** (`serv_cpu memsize`; ~24/26 BSRAM). A
-standalone console front-end, [`scripts/calc.py`](../scripts/calc.py), uploads the
+standalone console front-end, [`demo_mcu_apps/calc/calc_host_client.py`](../demo_mcu_apps/calc/calc_host_client.py), uploads the
 overlay and gives a REPL (`calc> 2 ^ 10` → `= 1024`). All demos
 have hardware tests that upload them and check the result. The OSD/grab control registers (0xF3..0xFD) aren't word-aligned, but
 `serv_wb_cdc` resolves the register from SERV's word address + byte-enables

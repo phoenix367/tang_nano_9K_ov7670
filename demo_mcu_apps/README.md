@@ -30,14 +30,14 @@ button), so the host can always load any firmware over any running overlay.
 | [`psram_test`](psram_test/psram_test.c) | (C) Writes a pseudo-random sequence into channel-1 PSRAM (write port 0xF3/0xF4-0xF7), reads it back, compares, and prints **"PSRAM test: PASS/FAIL"** on the OSD with live progress bars. |
 | [`motion`](motion/motion.S) | (assembly) Background-subtraction **motion detector**: grabs a frame, saves a sampled background model in *free* PSRAM, then loops grabbing + comparing and reports **"Movement: YES/NO"** on the OSD, periodically refreshing the background. Also measures its own **processing FPS** (loop iterations per second, timed off the 1 Hz uptime counter — no RTC) and shows **"FPS: NN"**. Parks — reset the MCU to stop it. |
 | [`motion_c`](motion_c/motion_c.c) | (C) The same motion detector in C, as an asm-vs-C comparison. Runs at the **same ~17 FPS** as the asm version — the loop is grab-bound (each frame waits on the camera), so compiler overhead is hidden. Bigger binary (~1.2 KB vs ~0.8 KB), same speed. |
-| [`calc`](calc/calc.c) | (C + libgcc) Host-driven **floating-point calculator**: the host sends `op, a, b` over the mailbox, the MCU computes in IEEE-754 single precision (`+ - * /`, `sqrt`, `1/x`, integer `pow`) and returns the result on the OSD + as raw bytes. SERV has no FPU → **libgcc soft-float**, so this needs the 16 KB MCU RAM build. Demonstrates host↔MCU comms. Drive it from a console with [`scripts/calc.py`](../scripts/calc.py). |
+| [`calc`](calc/calc.c) | (C + libgcc) Host-driven **floating-point calculator**: the host sends `op, a, b` over the mailbox, the MCU computes in IEEE-754 single precision (`+ - * /`, `sqrt`, `1/x`, integer `pow`) and returns the result on the OSD + as raw bytes. SERV has no FPU → **libgcc soft-float**, so this needs the 16 KB MCU RAM build. Demonstrates host↔MCU comms. Drive it from a console with [`demo_mcu_apps/calc/calc_host_client.py`](../demo_mcu_apps/calc/calc_host_client.py). |
 
 ## [`common/`](common) — shared C runtime
 
 C overlays share one module:
 
-- [`common/crt0.S`](common/crt0.S) — startup: sets `sp` to the top of the 8 KB RAM
-  (`0x2000`), zeroes `.bss`, calls `main()`, and returns to the bootloader
+- [`common/crt0.S`](common/crt0.S) — startup: sets `sp` to the top of the 16 KB RAM
+  (`0x4000`), zeroes `.bss`, calls `main()`, and returns to the bootloader
   (`0x0000`) so the overlay is re-loadable without a reset.
 - [`common/serv_io.h`](common/serv_io.h) — the device registers (EXT-window
   `volatile` pointers) plus `static inline` helpers (`osd_*`, `psram_*`, `delay`).
