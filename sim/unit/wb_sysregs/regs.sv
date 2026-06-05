@@ -150,8 +150,26 @@ initial begin
         logger.error(module_name, str); errors = errors + 1;
     end
 
+    // 6) bootloader mailbox (0xE4 len/start, 0xE8 data/pending, 0xEC status)
+    wb_read(16'h00EC, rd);                       // status: nothing yet
+    if (rd[1] !== 1'b0 || rd[0] !== 1'b0) begin
+        logger.error(module_name, "boot status nonzero before upload"); errors = errors + 1;
+    end
+    wb_write(16'h00E4, 16'd18);                  // host writes length -> start
+    wb_read(16'h00E4, rd);
+    if (rd !== 16'd18) begin logger.error(module_name, "boot_len readback wrong"); errors = errors + 1; end
+    wb_read(16'h00EC, rd);
+    if (rd[1] !== 1'b1) begin logger.error(module_name, "start not set after BOOT_LEN write"); errors = errors + 1; end
+    wb_write(16'h00E8, 16'h1357);                // host writes a word -> pending
+    wb_read(16'h00EC, rd);
+    if (rd[0] !== 1'b1) begin logger.error(module_name, "pending not set after BOOT_DATA write"); errors = errors + 1; end
+    wb_read(16'h00E8, rd);                        // SERV reads the word -> clears pending
+    if (rd !== 16'h1357) begin logger.error(module_name, "boot_data readback wrong"); errors = errors + 1; end
+    wb_read(16'h00EC, rd);
+    if (rd[0] !== 1'b0) begin logger.error(module_name, "pending not cleared after BOOT_DATA read"); errors = errors + 1; end
+
     if (errors == 0) begin
-        logger.info(module_name, "wb_sysregs: magic/health/reinit/uptime/heartbeat all correct");
+        logger.info(module_name, "wb_sysregs: magic/health/reinit/uptime/heartbeat/boot-mailbox all correct");
         `TEST_PASS
     end else
         `TEST_FAIL

@@ -66,6 +66,9 @@ module wb_interconnect (
 
     wire sel_sccb     = active & (m_adr_i <= 16'h00C9);
     wire sel_sysregs  = active & (   (m_adr_i == 16'h00E0)   // co-master heartbeat
+                                   | (m_adr_i == 16'h00E4)   // bootloader mailbox: len
+                                   | (m_adr_i == 16'h00E8)   //                     data
+                                   | (m_adr_i == 16'h00EC)   //                     status
                                    | (m_adr_i == 16'h00F0)
                                    | (m_adr_i == 16'h00F1)
                                    | (m_adr_i == 16'h00F2)
@@ -115,9 +118,11 @@ module wb_interconnect (
     wire f_stream = f_active & ~m_we_i & (m_adr_i >= 16'h1000);   // grab stream READS
     wire f_osd_stream = f_active & ~m_we_i & (m_adr_i >= 16'h0800) & (m_adr_i < 16'h1000);
     wire f_exp_sccb    = f_active & (m_adr_i <= 16'h00C9);
-    wire f_exp_sysregs = f_active & ((m_adr_i == 16'h00E0) | (m_adr_i == 16'h00F0)
-                                   | (m_adr_i == 16'h00F1) | (m_adr_i == 16'h00F2)
-                                   | (m_adr_i == 16'h00F9) | (m_adr_i == 16'h00FA));
+    wire f_exp_sysregs = f_active & ((m_adr_i == 16'h00E0) | (m_adr_i == 16'h00E4)
+                                   | (m_adr_i == 16'h00E8) | (m_adr_i == 16'h00EC)
+                                   | (m_adr_i == 16'h00F0) | (m_adr_i == 16'h00F1)
+                                   | (m_adr_i == 16'h00F2) | (m_adr_i == 16'h00F9)
+                                   | (m_adr_i == 16'h00FA));
     wire f_exp_grab    = f_active & (((m_adr_i == 16'h00F3) | (m_adr_i == 16'h00F4)
                                     | (m_adr_i == 16'h00F5) | (m_adr_i == 16'h00F6)
                                     | (m_adr_i == 16'h00F7) | (m_adr_i == 16'h00F8))

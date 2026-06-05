@@ -116,15 +116,28 @@ def test_illegal_address_raises(dev):
 
 @pytest.mark.skipif(not os.environ.get("OV7670_SERV"),
                     reason="set OV7670_SERV=1 for a SERV_CONTROL (co-master) bitstream")
-def test_serv_heartbeat_advances(dev):
-    """On a SERV_CONTROL build the SERV co-master increments the heartbeat
-    register (0xE0); read it twice and confirm it advanced -- proof the soft CPU
-    is executing and driving the real Wishbone bus alongside the Modbus host.
-    (On a default build 0xE0 reads a constant 0, hence the OV7670_SERV gate.)"""
+def test_serv_bootloader_loads_overlay(dev):
+    """A SERV_CONTROL build boots a bootloader (the heartbeat 0xE0 is static while
+    it waits). Upload the heartbeat *overlay* over the mailbox; the bootloader
+    copies it into RAM and jumps to it, after which 0xE0 starts advancing -- proof
+    the host loaded an overlay firmware into the soft CPU and handed it control.
+    On a freshly flashed device 0xE0 starts static; the assertion that matters is
+    that it advances after the upload."""
+    import pathlib
+    overlay = (pathlib.Path(__file__).resolve().parents[2]
+               / "build" / "serv_fw" / "overlay_heartbeat.bin")
+    if not overlay.exists():
+        pytest.skip(f"overlay not built ({overlay}); build the SERV firmware first")
+
+    before = dev.read_holding(mc.REG_HEARTBEAT, 1)[0]   # 0/static in the bootloader
+    n = dev.serv_boot_load(overlay.read_bytes())        # upload + hand over control
+    assert n > 0
+    time.sleep(0.1)
     a = dev.read_holding(mc.REG_HEARTBEAT, 1)[0]
     time.sleep(0.1)
     b = dev.read_holding(mc.REG_HEARTBEAT, 1)[0]
-    assert a != b, f"heartbeat did not advance ({a} -> {b}); is SERV running?"
+    assert a != b, (f"heartbeat not advancing after overlay load ({a}->{b}); "
+                    f"bootloader didn't jump? (was {before} before)")
 
 
 # --------------------------------------------------------------- board health

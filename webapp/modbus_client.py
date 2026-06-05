@@ -39,6 +39,11 @@ REG_STREAM  = 0x00F8   # write = rewind the download stream to pixel 0
 REG_HEARTBEAT = 0x00E0 # RW scratch; on a SERV_CONTROL build the SERV co-master
                        # increments it so the host can confirm the CPU is live
                        # on the bus. Reads 0 on a default (Modbus-only) build.
+# SERV bootloader mailbox (SERV_CONTROL build). The bootloader polls these as a
+# bus master; the host pushes an overlay firmware word-by-word. See doc/serv.md.
+REG_BOOT_LEN    = 0x00E4   # write overlay length (16-bit words) -> begins upload
+REG_BOOT_DATA   = 0x00E8   # write next overlay word (host); SERV consumes it
+REG_BOOT_STATUS = 0x00EC   # read: bit1 = upload started, bit0 = word pending
 REG_HEALTH  = 0x00F9   # read = watchdog health bits (see read_health)
 REG_REINIT  = 0x00FA   # write 1 = re-run camera init (reset all registers to defaults)
 REG_OSD_CTRL = 0x00FB  # write bit0 = enable, bit1 = clear; read bit0 = enable
@@ -187,6 +192,29 @@ class ModbusRTU:
             "memory_hang": bool(v & 0x02),
             "lcd_hang":    bool(v & 0x01),
         }
+
+    def serv_boot_load(self, blob, poll_timeout=2.0):
+        """Upload an overlay firmware to the SERV bootloader and hand it control.
+
+        `blob` is the raw overlay image (a .bin linked at 0x1000). It is packed
+        into little-endian 16-bit words and streamed through the mailbox; the
+        bootloader copies them into RAM and jumps to the overlay once it has
+        received all of them. One-shot: reset the device to load again. Requires a
+        SERV_CONTROL build running the bootloader (see doc/serv.md). Returns the
+        number of words sent.
+        """
+        data = bytes(blob)
+        if len(data) % 2:
+            data += b"\x00"                       # pad to a whole 16-bit word
+        words = [data[i] | (data[i + 1] << 8) for i in range(0, len(data), 2)]
+        self.write_single(REG_BOOT_LEN, len(words))   # length -> start the upload
+        for w in words:
+            deadline = time.monotonic() + poll_timeout
+            while self.read_holding(REG_BOOT_STATUS, 1)[0] & 0x01:   # wait empty
+                if time.monotonic() > deadline:
+                    raise TimeoutError("SERV bootloader did not drain the mailbox")
+            self.write_single(REG_BOOT_DATA, w)
+        return len(words)
 
     def dump_registers(self):
         """Read every OV7670 register (0x00..0xC9) and return {addr: value}.

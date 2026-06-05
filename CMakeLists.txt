@@ -205,12 +205,13 @@ else()
                         "(set -D RISCV_PATH=<bin> and run: git submodule update --init serv)")
     endif()
 endif()
-set(SERV_HEARTBEAT_HEX "${CMAKE_CURRENT_BINARY_DIR}/serv_fw/heartbeat.hex")
+set(SERV_BOOT_HEX    "${CMAKE_CURRENT_BINARY_DIR}/serv_fw/bootloader.hex")   # baked in
+set(SERV_OVERLAY_BIN "${CMAKE_CURRENT_BINARY_DIR}/serv_fw/overlay_heartbeat.bin")  # host-uploaded
 if (SERV_CONTROL)
     set(SERV_CONTROL_DEFINE "`define SERV_CONTROL")
-    set(SERV_MEMFILE "${SERV_HEARTBEAT_HEX}")
+    set(SERV_MEMFILE "${SERV_BOOT_HEX}")
     set(SERV_ENABLE "1")
-    message(STATUS "SERV_CONTROL=ON: SERV is a 2nd Wishbone master (heartbeat @0x00E0)")
+    message(STATUS "SERV_CONTROL=ON: SERV boots the bootloader (loads overlays from the host)")
 else()
     set(SERV_CONTROL_DEFINE "")
     set(SERV_MEMFILE "")
@@ -341,26 +342,36 @@ if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
         COMMENT "Building SERV blinky firmware (RV32I)"
         VERBATIM
     )
-    add_custom_target(serv_firmware DEPENDS ${SERV_FW_HEX})
+    add_custom_target(serv_blink_firmware DEPENDS ${SERV_FW_HEX})
 
-    # Phase 2 heartbeat firmware (SERV as a 2nd Wishbone master in the camera
-    # design). Built into the path build_config.vh already points $readmemh at;
-    # when SERV_CONTROL=ON, the camera hw_* builds depend on it.
+    # SERV bootloader (baked into BSRAM, the path build_config.vh points $readmemh
+    # at) + the heartbeat OVERLAY (linked at 0x1000, emitted as a .bin the host
+    # uploads at runtime -- not baked in). See doc/serv.md.
     add_custom_command(
-        OUTPUT  ${SERV_HEARTBEAT_HEX}
+        OUTPUT  ${SERV_BOOT_HEX}
         COMMAND ${RISCV_GCC} -nostartfiles -nostdlib -march=rv32i_zicsr -mabi=ilp32
                 -Wl,--build-id=none -T ${SERV_DIR}/sw/link.ld
-                ${SERV_SOC_DIR}/heartbeat.S -o ${SERV_FW_DIR}/heartbeat.elf
-        COMMAND ${RISCV_OBJCOPY} -O binary ${SERV_FW_DIR}/heartbeat.elf ${SERV_FW_DIR}/heartbeat.bin
-        COMMAND python3 ${SERV_SOC_DIR}/bin2hex.py ${SERV_FW_DIR}/heartbeat.bin ${SERV_HEARTBEAT_HEX}
-        DEPENDS ${SERV_SOC_DIR}/heartbeat.S ${SERV_DIR}/sw/link.ld ${SERV_SOC_DIR}/bin2hex.py
-        COMMENT "Building SERV heartbeat firmware (RV32I)"
+                ${SERV_SOC_DIR}/bootloader.S -o ${SERV_FW_DIR}/bootloader.elf
+        COMMAND ${RISCV_OBJCOPY} -O binary ${SERV_FW_DIR}/bootloader.elf ${SERV_FW_DIR}/bootloader.bin
+        COMMAND python3 ${SERV_SOC_DIR}/bin2hex.py ${SERV_FW_DIR}/bootloader.bin ${SERV_BOOT_HEX}
+        DEPENDS ${SERV_SOC_DIR}/bootloader.S ${SERV_DIR}/sw/link.ld ${SERV_SOC_DIR}/bin2hex.py
+        COMMENT "Building SERV bootloader firmware (RV32I)"
         VERBATIM
     )
-    add_custom_target(serv_heartbeat_firmware DEPENDS ${SERV_HEARTBEAT_HEX})
+    add_custom_command(
+        OUTPUT  ${SERV_OVERLAY_BIN}
+        COMMAND ${RISCV_GCC} -nostartfiles -nostdlib -march=rv32i_zicsr -mabi=ilp32
+                -Wl,--build-id=none -T ${SERV_SOC_DIR}/overlay.ld
+                ${SERV_SOC_DIR}/heartbeat.S -o ${SERV_FW_DIR}/overlay_heartbeat.elf
+        COMMAND ${RISCV_OBJCOPY} -O binary ${SERV_FW_DIR}/overlay_heartbeat.elf ${SERV_OVERLAY_BIN}
+        DEPENDS ${SERV_SOC_DIR}/heartbeat.S ${SERV_SOC_DIR}/overlay.ld
+        COMMENT "Building SERV heartbeat overlay (RV32I, linked at 0x1000)"
+        VERBATIM
+    )
+    add_custom_target(serv_firmware DEPENDS ${SERV_BOOT_HEX} ${SERV_OVERLAY_BIN})
     if (SERV_CONTROL)
-        add_dependencies(hw_synth serv_heartbeat_firmware)
-        add_dependencies(hw_all   serv_heartbeat_firmware)
+        add_dependencies(hw_synth serv_firmware)
+        add_dependencies(hw_all   serv_firmware)
     endif()
 
     # Generate serv_blink.v with the absolute hex path baked in for $readmemh.

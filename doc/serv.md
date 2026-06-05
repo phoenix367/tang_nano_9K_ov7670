@@ -55,7 +55,7 @@ submodule) is absent.
 ```sh
 cmake -S . -B build -D IVerilog_PATH=/usr/bin -D Gowin_PATH=/opt/gowin/IDE \
       -D RISCV_PATH=/path/to/riscv/bin
-cmake --build build --target serv_firmware   # build blinky.hex
+cmake --build build --target serv_blink_firmware   # build blinky.hex
 cmake --build build --target hw_serv_all      # synth + PnR + bitstream
 cmake --build build --target hw_serv_program  # load to SRAM (volatile) -> LED blinks
 ```
@@ -91,8 +91,34 @@ How it fits together:
 - `wb_sysregs` gains the heartbeat register at 0x00E0 (host-RW scratch, reads 0
   on a default build); `wb_interconnect` routes 0x00E0 to it. Both are
   unconditional and covered by the unit + formal tests.
-- `serv_soc/heartbeat.S` — the firmware (writes an incrementing counter to
-  `0x400000E0`, whose low 16 bits select register 0xE0).
+
+### Bootloader (load an overlay from the host at runtime)
+
+SERV's baked-in firmware is a **bootloader** (`serv_soc/bootloader.S`), not a
+fixed program: it receives an **overlay firmware from the host over the bus**,
+copies it into RAM, and jumps to it — so the MCU program can change without
+re-synthesizing. Since SERV has no host link of its own, the host writes the
+overlay through a **mailbox** in `wb_sysregs` that the bootloader polls as a bus
+master:
+
+| Reg | Name | Host | SERV |
+| --- | ---- | ---- | ---- |
+| `0xE4` | `BOOT_LEN`    | write overlay length (16-bit words) → sets `start` | read length |
+| `0xE8` | `BOOT_DATA`   | write next overlay word → sets `pending` | read → clears `pending` |
+| `0xEC` | `BOOT_STATUS` | poll: bit1=`start`, bit0=`pending` | same |
+
+(Word-aligned register numbers so SERV's RV32I `lw`/`sw` are aligned.) Memory
+map within the 8 KB RAM: bootloader at `0x0000`, overlay loaded/run at `0x1000`
+(overlays are linked there — `serv_soc/overlay.ld`).
+
+Host side: `modbus_client.serv_boot_load(blob)` packs the overlay `.bin` into
+little-endian words and streams them with the per-word `pending` handshake; the
+bootloader jumps once it has received `BOOT_LEN` words. One-shot (reset to reload).
+
+`serv_soc/heartbeat.S` is now built as the **demo overlay**
+(`build/serv_fw/overlay_heartbeat.bin`, linked at 0x1000) — uploaded at runtime,
+not baked in. It writes the incrementing counter to `0x400000E0` (reg 0xE0), so
+after a successful load 0xE0 starts advancing.
 - `src/build_config.vh` (generated) carries the `SERV_CONTROL` define + firmware
   path; `camera_ov7670.gprj` is generated from `camera_ov7670.gprj.in` with the
   SERV files' `enable` tied to the flag, so a default build excludes them
@@ -111,7 +137,7 @@ cmake --build build --target hw_all          # camera bitstream with SERV co-mas
 cmake --build build --target hw_program
 # then, on hardware:
 OV7670_PORT=/dev/ttyGowin OV7670_SERV=1 .venv/bin/python -m pytest \
-    webapp/tests/test_device_hw.py::test_serv_heartbeat_advances -v
+    webapp/tests/test_device_hw.py::test_serv_bootloader_loads_overlay -v
 ```
 
 To build the plain Modbus-only camera, set `"serv_mcu": { "enable": false }` in

@@ -91,6 +91,11 @@ initial begin
     // co-master heartbeat register routes to sysregs
     check(16'h00E0, 1'b1, 2, D_SYS,  "0xE0 heartbeat write -> sysregs");
     check(16'h00E0, 1'b0, 2, D_SYS,  "0xE0 heartbeat read -> sysregs");
+    // SERV bootloader mailbox (0xE4/E8/EC) routes to sysregs
+    check(16'h00E4, 1'b1, 2, D_SYS,  "0xE4 boot_len -> sysregs");
+    check(16'h00E8, 1'b1, 2, D_SYS,  "0xE8 boot_data write -> sysregs");
+    check(16'h00E8, 1'b0, 2, D_SYS,  "0xE8 boot_data read -> sysregs");
+    check(16'h00EC, 1'b0, 2, D_SYS,  "0xEC boot_status -> sysregs");
 
     // the 0xFx split
     check(16'h00F0, 1'b0, 2, D_SYS,  "0xF0 magic");
