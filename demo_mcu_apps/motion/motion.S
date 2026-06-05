@@ -16,9 +16,13 @@
  *      THRESH means movement. Every BG_PERIOD frames the background is REFRESHED
  *      in place from the current frame, so it adapts over time.
  *
- * Reports on the OSD ("Motion detect", "Movement: YES/NO", "changed: 0xNN",
- * "bg refresh: 0xNN") and writes a race-free status word to the heartbeat reg
- * (0xE0) = {refresh count[15:8], frame[7:1], verdict[0]} for the host.
+ * It also measures its own PROCESSING FPS -- frames compared per second -- using
+ * the 1 Hz uptime counter (0xF1/0xF2) as the time base (no RTC needed): it counts
+ * monitor-loop iterations between uptime-second ticks.
+ *
+ * Reports on the OSD ("Motion detect", "FPS: NN", "Movement: YES/NO",
+ * "changed: 0xNN", "bg refresh: 0xNN") and writes the measured FPS to the
+ * heartbeat reg (0xE0, low byte) for the host to read race-free.
  *
  * Parks (monitors forever); reset the MCU (0xE2) to return to the bootloader.
  * Linked at 0x1000 (serv_soc/overlay.ld). Uses no stack: every subroutine is a
@@ -37,6 +41,8 @@
 #define GRAB_AHI  0xF5
 #define GRAB_DHI  0xF6
 #define HEARTBEAT 0xE0
+#define UPTIME_HI 0xF1         /* read latches the 16-bit uptime; returns hi byte */
+#define UPTIME_LO 0xF2         /* returns the latched low byte (seconds & 0xFF) */
 
 #define NS        48           /* sample points across the frame */
 #define SSTEP     6352         /* address step between samples (397 bursts * 16) */
@@ -45,6 +51,7 @@
 #define BG_MASK   31           /* refresh every (BG_MASK+1)=32 frames; power-of-2-1 */
 
 #define HDR_CUR   (8*60 + 23)  /* "Motion detect" */
+#define FPS_CUR   (9*60 + 23)  /* "FPS: NN" */
 #define MOVE_CUR  (10*60 + 23) /* "Movement: ..." */
 #define CHG_CUR   (11*60 + 23) /* "changed: 0xNN" */
 #define BGR_CUR   (12*60 + 23) /* "bg refresh: 0xNN" */
@@ -53,7 +60,6 @@
 	.globl _start
 _start:
 	lui  s0, 0x40000           /* s0 = EXT base */
-	li   s9, SSTEP             /* sample address stride */
 
 	/* clear + enable the OSD, wait out the blank sweep */
 	li   t1, 3
@@ -88,14 +94,19 @@ bgbuild:
 	jal  psram_rd              /* a2 = sample pixel */
 	mv   a1, s7
 	jal  psram_wr              /* bg[s7] = a2 */
-	add  s6, s6, s9
+	li   t0, SSTEP
+	add  s6, s6, t0
 	addi s7, s7, 16
 	addi s5, s5, 1
 	li   t0, NS
 	blt  s5, t0, bgbuild
 
+	/* monitor-loop persistent state */
 	li   s1, 0                 /* frame counter */
-	li   s2, 0                 /* refresh count */
+	li   s8, 0                 /* fps_count: iterations in the current second */
+	li   s9, 0                 /* fps: last measured frames/second */
+	lbu  t0, UPTIME_HI(s0)     /* latch the uptime, then read the low byte */
+	lbu  s2, UPTIME_LO(s0)     /* s2 = last_sec (seconds & 0xFF) */
 
 	/* ---- monitor loop ---- */
 mloop:
@@ -107,7 +118,6 @@ mloop:
 	andi t0, s1, BG_MASK
 	bnez t0, no_refresh
 	li   s3, 1
-	addi s2, s2, 1             /* refresh count++ */
 no_refresh:
 
 	li   s4, 0                 /* changed = 0 */
@@ -133,30 +143,20 @@ samp:
 	mv   a1, s7
 	mv   a2, s11
 	jal  psram_wr
-3:	add  s6, s6, s9
+3:	li   t0, SSTEP
+	add  s6, s6, t0
 	addi s7, s7, 16
 	addi s5, s5, 1
 	li   t0, NS
 	blt  s5, t0, samp
 
-	/* moved = (changed >= MINCNT) -> s8 */
+	/* "Movement: YES/NO"  (moved in t4: used by the branch before any call) */
 	li   t0, MINCNT
-	slt  t1, s4, t0            /* t1 = changed < MINCNT */
-	xori s8, t1, 1             /* s8 = changed >= MINCNT */
-
-	/* heartbeat 0xE0 = (refresh count << 1) | moved. Kept within the LOW BYTE: the
-	 * 0xE0 register only round-trips 8 bits (the high byte reads back as 0, on both
-	 * the SERV and host write paths), so the count must stay < 128. The host reads
-	 * it race-free (unlike the OSD, which races the MCU on the cursor). */
-	andi t2, s2, 0x7F
-	slli t2, t2, 1
-	or   t2, t2, s8
-	sh   t2, HEARTBEAT(s0)
-
-	/* "Movement: YES/NO" */
+	slt  t1, s4, t0
+	xori t4, t1, 1             /* t4 = (changed >= MINCNT) */
 	li   a1, MOVE_CUR
 	sh   a1, OSD_ADDR(s0)
-	beqz s8, move_no
+	beqz t4, move_no
 	la   a1, msg_yes
 	jal  puts
 	j    move_done
@@ -177,17 +177,37 @@ move_done:
 	jal  hexnib
 	sb   a1, OSD_DATA(s0)
 
-	/* on a refresh frame, update the visible "bg refresh" counter */
+	/* on a refresh frame, update "bg refresh" (count = frame >> BG_SHIFT) */
 	beqz s3, no_bgdisp
 	li   a1, BGR_DIG
 	sh   a1, OSD_ADDR(s0)
-	srli a1, s2, 4
+	srli t5, s1, 5             /* refresh count */
+	srli a1, t5, 4
 	jal  hexnib
 	sb   a1, OSD_DATA(s0)
-	mv   a1, s2
+	mv   a1, t5
 	jal  hexnib
 	sb   a1, OSD_DATA(s0)
 no_bgdisp:
+
+	/* ---- processing FPS: count iterations between 1 Hz uptime ticks ---- */
+	lbu  t0, UPTIME_HI(s0)     /* latch the uptime */
+	lbu  t1, UPTIME_LO(s0)     /* t1 = current second (low byte) */
+	beq  t1, s2, fps_same
+	mv   s9, s8                /* a second elapsed: fps = iterations counted */
+	li   s8, 1                 /* start counting the current iteration */
+	mv   s2, t1                /* last_sec = current */
+	li   a1, FPS_CUR           /* repaint "FPS: NN" */
+	sh   a1, OSD_ADDR(s0)
+	la   a1, msg_fps
+	jal  puts
+	mv   a1, s9
+	jal  dec2
+	j    fps_done
+fps_same:
+	addi s8, s8, 1             /* fps_count++ */
+fps_done:
+	sh   s9, HEARTBEAT(s0)     /* heartbeat low byte = measured FPS */
 
 	addi s1, s1, 1             /* frame++ */
 	j    mloop
@@ -242,6 +262,21 @@ bright:
 	add  a3, a3, t2
 	ret
 
+/* print a1 as two decimal digits to the OSD (value assumed < 100). No divide:
+ * tens via repeated subtraction. Uses t1, t2, a1. */
+dec2:
+	li   t1, 0                 /* tens */
+1:	li   t2, 10
+	blt  a1, t2, 2f
+	sub  a1, a1, t2
+	addi t1, t1, 1
+	j    1b
+2:	addi t1, t1, '0'
+	sb   t1, OSD_DATA(s0)
+	addi a1, a1, '0'
+	sb   a1, OSD_DATA(s0)
+	ret
+
 /* low nibble of a1 -> ASCII hex digit in a1 */
 hexnib:
 	andi a1, a1, 0xF
@@ -264,6 +299,8 @@ puts:
 	.data
 msg_hdr:
 	.asciz "Motion detect"
+msg_fps:
+	.asciz "FPS: "
 msg_bgr:
 	.asciz "bg refresh: 0x00"
 msg_yes:

@@ -209,33 +209,39 @@ def test_serv_c_hello(dev):
 def test_serv_motion_detect(dev):
     """demo_mcu_apps/motion (assembly): grabs a frame, builds a background model in
     FREE PSRAM, then loops grabbing + comparing and reports Movement: YES/NO on the
-    OSD, periodically refreshing the background. The loop publishes a status byte to
-    the heartbeat reg (0xE0) = (refresh_count << 1) | verdict, read race-free
-    (reading the OSD races the MCU on its cursor). Note 0xE0 only round-trips its
-    low byte, so the status is kept there.
+    OSD, periodically refreshing the background. It measures its own processing FPS
+    (loop iterations between 1 Hz uptime ticks) and publishes it to the heartbeat
+    reg (0xE0, low byte) -- read race-free (reading the OSD races the MCU cursor).
 
-    The refresh count must increment over time -- that proves the loop is alive
-    (grab + bg-in-PSRAM + compare all ran) AND that the background is refreshed
-    periodically. We also best-effort confirm the OSD shows a "Movement:" verdict.
-    The overlay parks, so reset the MCU afterward so it stops driving the OSD/ch1
-    for later tests."""
+    We assert the heartbeat reports a plausible processing FPS (proves the whole
+    pipeline -- grab + bg-in-PSRAM + compare + the uptime time base -- ran), and
+    best-effort confirm the OSD shows "FPS:" and a "Movement:" verdict. The overlay
+    parks, so reset the MCU afterward so it stops driving the OSD/ch1 for later
+    tests."""
     overlay = _serv_overlay("motion.bin")
     try:
         assert dev.serv_boot_load(overlay) > 0       # reset -> bootloader -> run
 
-        # 0xE0 low byte = (refresh_count << 1) | verdict. The refresh count must
-        # increment (the bg is periodically refreshed, BG_PERIOD frames apart) --
-        # which also proves the monitor loop is running.
-        first_refr = (dev.read_reg(mc.REG_HEARTBEAT) & 0xFF) >> 1
-        refreshed = False
-        deadline = time.monotonic() + 10.0
-        while time.monotonic() < deadline and not refreshed:
+        # 0xE0 low byte = measured FPS (0 until the first uptime-second tick).
+        # Wait for a settled, plausible processing rate.
+        fps = 0
+        deadline = time.monotonic() + 8.0           # need >1 s for the first tick
+        while time.monotonic() < deadline:
+            fps = dev.read_reg(mc.REG_HEARTBEAT) & 0xFF
+            if 5 <= fps <= 120:
+                break
             time.sleep(0.3)
-            if ((dev.read_reg(mc.REG_HEARTBEAT) & 0xFF) >> 1) != first_refr:
-                refreshed = True
-        assert refreshed, \
-            "background model is not refreshing (0xE0 refresh count stuck) -- the " \
-            "monitor loop or periodic refresh isn't running"
+        assert 5 <= fps <= 120, \
+            f"motion demo did not report a plausible processing FPS (0xE0={fps})"
+
+        # best-effort: the OSD shows the FPS line (read the short cell run, retry
+        # since the MCU drives the same cursor)
+        for _ in range(30):
+            line = "".join(mc.osd_char(c & 0xFF) for c in dev.osd_read_cells(9, 23, 8))
+            if line.startswith("FPS:"):
+                break
+            time.sleep(0.1)
+        assert line.startswith("FPS:"), f"OSD FPS line not found; last read: {line!r}"
 
         # OSD verdict (short cell read to minimize the cursor race; retry since
         # the MCU drives the same cursor and can corrupt an overlapping read)

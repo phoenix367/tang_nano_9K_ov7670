@@ -147,8 +147,10 @@ compares, and prints **"PSRAM test: PASS/FAIL"** with live progress bars; and
 [`motion`](../demo_mcu_apps/motion/motion.S) is a background-subtraction **motion
 detector** (assembly) — it grabs a frame, saves a sampled background model in
 *free* PSRAM, then loops grabbing + comparing and reports **"Movement: YES/NO"**
-on the OSD, periodically refreshing the background (with a race-free status byte
-on heartbeat 0xE0; note 0xE0 only round-trips its low byte). The C demos share
+on the OSD, periodically refreshing the background. It also measures its own
+**processing FPS** (monitor-loop iterations between 1 Hz uptime ticks — no RTC
+needed) and shows **"FPS: NN"**, publishing it on heartbeat 0xE0 (low byte; note
+0xE0 only round-trips its low byte). The C demos share
 [`demo_mcu_apps/common/`](../demo_mcu_apps/common) (a `crt0.S` startup + a
 `serv_io.h` register/helper header) and link with the C-aware
 `serv_soc/overlay_c.ld` — proving the C toolchain path, not just hand asm. All

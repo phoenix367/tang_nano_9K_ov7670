@@ -28,7 +28,7 @@ button), so the host can always load any firmware over any running overlay.
 | [`osd_hello`](osd_hello/osd_hello.S) | (assembly) After boot, writes **"Hello from MCU!!!"** centered on the OSD overlay (enable 0xFB, cursor 0xFC, chars 0xFD). |
 | [`c_hello`](c_hello/c_hello.c) | (C) The `osd_hello` greeting in **C** — writes **"Hello from C!"** to the OSD. The smallest C overlay. |
 | [`psram_test`](psram_test/psram_test.c) | (C) Writes a pseudo-random sequence into channel-1 PSRAM (write port 0xF3/0xF4-0xF7), reads it back, compares, and prints **"PSRAM test: PASS/FAIL"** on the OSD with live progress bars. |
-| [`motion`](motion/motion.S) | (assembly) Background-subtraction **motion detector**: grabs a frame, saves a sampled background model in *free* PSRAM, then loops grabbing + comparing and reports **"Movement: YES/NO"** on the OSD, periodically refreshing the background. Parks — reset the MCU to stop it. Written in asm because at -Os gcc desynced the monitor loop's counter into divergent induction variables (the periodic refresh stopped firing). |
+| [`motion`](motion/motion.S) | (assembly) Background-subtraction **motion detector**: grabs a frame, saves a sampled background model in *free* PSRAM, then loops grabbing + comparing and reports **"Movement: YES/NO"** on the OSD, periodically refreshing the background. Also measures its own **processing FPS** (loop iterations per second, timed off the 1 Hz uptime counter — no RTC) and shows **"FPS: NN"**. Parks — reset the MCU to stop it. Written in asm because at -Os gcc desynced the monitor loop's counter into divergent induction variables. |
 
 ## [`common/`](common) — shared C runtime
 
