@@ -340,6 +340,33 @@ def test_serv_skin_detect(dev):
 
 @pytest.mark.skipif(not os.environ.get("OV7670_SERV"),
                     reason="set OV7670_SERV=1 for a SERV_CONTROL (co-master) bitstream")
+def test_serv_roi_presence(dev):
+    """demo_mcu_apps/roi_presence -- fixed-ROI face-presence gate: draws a fixed ROI
+    box on the OSD and reports (skin_count << 1) | present on the heartbeat. We
+    can't control whether a face is in the box, so we assert the pipeline runs (the
+    ROI skin count is in range 0..150) and the fixed ROI box is drawn on the OSD."""
+    overlay = _serv_overlay("roi_presence.bin")
+    try:
+        assert dev.serv_boot_load(overlay) > 0
+        time.sleep(0.5)
+        count = (dev.read_reg(mc.REG_HEARTBEAT) & 0xFF) >> 1
+        assert 0 <= count <= 150, f"ROI skin count out of range ({count})"
+        # the fixed ROI box top-left corner is at OSD (row 3, col 22); it's drawn
+        # once and static -> readable. Expect a box-drawing glyph (0x80..0x85).
+        glyph = 0
+        for _ in range(20):
+            glyph = dev.osd_read_cells(3, 22, 1)[0] & 0xFF
+            if 0x80 <= glyph <= 0x85:
+                break
+            time.sleep(0.1)
+        assert 0x80 <= glyph <= 0x85, f"ROI box not drawn on the OSD (cell=0x{glyph:02X})"
+    finally:
+        dev.serv_mcu_reset()
+        time.sleep(0.05)
+
+
+@pytest.mark.skipif(not os.environ.get("OV7670_SERV"),
+                    reason="set OV7670_SERV=1 for a SERV_CONTROL (co-master) bitstream")
 def test_serv_lbph_bench(dev):
     """demo_mcu_apps/lbph_bench -- benchmark of LBPH feature computation on the soft
     core (the heart of OpenCV's LBPH face recogniser). It loops computing the LBPH
