@@ -246,17 +246,24 @@ def test_psram_write_read_roundtrip(dev):
                     reason="set OV7670_SERV=1 for a SERV_CONTROL (co-master) bitstream")
 def test_serv_psram_demo(dev):
     """demo_mcu_apps/psram_test on the soft core: it writes a pseudo-random
-    sequence into ch1 PSRAM, reads it back, compares, and prints the verdict on
-    the OSD. Upload it and read the banner back -- a healthy PSRAM path shows
-    'PSRAM test: PASS'."""
+    sequence into ch1 PSRAM, reads it back, compares, and prints progress + the
+    verdict on the OSD. Upload it and poll the OSD -- a healthy PSRAM path ends in
+    'PSRAM test: PASS' (and never 'FAIL')."""
     overlay = _serv_overlay("psram_test.bin")
     dev.osd_clear()                              # so a stale PASS can't fool us
     time.sleep(0.05)
     assert dev.serv_boot_load(overlay) > 0       # reset -> bootloader -> run
-    time.sleep(0.5)                              # bit-serial write+read of 32 bursts
-    text = "\n".join(dev.osd_read_text())
+
+    deadline = time.monotonic() + 5.0            # bit-serial write+read of 512 bursts
+    text = ""
+    while time.monotonic() < deadline:
+        text = "\n".join(dev.osd_read_text())
+        if "PSRAM test: PASS" in text or "PSRAM test: FAIL" in text:
+            break
+        time.sleep(0.1)
+    assert "PSRAM test: FAIL" not in text, f"MCU PSRAM demo reported FAIL; OSD: {text!r}"
     assert "PSRAM test: PASS" in text, \
-        f"MCU PSRAM demo did not report PASS; OSD read: {text!r}"
+        f"MCU PSRAM demo did not finish with PASS; OSD read: {text!r}"
 
 
 # --------------------------------------------------------------- board health
