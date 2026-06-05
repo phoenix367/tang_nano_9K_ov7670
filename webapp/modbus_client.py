@@ -212,7 +212,10 @@ class ModbusRTU:
             deadline = time.monotonic() + poll_timeout
             while self.read_holding(REG_BOOT_STATUS, 1)[0] & 0x01:   # wait empty
                 if time.monotonic() > deadline:
-                    raise TimeoutError("SERV bootloader did not drain the mailbox")
+                    raise TimeoutError(
+                        "SERV bootloader did not drain the mailbox -- it is one-shot "
+                        "per boot, so reset the device to return to the bootloader "
+                        "before loading an overlay (or this isn't a SERV build)")
             self.write_single(REG_BOOT_DATA, w)
         return len(words)
 

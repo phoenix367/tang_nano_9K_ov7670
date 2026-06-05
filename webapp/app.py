@@ -112,6 +112,11 @@ def _classify(e):
     reports disconnected and the UI can prompt a reconnect; transient
     timeouts/CRC are already retried in the client and just surface as errors."""
     global _client
+    # TimeoutError is itself an OSError subclass, but it's an operation timeout
+    # (e.g. no response / the bootloader mailbox didn't drain), NOT a lost port --
+    # keep the connection and just report it.
+    if isinstance(e, TimeoutError):
+        return _error(e)
     if isinstance(e, OSError):
         if _client is not None:
             _client.close()

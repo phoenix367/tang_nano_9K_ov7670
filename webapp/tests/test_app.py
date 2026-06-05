@@ -49,6 +49,25 @@ def test_serv_upload_empty_rejected(client):
     assert not r["ok"]
 
 
+def test_serv_upload_timeout_keeps_connection(client, monkeypatch):
+    """A mailbox-drain timeout (e.g. the bootloader was already used -- one-shot)
+    must surface as an error WITHOUT dropping the connection. TimeoutError is an
+    OSError subclass, so this guards against it being misread as a lost port."""
+    import modbus_client
+
+    tc, _ = client
+    _connect(tc)
+
+    def boom(self, blob, **kw):
+        raise TimeoutError("bootloader did not drain")
+    monkeypatch.setattr(modbus_client.ModbusRTU, "serv_boot_load", boom)
+
+    res = tc.post("/api/serv/upload", data=b"\x00\x00",
+                  content_type="application/octet-stream")
+    assert res.status_code != 503 and not res.get_json()["ok"]   # error, not disconnect
+    assert tc.get("/api/state").get_json()["connected"] is True   # still connected
+
+
 def test_connect_then_state(client):
     tc, _ = client
     assert _connect(tc)["pid"] == 0x76
