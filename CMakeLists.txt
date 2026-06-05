@@ -413,13 +413,18 @@ if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
         VERBATIM
     )
     # motion: background-subtraction motion detector (grab + free-PSRAM bg model).
+    # Hand-written assembly (overlay.ld, no C runtime): the C version's monitor
+    # loop miscompiled at -Os (desynced induction variables broke the periodic
+    # background refresh), so the schedule is kept exact in explicit registers.
     set(SERV_MOTION_BIN "${SERV_FW_DIR}/motion.bin")
     add_custom_command(
         OUTPUT  ${SERV_MOTION_BIN}
-        COMMAND ${SERV_C_BUILD} ${DEMO_DIR}/motion/motion.c -o ${SERV_FW_DIR}/motion.elf
+        COMMAND ${RISCV_GCC} -nostartfiles -nostdlib -march=rv32i_zicsr -mabi=ilp32
+                -Wl,--build-id=none -T ${SERV_SOC_DIR}/overlay.ld
+                ${DEMO_DIR}/motion/motion.S -o ${SERV_FW_DIR}/motion.elf
         COMMAND ${RISCV_OBJCOPY} -O binary ${SERV_FW_DIR}/motion.elf ${SERV_MOTION_BIN}
-        DEPENDS ${DEMO_DIR}/motion/motion.c ${SERV_C_CRT} ${SERV_C_HDR} ${SERV_SOC_DIR}/overlay_c.ld
-        COMMENT "Building demo_mcu_apps/motion overlay (C, linked at 0x1000)"
+        DEPENDS ${DEMO_DIR}/motion/motion.S ${SERV_SOC_DIR}/overlay.ld
+        COMMENT "Building demo_mcu_apps/motion overlay (assembly, linked at 0x1000)"
         VERBATIM
     )
     add_custom_target(serv_firmware DEPENDS ${SERV_BOOT_HEX} ${SERV_OVERLAY_BIN}

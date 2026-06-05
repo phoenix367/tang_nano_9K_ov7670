@@ -207,31 +207,35 @@ def test_serv_c_hello(dev):
 @pytest.mark.skipif(not os.environ.get("OV7670_SERV"),
                     reason="set OV7670_SERV=1 for a SERV_CONTROL (co-master) bitstream")
 def test_serv_motion_detect(dev):
-    """demo_mcu_apps/motion: grabs a frame, builds a background model in FREE
-    PSRAM, then loops grabbing + comparing and reports Movement: YES/NO on the
-    OSD. The loop also publishes {iteration, verdict} to the heartbeat reg (0xE0)
-    as a race-free side channel (reading the OSD races the MCU on its cursor).
+    """demo_mcu_apps/motion (assembly): grabs a frame, builds a background model in
+    FREE PSRAM, then loops grabbing + comparing and reports Movement: YES/NO on the
+    OSD, periodically refreshing the background. The loop publishes a status byte to
+    the heartbeat reg (0xE0) = (refresh_count << 1) | verdict, read race-free
+    (reading the OSD races the MCU on its cursor). Note 0xE0 only round-trips its
+    low byte, so the status is kept there.
 
-    We assert the loop is alive and producing verdicts via 0xE0 (the iteration
-    counter must advance -> grab+bg-in-PSRAM+compare+loop all ran), and best-effort
-    confirm the OSD shows a "Movement:" verdict. The overlay parks, so reset the
-    MCU afterward so it stops driving the OSD/ch1 for later tests."""
+    The refresh count must increment over time -- that proves the loop is alive
+    (grab + bg-in-PSRAM + compare all ran) AND that the background is refreshed
+    periodically. We also best-effort confirm the OSD shows a "Movement:" verdict.
+    The overlay parks, so reset the MCU afterward so it stops driving the OSD/ch1
+    for later tests."""
     overlay = _serv_overlay("motion.bin")
     try:
         assert dev.serv_boot_load(overlay) > 0       # reset -> bootloader -> run
 
-        # heartbeat 0xE0 = (iteration << 1) | verdict; the counter must advance
-        # once the demo has modeled the background and entered the monitor loop.
-        deadline = time.monotonic() + 8.0
-        first = dev.read_reg(mc.REG_HEARTBEAT)
-        advanced = False
-        while time.monotonic() < deadline:
-            time.sleep(0.4)
-            now = dev.read_reg(mc.REG_HEARTBEAT)
-            if (now >> 1) != (first >> 1):           # iteration counter moved
-                advanced = True
-                break
-        assert advanced, "motion loop is not advancing (0xE0 iteration counter stuck)"
+        # 0xE0 low byte = (refresh_count << 1) | verdict. The refresh count must
+        # increment (the bg is periodically refreshed, BG_PERIOD frames apart) --
+        # which also proves the monitor loop is running.
+        first_refr = (dev.read_reg(mc.REG_HEARTBEAT) & 0xFF) >> 1
+        refreshed = False
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline and not refreshed:
+            time.sleep(0.3)
+            if ((dev.read_reg(mc.REG_HEARTBEAT) & 0xFF) >> 1) != first_refr:
+                refreshed = True
+        assert refreshed, \
+            "background model is not refreshing (0xE0 refresh count stuck) -- the " \
+            "monitor loop or periodic refresh isn't running"
 
         # OSD verdict (short cell read to minimize the cursor race; retry since
         # the MCU drives the same cursor and can corrupt an overlapping read)
