@@ -20,28 +20,16 @@
 #include <stdint.h>
 #include "serv_io.h"
 #include "tm_model.h"
+#include "roi_features.h"   /* ROI_COLS/ROI_ROWS/ROI_CELLS + roi_featurize() */
 
-/* ROI geometry -- MUST match roi_presence.c / roi_collect.c / collect_samples.py */
+/* PSRAM addressing of the ROI -- MUST match roi_presence.c / roi_collect.c.
+ * (ROI_C0..R1 span exactly ROI_COLS x ROI_ROWS cells from roi_features.h.) */
 #define COL_STEP 16
 #define ROW_STEP 19200
 #define ROI_C0 9
 #define ROI_C1 30
 #define ROI_R0 1
 #define ROI_R1 14
-#define ROI_COLS (ROI_C1 - ROI_C0 + 1)
-#define ROI_ROWS (ROI_R1 - ROI_R0 + 1)
-#define ROI_CELLS (ROI_COLS * ROI_ROWS)
-
-/* Featurization (MUST match tm_common.py): 2x2 block-average to an 11x7 grid, then
- * luma LBP (8 bits per interior cell) + 3 colour bits per cell (R>G, R>B, skin). */
-#define DSW (ROI_COLS / 2)
-#define DSH (ROI_ROWS / 2)
-#define COLOR_CELLS (DSW * DSH)
-#define FEATURE_COUNT (((DSW - 2) * (DSH - 2)) * 8 + 3 * COLOR_CELLS)
-
-#if TM_N != FEATURE_COUNT
-#error "tm_model.h TM_N disagrees with the feature count -- retrain (train_tm.py)"
-#endif
 
 /* OSD box-drawing glyphs */
 #define BX_H 0x80
@@ -60,10 +48,6 @@ static const uint8_t col_lut[40] = {
 static const uint8_t row_lut[16] = { 0,1,2,3,4,5,6,7,9,10,11,12,13,14,15,16 };
 
 static uint16_t roi[ROI_CELLS];      /* raw RGB565 per cell */
-static uint8_t dsBr[COLOR_CELLS];    /* 2x2 block-summed brightness >>2 (0..125) */
-static uint8_t dsR[COLOR_CELLS];     /* block R (0..31), G->5bit, B (0..31) */
-static uint8_t dsG5[COLOR_CELLS];
-static uint8_t dsB[COLOR_CELLS];
 static uint32_t lit[TM_NWORDS];      /* packed literal vector (2N bits) */
 
 static inline void osd_go(unsigned row, unsigned col)
@@ -86,15 +70,7 @@ static void box_outline(unsigned top, unsigned bot, unsigned left, unsigned righ
 	}
 }
 
-/* set literal `idx` from a feature bit: feature at bit idx, negation at bit TM_N+idx */
-#define SET_FEAT(cond) do {                              \
-	unsigned k = (cond) ? idx : (TM_N + idx);            \
-	lit[k >> 5] |= 1u << (k & 31);                       \
-	idx++;                                               \
-} while (0)
-
-/* read the ROI, 2x2 block-sum into the downsampled channels, then build the packed
- * literal vector: luma LBP (interior) followed by per-cell colour bits. */
+/* read the ROI out of ch1 PSRAM, then featurize (shared roi_features.h) */
 static void featurize(void)
 {
 	unsigned i = 0;
@@ -107,55 +83,7 @@ static void featurize(void)
 		}
 		rowbase += ROW_STEP;
 	}
-
-	/* 2x2 block sums -> downsampled channels (running offsets -> no multiply) */
-	unsigned o = 0, row0 = 0;
-	for (int r = 0; r < DSH; r++) {
-		unsigned row1 = row0 + ROI_COLS, cc = 0;
-		for (int c = 0; c < DSW; c++) {
-			int rs = 0, gs = 0, bs = 0;
-			uint16_t p;
-			p = roi[row0 + cc];     rs += (p >> 11) & 0x1F; gs += (p >> 5) & 0x3F; bs += p & 0x1F;
-			p = roi[row0 + cc + 1]; rs += (p >> 11) & 0x1F; gs += (p >> 5) & 0x3F; bs += p & 0x1F;
-			p = roi[row1 + cc];     rs += (p >> 11) & 0x1F; gs += (p >> 5) & 0x3F; bs += p & 0x1F;
-			p = roi[row1 + cc + 1]; rs += (p >> 11) & 0x1F; gs += (p >> 5) & 0x3F; bs += p & 0x1F;
-			dsBr[o] = (uint8_t)((rs + gs + bs) >> 2);
-			dsR[o]  = (uint8_t)(rs >> 2);
-			dsG5[o] = (uint8_t)(gs >> 3);     /* 6-bit green sum >>3 -> 5-bit scale */
-			dsB[o]  = (uint8_t)(bs >> 2);
-			o++; cc += 2;
-		}
-		row0 += 2 * ROI_COLS;
-	}
-
-	for (unsigned w = 0; w < TM_NWORDS; w++)
-		lit[w] = 0;
-
-	/* luma 8-neighbour LBP over the interior -> features (order TL,T,TR,L,R,BL,B,BR) */
-	unsigned idx = 0, base = DSW;
-	for (int r = 1; r < DSH - 1; r++) {
-		for (int c = 1; c < DSW - 1; c++) {
-			unsigned b = base + c, up = b - DSW, dn = b + DSW;
-			int ctr = dsBr[b];
-			SET_FEAT(dsBr[up - 1] >= ctr);
-			SET_FEAT(dsBr[up]     >= ctr);
-			SET_FEAT(dsBr[up + 1] >= ctr);
-			SET_FEAT(dsBr[b - 1]  >= ctr);
-			SET_FEAT(dsBr[b + 1]  >= ctr);
-			SET_FEAT(dsBr[dn - 1] >= ctr);
-			SET_FEAT(dsBr[dn]     >= ctr);
-			SET_FEAT(dsBr[dn + 1] >= ctr);
-		}
-		base += DSW;
-	}
-
-	/* colour bits over all cells, row-major: R>G, then R>B, then skin cue */
-	for (unsigned k = 0; k < COLOR_CELLS; k++)
-		SET_FEAT(dsR[k] > dsG5[k]);
-	for (unsigned k = 0; k < COLOR_CELLS; k++)
-		SET_FEAT(dsR[k] > dsB[k]);
-	for (unsigned k = 0; k < COLOR_CELLS; k++)
-		SET_FEAT(dsR[k] > dsG5[k] && dsG5[k] >= dsB[k] && (dsR[k] - dsB[k]) >= 2);
+	roi_featurize(roi, lit);
 }
 
 /* Tsetlin Machine vote: each clause fires iff every included literal is 1. */

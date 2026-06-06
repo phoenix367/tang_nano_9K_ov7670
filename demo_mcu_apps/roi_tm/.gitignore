@@ -6,3 +6,4 @@ samples_baseline.jsonl
 samples_hard.jsonl
 *.png
 samples_det.jsonl
+_c_featurize_harness*

@@ -148,6 +148,48 @@ def test_committed_model_header_is_valid():
     assert sizes["TM_NWORDS"] == (sizes["TM_NLIT"] + 31) // 32
 
 
+_HARNESS = r"""
+#include <stdio.h>
+#include <stdint.h>
+#include "roi_features.h"
+int main(void){
+    uint16_t roi[ROI_CELLS]; uint32_t lit[TM_NWORDS];
+    for (int i=0;i<ROI_CELLS;i++){ unsigned v; if(scanf("%u",&v)!=1) return 1; roi[i]=(uint16_t)v; }
+    roi_featurize(roi, lit);
+    for (int w=0; w<TM_NWORDS; w++) printf("%u\n", lit[w]);
+    return 0;
+}
+"""
+
+
+def test_c_featurize_matches_host():
+    """Compile the ACTUAL roi_features.h and assert its literal vector equals the
+    Python featurize/pack_literals bit-for-bit. This exercises the real C (not a
+    Python re-implementation), so macro/shadowing-class bugs can't slip through."""
+    import shutil
+    import subprocess
+    gcc = shutil.which("gcc")
+    if gcc is None:
+        pytest.skip("gcc not available")
+    src = os.path.join(HERE, "_c_featurize_harness.c")
+    exe = os.path.join(HERE, "_c_featurize_harness")
+    open(src, "w").write(_HARNESS)
+    try:
+        subprocess.run([gcc, "-O2", "-I", HERE, src, "-o", exe], check=True,
+                       capture_output=True)
+        nw = (2 * tm.N_FEATURES + 31) // 32
+        for roi in random_rois(40, ROI_CELLS, seed=3):
+            out = subprocess.run([exe], input="\n".join(map(str, roi)),
+                                 capture_output=True, text=True, check=True)
+            c_lit = [int(x) for x in out.stdout.split()]
+            py_lit = [int(x) for x in tm.pack_literals(tm.featurize(roi))]
+            assert len(c_lit) == nw and c_lit == py_lit
+    finally:
+        for f in (src, exe):
+            if os.path.exists(f):
+                os.remove(f)
+
+
 def test_tm_learns_separable_problem():
     X, Y = _synth(400, tm.N_FEATURES, seed=5)
     machine = tm.TsetlinMachine(tm.N_FEATURES, clauses=64, seed=5)
