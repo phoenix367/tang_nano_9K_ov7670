@@ -99,3 +99,13 @@ IO_LOC "sys_rst_n" 4;
 IO_PORT "sys_rst_n" PULL_MODE=UP BANK_VCCIO=1.8;
 IO_LOC "sys_clk" 52;
 IO_PORT "sys_clk" IO_TYPE=LVCMOS33 PULL_MODE=UP BANK_VCCIO=3.3;
+
+// 4 bidirectional GPIO pins (wb_gpio, regs 0xEA/0xEB), inputs (hi-Z) at reset.
+IO_LOC "gpio[0]" 48;
+IO_PORT "gpio[0]" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+IO_LOC "gpio[1]" 49;
+IO_PORT "gpio[1]" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+IO_LOC "gpio[2]" 76;
+IO_PORT "gpio[2]" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+IO_LOC "gpio[3]" 30;
+IO_PORT "gpio[3]" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;

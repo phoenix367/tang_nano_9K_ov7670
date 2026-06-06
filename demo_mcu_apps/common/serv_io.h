@@ -50,6 +50,12 @@ static inline uint16_t mailbox_get(void)
 #define OSD_COLS 60
 #define OSD_BLOCK 0x96u                                 /* full-block glyph */
 
+/* ---- GPIO: 4 bidirectional pins (wb_gpio 0xEA/0xEB) ----
+ * GPIO_DIR bits[3:0]: 1 = output (drive), 0 = input (hi-Z); reset 0 = all inputs.
+ * GPIO_DATA: write bits[3:0] = output latch; read bits[3:0] = live pin levels. */
+#define GPIO_DIR  (*(volatile uint8_t *)(EXT + 0xEAu))
+#define GPIO_DATA (*(volatile uint8_t *)(EXT + 0xEBu))
+
 /* ---- channel-1 PSRAM via the wb_grab read/write port ---- */
 #define GRAB     (*(volatile uint8_t  *)(EXT + 0xF3u))  /* w:2=read 3=write; r:b0=busy b1=calib */
 #define GRAB_ALO (*(volatile uint16_t *)(EXT + 0xF4u))  /* burst address [15:0] */

@@ -36,6 +36,7 @@
         <File path="src/modbus/wb_sysregs.sv" type="file.verilog" enable="1"/>
         <File path="src/modbus/wb_grab.sv" type="file.verilog" enable="1"/>
         <File path="src/modbus/wb_osd.sv" type="file.verilog" enable="1"/>
+        <File path="src/modbus/wb_gpio.sv" type="file.verilog" enable="1"/>
         <File path="src/platform_config.vh" type="file.verilog" enable="1"/>
         <File path="src/build_config.vh" type="file.verilog" enable="1"/>
         <File path="src/modbus/be_arbiter.v" type="file.verilog" enable="@SERV_ENABLE@"/>

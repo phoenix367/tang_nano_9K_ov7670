@@ -53,6 +53,8 @@ CALC_ADD, CALC_SUB, CALC_MUL, CALC_DIV, CALC_SQRT, CALC_RECIP, CALC_POW = range(
 REG_BOOT_LEN    = 0x00E4   # write overlay length (16-bit words) -> begins upload
 REG_BOOT_DATA   = 0x00E8   # write next overlay word (host); SERV consumes it
 REG_BOOT_STATUS = 0x00EC   # read: bit1 = upload started, bit0 = word pending
+REG_GPIO_DIR  = 0x00EA # bits[3:0] GPIO direction (1=output, 0=input); reset 0 = all inputs
+REG_GPIO_DATA = 0x00EB # write bits[3:0] = output latch; read bits[3:0] = live pin levels
 REG_HEALTH  = 0x00F9   # read = watchdog health bits (see read_health)
 REG_REINIT  = 0x00FA   # write 1 = re-run camera init (reset all registers to defaults)
 REG_OSD_CTRL = 0x00FB  # write bit0 = enable, bit1 = clear; read bit0 = enable
@@ -290,6 +292,24 @@ class ModbusRTU:
         to its ROM default). The device reloads its config over the next tens of
         ms; re-read the settings afterwards to reflect the reverted state."""
         self.write_single(REG_REINIT, 1)
+
+    # ---- GPIO (4 bidirectional pins, wb_gpio 0xEA/0xEB) ----------------------
+    def gpio_set_dir(self, mask):
+        """Set the 4-pin direction (bits[3:0]): 1 = output (drive), 0 = input (hi-Z).
+        Reset default is 0 (all inputs)."""
+        self.write_single(REG_GPIO_DIR, mask & 0x0F)
+
+    def gpio_write(self, value):
+        """Set the output latch (bits[3:0]); pins configured as outputs drive it."""
+        self.write_single(REG_GPIO_DATA, value & 0x0F)
+
+    def gpio_read(self):
+        """Read the live pin levels (bits[3:0]) -- inputs and driven outputs alike."""
+        return self.read_holding(REG_GPIO_DATA, 1)[0] & 0x0F
+
+    def gpio_get_dir(self):
+        """Read back the direction register (bits[3:0], 1 = output)."""
+        return self.read_holding(REG_GPIO_DIR, 1)[0] & 0x0F
 
     # ---- OSD text overlay (8x16 font, 60x17 char grid on the LCD) ------------
     def osd_enabled(self):

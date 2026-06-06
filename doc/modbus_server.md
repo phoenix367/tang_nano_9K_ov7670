@@ -183,10 +183,11 @@ scattered `0xFx` block** (never ranges — `F0/F1/F2/F9/FA` go to sysregs while
 | Address(es)                       | Slave         |
 | --------------------------------- | ------------- |
 | `0x0000..0x00C9`                  | `wb_sccb`     |
+| `0xEA, EB`                        | `wb_gpio`     |
 | `0xF0, F1, F2, F9, FA`            | `wb_sysregs`  |
 | `0xF3..F8` and (read) `≥ 0x1000`  | `wb_grab`     |
 | `0xFB, FC, FD`                    | `wb_osd`      |
-| anything else (`0xCA..EF`, `FE/FF`, `0x100..0xFFF`, stream-band writes) | **default: ack with `dat_r = 0`** |
+| anything else (`0xCA..E9`, `EE/EF`, `FE/FF`, `0x100..0xFFF`, stream-band writes) | **default: ack with `dat_r = 0`** |
 
 The default-ack arm is essential: an unmapped address still acks (returning 0), so
 the master never hangs — preserving the old monolith's `default` behaviour. Since
@@ -225,6 +226,23 @@ uptime counter, independent of the bus:
 | `0xE0`      | RW scratch / heartbeat. Reads 0 on a default build; on a `SERV_CONTROL` build the SERV co-master increments it (see [serv.md](serv.md#phase-2--serv-as-a-2nd-wishbone-master-in-the-camera-design)) |
 | `0xE2`      | write 1 = reset the SERV MCU — pulse `mcu_reset`, which crosses to `mcu_clk` and restarts the core into its bootloader (recovers a parked overlay so the host can load any firmware). Reads 0; a no-op on a non-SERV build (see [serv.md](serv.md#bootloader-load-an-overlay-from-the-host-at-runtime)) |
 | `0xE4/E8/EC`| SERV bootloader mailbox (`SERV_CONTROL` build): `BOOT_LEN` / `BOOT_DATA` / `BOOT_STATUS` — host streams an overlay firmware to the bootloader (see [serv.md](serv.md#bootloader-load-an-overlay-from-the-host-at-runtime)) |
+
+### `wb_gpio.sv` — 4 bidirectional GPIO pins (`0xEA/0xEB`)
+
+A general-purpose I/O slave: four FPGA pins (Tang Nano 9K pins 48, 49, 76, 30 =
+`gpio[0..3]`) controllable from **either** bus master — the host over Modbus, or the
+SERV core through its `0x40000000` EXT window (`GPIO_DIR`/`GPIO_DATA` in
+[`serv_io.h`](../demo_mcu_apps/common/serv_io.h)).
+
+| Address | Meaning |
+| ------- | ------- |
+| `0xEA` `GPIO_DIR`  | bits[3:0] direction: `1` = output (drive), `0` = input (hi-Z). **Reset 0 → all four pins are inputs.** |
+| `0xEB` `GPIO_DATA` | write bits[3:0] = output latch (driven on pins whose `DIR=1`); read bits[3:0] = live pin levels (after a 2-FF synchroniser) |
+
+Each pin is a tri-state pad in `camera_control.v` (`gpio[i] = dir[i] ? out[i] : 1'bz`).
+Host helpers: `modbus_client.gpio_set_dir/gpio_write/gpio_read`. The pins only exist
+after rebuilding + reflashing the bitstream (`hw_all`); the `.cst` pin-out is in
+`src/camera_ov7670.cst`.
 
 ### `wb_grab.sv` — frame grab + stream (`0xF3..F8`, `≥0x1000`)
 

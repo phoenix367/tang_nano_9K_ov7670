@@ -197,6 +197,7 @@ register_test(integration "modbus/cam_bridge"
     "${SRC_FOLDER}/modbus/wb_sysregs.sv"
     "${SRC_FOLDER}/modbus/wb_grab.sv"
     "${SRC_FOLDER}/modbus/wb_osd.sv"
+    "${SRC_FOLDER}/modbus/wb_gpio.sv"
     "${SRC_FOLDER}/i2c/i2c_master.v"
     "${SRC_FOLDER}/i2c/i2c_master_bit_ctrl.v"
     "${SRC_FOLDER}/i2c/i2c_master_byte_ctrl.v"
@@ -210,6 +211,7 @@ register_test(integration "modbus/cam_bridge"
 register_test(unit "wb_sysregs/regs"        "${SRC_FOLDER}/modbus/wb_sysregs.sv")
 register_test(unit "wb_sysregs/health"      "${SRC_FOLDER}/modbus/wb_sysregs.sv")
 register_test(unit "wb_osd/cursor"          "${SRC_FOLDER}/modbus/wb_osd.sv")
+register_test(unit "wb_gpio/regs"           "${SRC_FOLDER}/modbus/wb_gpio.sv")
 register_test(unit "wb_grab/stream"         "${SRC_FOLDER}/modbus/wb_grab.sv")
 register_test(unit "wb_interconnect/decode" "${SRC_FOLDER}/modbus/wb_interconnect.sv")
 register_test(unit "be_arbiter/two_master"  "${SRC_FOLDER}/modbus/be_arbiter.v")

@@ -37,7 +37,9 @@ module CameraControl_TOP (
     output [2:0] status_leds,
     // UART (FT2232H channel B), 9600 8-E-1; see doc/build.md.
     output uart_tx,         // FPGA -> host
-    input  uart_rx          // host -> FPGA
+    input  uart_rx,         // host -> FPGA
+    // 4 bidirectional GPIO pins (wb_gpio, regs 0xEA/0xEB); inputs (hi-Z) at reset.
+    inout  [3:0] gpio
 );
 
 // ---- UART (9600 8-E-1) + Modbus RTU slave on the FT2232H channel B ----
@@ -238,6 +240,12 @@ modbus_rtu_slave #(
     .be_rdata(mb_be_rdata)
 );
 
+// GPIO nets -- declared before the backend instance so the [3:0] port connections
+// aren't inferred as 1-bit implicit nets. Tri-state pads wired up after the instance.
+wire [3:0] gpio_dir;
+wire [3:0] gpio_out;
+wire [3:0] gpio_in;
+
 modbus_cam_backend #(
     .UPTIME_DIV(`PLATFORM_SYS_CLK_HZ)   // ~1 Hz uptime tick from sys_clk
 ) cam_bridge (
@@ -274,8 +282,21 @@ modbus_cam_backend #(
     .grab_busy(grab_busy),
     .grab_rd_data(grab_rd_data),
     .grab_calib(grab_calib),
-    .wd_health(wd_health)
+    .wd_health(wd_health),
+    .gpio_dir(gpio_dir),
+    .gpio_out(gpio_out),
+    .gpio_in(gpio_in)
 );
+
+// ---- GPIO tri-state pads (wb_gpio 0xEA/0xEB) ----
+// One IOBUF per pin: drive gpio_out when its direction bit is set, else hi-Z
+// (input). gpio_in samples the live pad level for read-back. Reset leaves
+// gpio_dir = 0, so all four pins power up as inputs.
+assign gpio_in  = gpio;
+assign gpio[0] = gpio_dir[0] ? gpio_out[0] : 1'bz;
+assign gpio[1] = gpio_dir[1] ? gpio_out[1] : 1'bz;
+assign gpio[2] = gpio_dir[2] ? gpio_out[2] : 1'bz;
+assign gpio[3] = gpio_dir[3] ? gpio_out[3] : 1'bz;
 
 // ---- UART activity blink + host-presence timeout ----
 // uart_*_blink stretch each byte event to ~50 ms so a 9600-baud transfer is
