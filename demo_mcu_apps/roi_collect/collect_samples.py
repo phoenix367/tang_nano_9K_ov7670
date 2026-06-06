@@ -2,11 +2,11 @@
 """Collect labelled face / no-face training samples from the fixed ROI.
 
 Companion to the roi_collect overlay (which draws the alignment box on the LCD)
-and to roi_presence (which will run the trained classifier). Skin-colour gating is
+and to roi_tm (which will run the trained classifier). Skin-colour gating is
 unreliable for this camera, so instead we harvest labelled ROI patches here and
 train a real classifier offline.
 
-Each sample is the SAME 22x14 grid of ROI cells that roi_presence scans -- read
+Each sample is the SAME 22x14 grid of ROI cells that roi_tm scans -- read
 straight out of channel-1 PSRAM after a host-armed frame grab -- so the data
 matches the deployed input exactly. The MCU is not involved in the read: the
 roi_collect overlay just draws the box and parks (no bus traffic), leaving the
@@ -27,7 +27,7 @@ Usage:
 Dataset: demo_mcu_apps/roi_collect/samples.jsonl (override with -o). Each line:
     {"label": 0|1, "roi565": [<308 RGB565 ints, row-major over the ROI grid>]}
 The ROI geometry is fixed below and must stay in sync with roi_collect.c /
-roi_presence.c.
+roi_tm.c.
 """
 import argparse
 import json
@@ -43,7 +43,7 @@ from modbus_client import (  # noqa: E402
     ModbusRTU, DEFAULT_BAUD, DEFAULT_SLAVE, REG_GRAB, REG_OSD_ADDR, REG_OSD_DATA,
 )
 
-# ---- fixed ROI geometry: MUST match roi_collect.c / roi_presence.c ----
+# ---- fixed ROI geometry: MUST match roi_collect.c / roi_tm.c ----
 COL_STEP = 16          # PSRAM burst-address step per grid column (cam_col = cc*16)
 ROW_STEP = 19200       # per grid row (30 source rows * 640; cam_row = rr*30)
 ROI_C0, ROI_C1 = 9, 30
@@ -71,7 +71,7 @@ def luma(p):
 
 
 def is_skin(p):
-    """The roi_presence skin rule, for a sanity readout alongside each capture."""
+    """A simple skin-colour rule, for a sanity readout alongside each capture."""
     r = (p >> 11) & 0x1F
     g5 = (p >> 6) & 0x1F
     b = p & 0x1F

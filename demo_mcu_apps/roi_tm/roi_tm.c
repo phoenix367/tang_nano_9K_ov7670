@@ -2,7 +2,7 @@
  * demo_mcu_apps / roi_tm  --  fixed-ROI face presence via a Tsetlin Machine
  *
  * The deployment end of the roi_collect -> train_tm pipeline. It draws the SAME
- * fixed ROI box as roi_presence/roi_collect, reads the ROI out of ch1 PSRAM each
+ * fixed ROI box as roi_collect, reads the ROI out of ch1 PSRAM each
  * frame, and featurizes it (identical to tm_common.featurize on the host): 2x2
  * block-average to an 11x7 grid, then luma LBP (8 "neighbour >= centre" bits per
  * interior cell = 360) + 3 colour bits per cell (R>G, R>B, skin = 231) = 591
@@ -25,7 +25,7 @@
 #include "tm_model.h"
 #include "roi_features.h"   /* ROI_COLS/ROI_ROWS/ROI_CELLS + roi_featurize() */
 
-/* PSRAM addressing of the ROI -- MUST match roi_presence.c / roi_collect.c.
+/* PSRAM addressing of the ROI -- MUST match roi_collect.c / collect_samples.py.
  * (ROI_C0..R1 span exactly ROI_COLS x ROI_ROWS cells from roi_features.h.) */
 #define COL_STEP 16
 #define ROW_STEP 19200

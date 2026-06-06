@@ -1,6 +1,7 @@
 # roi_tm — fixed-ROI face presence with a Tsetlin Machine
 
-A trainable replacement for the unreliable skin-colour gate in `roi_presence`. The
+A trainable face-presence gate for a *fixed* region of interest, replacing an
+unreliable hand-tuned skin-colour heuristic. The
 camera's RGB565 skin rule doesn't separate faces from background robustly, so we
 instead **learn** a face/no-face classifier for a *fixed* region of interest and run
 it on the SERV soft core. A fixed ROI turns "find the face" (far too heavy for a

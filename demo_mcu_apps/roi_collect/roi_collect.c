@@ -1,8 +1,8 @@
 /*
  * demo_mcu_apps / roi_collect  --  fixed-ROI alignment guide for sample collection
  *
- * Companion to roi_presence + collect_samples.py. Its only job is to draw the SAME
- * fixed region-of-interest box that roi_presence classifies -- so on the live LCD
+ * Companion to roi_tm + collect_samples.py. Its only job is to draw the SAME
+ * fixed region-of-interest box that roi_tm classifies -- so on the live LCD
  * the user sees exactly where to place their face -- and then PARK doing nothing.
  *
  * Parking matters: the host control script (collect_samples.py) drives the wb_grab
@@ -12,16 +12,16 @@
  * (gateware BSRAM) while the host collects.
  *
  * The ROI geometry (grid step, ROI cell bounds, pillarbox LUTs) is byte-identical
- * to roi_presence.c, so the cells the host samples here are exactly the cells the
- * trained classifier will see in roi_presence. The overlay also raises the camera
- * AGC ceiling + enables AWB (same as roi_presence) for a usable image.
+ * to roi_tm.c, so the cells the host samples here are exactly the cells the
+ * trained classifier will see in roi_tm. The overlay also raises the camera
+ * AGC ceiling + enables AWB (same as roi_tm) for a usable image.
  *
  * Parks; reset the MCU (0xE2) to stop. Host-uploaded overlay -- no reflash.
  */
 #include <stdint.h>
 #include "serv_io.h"
 
-/* fixed ROI in grid cells -- MUST match roi_presence.c (cam_col = cc*16, cam_row = rr*30) */
+/* fixed ROI in grid cells -- MUST match roi_tm.c (cam_col = cc*16, cam_row = rr*30) */
 #define ROI_C0 9
 #define ROI_C1 30
 #define ROI_R0 1
@@ -39,7 +39,7 @@
 #define CAM(reg) (*(volatile uint8_t *)(EXT + (reg)))
 
 /* grid col cc -> OSD col / grid row rr -> OSD row, accounting for the LCD pillarbox
- * (the 640-wide image occupies OSD cols ~7..51). Identical to roi_presence.c. */
+ * (the 640-wide image occupies OSD cols ~7..51). Identical to roi_tm.c. */
 static const uint8_t col_lut[40] = {
 	7, 8,10,11,12,13,14,15,16,17,19,20,21,22,23,24,25,27,28,29,
 	30,31,32,33,34,36,37,38,39,40,41,42,44,45,46,47,48,49,50,51

@@ -307,36 +307,9 @@ def test_serv_motion_detect_c(dev):
 
 @pytest.mark.skipif(not os.environ.get("OV7670_SERV"),
                     reason="set OV7670_SERV=1 for a SERV_CONTROL (co-master) bitstream")
-def test_serv_roi_presence(dev):
-    """demo_mcu_apps/roi_presence -- fixed-ROI face-presence gate: draws a fixed ROI
-    box on the OSD and reports (skin_count << 1) | present on the heartbeat. We
-    can't control whether a face is in the box, so we assert the pipeline runs (the
-    ROI skin count is in range 0..150) and the fixed ROI box is drawn on the OSD."""
-    overlay = _serv_overlay("roi_presence.bin")
-    try:
-        assert dev.serv_boot_load(overlay) > 0
-        time.sleep(0.5)
-        count = (dev.read_reg(mc.REG_HEARTBEAT) & 0xFF) >> 1
-        assert 0 <= count <= 127, f"ROI skin count out of range ({count})"  # clamped to 127 on 0xE0
-        # the fixed ROI box top-left corner is at OSD (row 1, col 17); it's drawn
-        # once and static -> readable. Expect a box-drawing glyph (0x80..0x85).
-        glyph = 0
-        for _ in range(20):
-            glyph = dev.osd_read_cells(1, 17, 1)[0] & 0xFF
-            if 0x80 <= glyph <= 0x85:
-                break
-            time.sleep(0.1)
-        assert 0x80 <= glyph <= 0x85, f"ROI box not drawn on the OSD (cell=0x{glyph:02X})"
-    finally:
-        dev.serv_mcu_reset()
-        time.sleep(0.05)
-
-
-@pytest.mark.skipif(not os.environ.get("OV7670_SERV"),
-                    reason="set OV7670_SERV=1 for a SERV_CONTROL (co-master) bitstream")
 def test_serv_roi_collect(dev):
     """demo_mcu_apps/roi_collect -- the sample-collection alignment guide. It draws
-    the same fixed ROI box as roi_presence, sets heartbeat 0x42, then PARKS without
+    the same fixed ROI box as roi_tm, sets heartbeat 0x42, then PARKS without
     touching the bus so the host can drive the grab port (collect_samples.py reads
     the ROI out of ch1 PSRAM). We assert: the liveness marker (0xE0 == 0x42), the
     box is drawn (a box glyph at OSD (3,22)), and -- the demo's whole point -- the
