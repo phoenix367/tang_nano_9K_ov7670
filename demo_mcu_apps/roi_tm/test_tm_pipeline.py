@@ -83,12 +83,24 @@ def mcu_mirror(roi565, masks, pos, threshold=tm.THRESHOLD):
 
 
 def parse_header(path):
-    """Pull TM_* sizes and the tm_mask[][] values out of a generated tm_model.h."""
+    """Parse a sparse tm_model.h: return (sizes, masks) with masks reconstructed
+    (dense, clauses x nwords uint32) from the CSR tm_clause_len / tm_lit arrays."""
     txt = open(path).read()
     sizes = {k: int(v) for k, v in re.findall(r"#define\s+(TM_\w+)\s+(-?\d+)", txt)}
-    rows = re.findall(r"\{\s*((?:0x[0-9a-fA-F]+u,?\s*)+)\}", txt)
-    masks = np.array([[int(x, 16) for x in re.findall(r"0x[0-9a-fA-F]+", r)] for r in rows],
-                     dtype=np.uint32)
+
+    def array(name):
+        body = re.search(name + r"\[[^\]]*\]\s*=\s*\{([^}]*)\}", txt).group(1)
+        return [int(x) for x in re.findall(r"\d+", body)]
+
+    lens = array("tm_clause_len")
+    flat = array("tm_lit")
+    assert sum(lens) == sizes["TM_TOTAL_LITS"] == len(flat)
+    masks = np.zeros((sizes["TM_CLAUSES"], sizes["TM_NWORDS"]), dtype=np.uint32)
+    off = 0
+    for j, n in enumerate(lens):
+        for L in flat[off:off + n]:
+            masks[j][L >> 5] |= np.uint32(1) << np.uint32(L & 31)
+        off += n
     return sizes, masks
 
 

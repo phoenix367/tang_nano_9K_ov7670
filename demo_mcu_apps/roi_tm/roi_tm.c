@@ -86,16 +86,20 @@ static void featurize(void)
 	roi_featurize(roi, lit);
 }
 
-/* Tsetlin Machine vote: each clause fires iff every included literal is 1. */
+/* Tsetlin Machine vote (sparse model): clause j fires iff all of its included
+ * literals (the next tm_clause_len[j] entries of tm_lit) are 1. */
 static int tm_vote(void)
 {
 	int vote = 0;
+	unsigned off = 0;
 	for (unsigned j = 0; j < TM_CLAUSES; j++) {
-		const unsigned int *m = tm_mask[j];
+		unsigned n = tm_clause_len[j];
 		int out = 1;
-		for (unsigned w = 0; w < TM_NWORDS; w++) {
-			if ((lit[w] & m[w]) != m[w]) { out = 0; break; }
+		for (unsigned t = 0; t < n; t++) {
+			unsigned L = tm_lit[off + t];
+			if (!((lit[L >> 5] >> (L & 31)) & 1u)) { out = 0; break; }
 		}
+		off += n;
 		if (out)
 			vote += (j < TM_POS) ? 1 : -1;
 	}
