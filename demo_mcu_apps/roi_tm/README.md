@@ -70,8 +70,11 @@ model, so these steps work as-is.
 
    (Free the serial port first — stop the web app if it holds `/dev/ttyGowin`.)
 
-3. **Use it.** The overlay draws the ROI box on the LCD; align your face to it. A
-   **"FACE"** label lights in the left border while a face is present. The heartbeat
+3. **Use it.** The overlay draws the ROI box on the LCD; align your face to it. The
+   left border shows the live result: **"FACE"/"----"**, **"FPS NN"** (processing
+   rate — loop iterations/sec, ~12 fps), and the confidence as two clause tallies
+   **"F NN N NN"** — `F` = face clauses that fired, `N` = non-face clauses; the gap
+   between them is how decisive the call is (net vote = F − N). The heartbeat
    register `0xE0` encodes the result: `bit7 = present`, `bits[6:0] = vote + 64`
    (decode `vote = (0xE0 & 0x7F) - 64`). `serv_upload.py ... --verify` prints `0xE0`
    for a few seconds; or watch it live:
