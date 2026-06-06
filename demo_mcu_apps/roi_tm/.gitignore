@@ -5,3 +5,4 @@ _test_model.h
 samples_baseline.jsonl
 samples_hard.jsonl
 *.png
+samples_det.jsonl

@@ -50,12 +50,13 @@ room to spare (the model is a table of 32-bit clause masks).
 [`tm_common.py`](tm_common.py) is the single source of truth for the three things
 the host and MCU must agree on **bit-for-bit**:
 
-- **featurize** — an 8-neighbour **Local Binary Pattern**. The 22×14 ROI is
-  2×2 block-averaged to an 11×7 brightness grid, then each interior cell emits 8
-  bits (`neighbour ≥ centre`, in order TL,T,TR,L,R,BL,B,BR) → 45 cells × 8 = **360
-  boolean features**. LBP is relative to each local neighbourhood, so it captures
-  texture/edge structure and is robust to overall lighting. Integer compares only —
-  no multiply/divide/float, so the overlay is libgcc-free.
+- **featurize** — luma **LBP** + **colour**. The 22×14 ROI is 2×2 block-averaged to
+  an 11×7 grid. Luma LBP: each interior cell emits 8 `neighbour ≥ centre` bits
+  (order TL,T,TR,L,R,BL,B,BR) → 45×8 = 360 (texture/edge, lighting-robust). Colour:
+  each cell emits 3 bits — `R>G`, `R>B`, and a skin cue (`R>G≥B & R−B≥2`) → 3×77 =
+  231. Total **591 features**. Colour is the key face-vs-background discriminator
+  (ablation on a real detection set: LBP-only RF 0.77 → +colour 0.84). Integer
+  compares only — no multiply/divide/float, so the overlay is libgcc-free.
 - **literal layout** — literal `k<N` is feature `k`, `k≥N` is its negation; bit `k`
   is in word `k>>5` at position `k&31`. Same packing in `pack_literals()` and the C.
 - **voting** — clauses `0..TM_POS-1` vote +1, the rest −1; face when `vote ≥ TM_THRESHOLD`.
@@ -84,10 +85,18 @@ so `train_tm.py` trains on them unchanged. Two source pairs:
 .venv/bin/python demo_mcu_apps/roi_tm/train_tm.py -i <dataset> --header /tmp/tm.h --model /tmp/tm.json
 ```
 
-| dataset | face / no-face | 5-fold CV (64 clauses) |
+| dataset | face / no-face | accuracy |
 | --- | --- | --- |
-| easy   | Olivetti / 2-photo crops | **0.979 ± 0.008** |
-| hard   | LFW / CIFAR-10           | **0.944 ± 0.013** |
+| easy   | Olivetti / 2-photo crops | 0.979 ± 0.008 (5-fold) |
+| hard   | LFW / CIFAR-10           | 0.944 ± 0.013 (5-fold) |
+| **realistic** | **YOLO detection set** ([`detection_dataset.py`](detection_dataset.py)) | **0.817 (holdout, LBP+colour)** |
+
+The easy/hard sets are *optimistic* (centred faces, mismatched negatives). The
+**detection set is the honest one** — real in-context faces + real background
+negatives from the same images. On it, general detection at 22×14 caps around ~0.78
+for *any* classifier on luma alone (a RandomForest upper-bound confirms it's a
+resolution limit, not the TM); **adding colour features lifts it to ~0.84 (RF) /
+0.82 (TM)** — colour is the main face-vs-background signal at this resolution.
 
 The LBP features are clearly learnable at 22×14. More clauses help on the hard set
 (holdout: 64→0.93, 128→0.95, 200→0.965) but the masks grow `clauses × 23 × 4` B and
@@ -105,6 +114,7 @@ requirements (LFW ≈200 MB, CIFAR ≈170 MB, cached under the sklearn data home
 | `train_tm.py` | CLI: load `samples.jsonl` → train → evaluate → emit `tm_model.h` + `tm_model.json`. `--synthetic` self-tests the whole path. |
 | `roi_tm.c` | SERV overlay: read ROI → featurize → bitwise TM inference → OSD label + heartbeat. |
 | `tm_model.h` | **Generated.** Clause masks + sizes. A default (trained on synthetic data) is committed so the build works before you retrain — its face predictions are meaningless until you train on real captures. |
+| `detection_dataset.py` | Build the device-format dataset from a YOLO **face-detection** set (e.g. `/mnt/data/datasets/Face-Detection-Dataset`): crops face bboxes (face) + non-overlapping regions (no-face) from the same images → real in-context faces + real backgrounds. The best source for this task. |
 | `visualize_dataset.py` | Render a `samples*.jsonl` dataset: a colour PNG montage grouped by label (`--ascii` for terminal luma previews). Eyeball alignment / balance / mislabels. |
 | `test_tm_pipeline.py` | Pure-host pipeline tests (no hardware). |
 

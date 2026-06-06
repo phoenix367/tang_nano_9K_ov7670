@@ -34,45 +34,58 @@ def brightness(p):
     return ((p >> 11) & 0x1F) + ((p >> 5) & 0x3F) + (p & 0x1F)
 
 
-# ---- LBP feature geometry (MUST match roi_tm.c) ----
-# The ROI grid as stored by collect_samples (22x14 = 308 RGB565 cells).
+# ---- feature geometry (MUST match roi_tm.c) ----
+# The ROI grid as stored by collect_samples (22x14 = 308 RGB565 cells). We 2x2
+# block-average to an 11x7 grid, then build two feature families on it:
+#   * luma LBP   -- 8 "neighbour brightness >= centre" bits per interior cell (texture)
+#   * colour     -- 3 chroma bits per cell: R>G, R>B, and a skin cue (R>G>=B & R-B>=2)
+# Colour is the big discriminator for faces vs background (ablation: +7% over LBP-only).
 ROI_COLS = 22
 ROI_ROWS = 14
-# 2x2 block-average downsample, then 8-neighbour LBP on the interior of the
-# downsampled grid -- each "neighbour >= centre" comparison is one boolean feature.
 DS = 2
 DSW = ROI_COLS // DS                  # 11
 DSH = ROI_ROWS // DS                  # 7
 LBP_CELLS = (DSW - 2) * (DSH - 2)     # 9*5 = 45 interior cells
-N_FEATURES = LBP_CELLS * 8            # 8 comparison bits per cell -> 360
+COLOR_CELLS = DSW * DSH               # 11*7 = 77 cells
+N_LBP = LBP_CELLS * 8                 # 360 luma LBP bits
+N_FEATURES = N_LBP + 3 * COLOR_CELLS  # 360 + 231 = 591
 # neighbour scan order (dr, dc): TL, T, TR, L, R, BL, B, BR -- MUST match roi_tm.c
 LBP_OFFSETS = ((-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1))
 
 
-def downsample(roi565):
-    """ROI RGB565 patch -> (DSH, DSW) brightness grid by 2x2 block average (>>2)."""
-    b = np.fromiter((brightness(int(p)) for p in roi565),
-                    dtype=np.int32, count=ROI_COLS * ROI_ROWS).reshape(ROI_ROWS, ROI_COLS)
-    return b.reshape(DSH, DS, DSW, DS).sum(axis=(1, 3)) >> 2
+def _downsample_channels(roi565):
+    """ROI RGB565 -> 2x2-block-summed channels, then scaled to (DSH,DSW) grids:
+    brightness (0..125), R (0..31), G->5bit (0..31), B (0..31). All integer, exactly
+    reproducible on the MCU (per-block sums >> shift)."""
+    a = np.asarray(roi565, dtype=np.int32).reshape(ROI_ROWS, ROI_COLS)
+    R = (a >> 11) & 0x1F
+    G = (a >> 5) & 0x3F
+    B = a & 0x1F
+    blk = lambda ch: ch.reshape(DSH, DS, DSW, DS).sum(axis=(1, 3))   # noqa: E731
+    Rs, Gs, Bs = blk(R), blk(G), blk(B)
+    return (Rs + Gs + Bs) >> 2, Rs >> 2, Gs >> 3, Bs >> 2            # bright, r, g5, b
 
 
 def featurize(roi565):
-    """LBP boolean features of the ROI patch (N_FEATURES,) bool.
+    """Luma-LBP + colour boolean features of the ROI patch (N_FEATURES,) bool.
 
-    8-neighbour Local Binary Pattern over the downsampled grid's interior: for each
-    interior cell, 8 bits = (neighbour brightness >= centre), in LBP_OFFSETS order.
-    The MCU recomputes the identical bits (integer compares only). `roi565` is the
-    row-major ROI patch as stored by collect_samples.
+    Layout (MUST match roi_tm.c): [0..359] 8-neighbour LBP over the downsampled
+    brightness interior (LBP_OFFSETS order); then per-cell colour bits over all
+    DSH*DSW cells, row-major: [360..436] R>G, [437..513] R>B, [514..590] skin.
+    `roi565` is the row-major ROI patch as stored by collect_samples.
     """
-    ds = downsample(roi565)
+    bright, r, g5, b = _downsample_channels(roi565)
     feats = np.zeros(N_FEATURES, dtype=bool)
     idx = 0
-    for r in range(1, DSH - 1):
-        for c in range(1, DSW - 1):
-            ctr = ds[r, c]
+    for rr in range(1, DSH - 1):
+        for cc in range(1, DSW - 1):
+            ctr = bright[rr, cc]
             for dr, dc in LBP_OFFSETS:
-                feats[idx] = ds[r + dr, c + dc] >= ctr
+                feats[idx] = bright[rr + dr, cc + dc] >= ctr
                 idx += 1
+    feats[idx:idx + COLOR_CELLS] = (r > g5).reshape(-1); idx += COLOR_CELLS
+    feats[idx:idx + COLOR_CELLS] = (r > b).reshape(-1); idx += COLOR_CELLS
+    feats[idx:idx + COLOR_CELLS] = ((r > g5) & (g5 >= b) & ((r - b) >= 2)).reshape(-1)
     return feats
 
 
@@ -227,7 +240,7 @@ def export_header(path, masks, n_features, pos, threshold=THRESHOLD, meta=""):
         "#ifndef TM_MODEL_H",
         "#define TM_MODEL_H",
         "",
-        f"#define TM_N         {n_features}   /* boolean features (LBP bits) */",
+        f"#define TM_N         {n_features}   /* boolean features (luma LBP + colour) */",
         f"#define TM_NLIT      {2 * n_features}   /* literals: feature then negation */",
         f"#define TM_NWORDS    {w}   /* uint32 words per literal/clause vector */",
         f"#define TM_CLAUSES   {m}",

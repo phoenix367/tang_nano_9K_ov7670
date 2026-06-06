@@ -30,26 +30,45 @@ def mcu_mirror(roi565, masks, pos, threshold=tm.THRESHOLD):
     packing (feature then negation, LSB-first), clause AND-compare, signed vote.
     Must equal infer_packed on the same featurization.
     """
-    b = [tm.brightness(int(p)) for p in roi565]   # row-major 14x22
-    # 2x2 block average -> DSH x DSW
-    ds = [[0] * tm.DSW for _ in range(tm.DSH)]
+    a = [int(p) for p in roi565]                  # row-major 14x22 RGB565
+    # 2x2 block sums -> downsampled channels (brightness, R, G->5bit, B)
+    dsBr = [[0] * tm.DSW for _ in range(tm.DSH)]
+    dsR = [[0] * tm.DSW for _ in range(tm.DSH)]
+    dsG5 = [[0] * tm.DSW for _ in range(tm.DSH)]
+    dsB = [[0] * tm.DSW for _ in range(tm.DSH)]
     for r in range(tm.DSH):
         for c in range(tm.DSW):
-            r0, c0 = 2 * r, 2 * c
-            s = (b[r0 * tm.ROI_COLS + c0] + b[r0 * tm.ROI_COLS + c0 + 1]
-                 + b[(r0 + 1) * tm.ROI_COLS + c0] + b[(r0 + 1) * tm.ROI_COLS + c0 + 1])
-            ds[r][c] = s >> 2
+            rs = gs = bs = 0
+            for (rr, cc) in ((2 * r, 2 * c), (2 * r, 2 * c + 1), (2 * r + 1, 2 * c), (2 * r + 1, 2 * c + 1)):
+                p = a[rr * tm.ROI_COLS + cc]
+                rs += (p >> 11) & 0x1F; gs += (p >> 5) & 0x3F; bs += p & 0x1F
+            dsBr[r][c] = (rs + gs + bs) >> 2
+            dsR[r][c] = rs >> 2; dsG5[r][c] = gs >> 3; dsB[r][c] = bs >> 2
     n = tm.N_FEATURES
     nwords = (2 * n + 31) // 32
     lit = [0] * nwords
     idx = 0
+
+    def setf(cond):
+        nonlocal idx
+        k = idx if cond else (n + idx)
+        lit[k >> 5] |= 1 << (k & 31)
+        idx += 1
+
     for r in range(1, tm.DSH - 1):
         for c in range(1, tm.DSW - 1):
-            ctr = ds[r][c]
+            ctr = dsBr[r][c]
             for dr, dc in tm.LBP_OFFSETS:
-                k = idx if ds[r + dr][c + dc] >= ctr else (n + idx)
-                lit[k >> 5] |= 1 << (k & 31)
-                idx += 1
+                setf(dsBr[r + dr][c + dc] >= ctr)
+    for r in range(tm.DSH):
+        for c in range(tm.DSW):
+            setf(dsR[r][c] > dsG5[r][c])
+    for r in range(tm.DSH):
+        for c in range(tm.DSW):
+            setf(dsR[r][c] > dsB[r][c])
+    for r in range(tm.DSH):
+        for c in range(tm.DSW):
+            setf(dsR[r][c] > dsG5[r][c] and dsG5[r][c] >= dsB[r][c] and (dsR[r][c] - dsB[r][c]) >= 2)
     vote = 0
     for j in range(masks.shape[0]):
         out = 1
@@ -87,7 +106,7 @@ def test_featurize_shape_and_determinism():
         f = tm.featurize(roi)
         assert f.shape == (tm.N_FEATURES,) and f.dtype == bool
         assert np.array_equal(f, tm.featurize(roi))
-    assert tm.N_FEATURES == ((tm.DSW - 2) * (tm.DSH - 2)) * 8
+    assert tm.N_FEATURES == ((tm.DSW - 2) * (tm.DSH - 2)) * 8 + 3 * tm.DSW * tm.DSH
 
 
 def test_mcu_mirror_matches_reference():
