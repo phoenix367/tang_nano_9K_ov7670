@@ -114,7 +114,7 @@ python demo_mcu_apps/roi_tm/detection_dataset.py \
 
 ```
 python demo_mcu_apps/roi_tm/train_tm.py -i demo_mcu_apps/roi_tm/samples_det.jsonl \
-    --clauses 64 --s 3.9 --T 20 --epochs 100 --states 100 \
+    --clauses 64 --s 3.9 --T 15 --epochs 200 --states 100 \
     --val-split 0.2 --augment 3 --threshold 4 --seed 1
 ```
 
@@ -122,12 +122,18 @@ python demo_mcu_apps/roi_tm/train_tm.py -i demo_mcu_apps/roi_tm/samples_det.json
 | --- | --- | --- |
 | features | 591 | ÷2 luma LBP (360) + ÷2 colour (231) |
 | clauses | 64 | 32 face (+1) / 32 non-face (−1) |
-| `s` / `T` / states | 3.9 / 20 / 100 | specificity / vote target / TA states |
-| epochs | 100 | |
+| `s` / `T` / states | 3.9 / 15 / 100 | specificity / vote target / TA states |
+| epochs | 200 | (more epochs + T=15 fit better than T=20/100 — train 0.812→0.831) |
 | augment | ×3 | brightness / WB / contrast / flip per train sample |
 | threshold | +4 | face when net vote ≥ 4 |
 | val split | 0.2 | seed 1 (deterministic; re-running reproduces the masks) |
-| **result** | train 0.812 / **val 0.812** | sparse model ~2 KB, overlay ~3.9 KB |
+| **result** | train 0.831 / **val 0.818** | sparse model ~2 KB, overlay ~4 KB |
+
+`--threshold` is a deployment knob, not used in the reported val accuracy (which is
+at net-vote ≥ 0). On this model the val-set vote split is face mean +9 / no-face
+mean −4.4; a threshold sweep peaks at +2 (val 0.825) but the camera's empty scene
+sits around +2, so **+4** is used to avoid empty-scene false positives (val 0.818)
+— erring toward not flickering "FACE", as desired.
 
 Training is deterministic (fixed seeds), so re-running the two commands regenerates
 the identical `tm_model.h`. The dataset JSONL is git-ignored (rebuild it from the
