@@ -18,7 +18,8 @@ Everything is resized to 22x14 and packed to RGB565 with numpy (no Pillow needed
 for the resize; Pillow is only used by sklearn to decode the sample JPEGs).
 
     .venv/bin/python demo_mcu_apps/roi_tm/baseline_dataset.py
-    .venv/bin/python demo_mcu_apps/roi_tm/train_tm.py -i demo_mcu_apps/roi_tm/samples_baseline.jsonl \
+    .venv/bin/python demo_mcu_apps/roi_tm/train_tm.py \
+        -i demo_mcu_apps/roi_tm/samples_baseline.jsonl \
         --header /tmp/tm_baseline.h --model /tmp/tm_baseline.json
 
 Caveat: this is a *pipeline* baseline. Olivetti faces are clean lab portraits and
@@ -34,8 +35,12 @@ import tarfile
 import urllib.request
 
 import numpy as np
-from sklearn.datasets import (fetch_lfw_people, fetch_olivetti_faces,
-                              get_data_home, load_sample_images)
+from sklearn.datasets import (
+    fetch_lfw_people,
+    fetch_olivetti_faces,
+    get_data_home,
+    load_sample_images,
+)
 
 # device ROI grid (must match collect_samples.py / tm_common.py)
 ROI_COLS, ROI_ROWS = 22, 14
@@ -166,14 +171,16 @@ def cifar_nonface_patches(n, seed=1, gray=False):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Build a face/no-face baseline dataset (device ROI format)")
+    ap = argparse.ArgumentParser(
+        description="Build a face/no-face baseline dataset (device ROI format)")
     ap.add_argument("-o", "--out", default=DEFAULT_OUT)
     ap.add_argument("--faces", type=int, default=400)
     ap.add_argument("--nonfaces", type=int, default=400)
     ap.add_argument("--face-source", choices=["olivetti", "lfw"], default="olivetti",
                     help="olivetti = clean lab faces; lfw = harder faces-in-the-wild")
     ap.add_argument("--nonface-source", choices=["samples", "cifar"], default="samples",
-                    help="samples = crops of 2 photos; cifar = diverse objects/scenes + hard negatives")
+                    help="samples = crops of 2 photos; "
+                         "cifar = diverse objects/scenes + hard negatives")
     ap.add_argument("--hard", action="store_true",
                     help="shortcut for --face-source lfw --nonface-source cifar")
     args = ap.parse_args()
@@ -184,7 +191,8 @@ def main():
     # grayscale the no-faces too; LFW is colour, so keep colour (and match the camera).
     gray = (fsrc == "olivetti")
     faces = (lfw_face_patches if fsrc == "lfw" else face_patches)(args.faces)
-    nonfaces = (cifar_nonface_patches if nsrc == "cifar" else nonface_patches)(args.nonfaces, gray=gray)
+    nonfaces = (cifar_nonface_patches if nsrc == "cifar" else nonface_patches)(
+        args.nonfaces, gray=gray)
     print(f"faces: {fsrc}   no-faces: {nsrc}   ({'grayscale' if gray else 'colour'} both)")
     assert all(len(p) == ROI_CELLS for p in faces + nonfaces), "patch size != ROI_CELLS"
 
@@ -196,7 +204,8 @@ def main():
     print(f"wrote {len(recs)} samples to {os.path.relpath(args.out)} "
           f"({len(faces)} face, {len(nonfaces)} no-face)")
     print("train:  .venv/bin/python demo_mcu_apps/roi_tm/train_tm.py "
-          f"-i {os.path.relpath(args.out)} --header /tmp/tm_baseline.h --model /tmp/tm_baseline.json")
+          f"-i {os.path.relpath(args.out)} "
+          "--header /tmp/tm_baseline.h --model /tmp/tm_baseline.json")
 
 
 if __name__ == "__main__":

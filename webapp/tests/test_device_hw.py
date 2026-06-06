@@ -318,7 +318,8 @@ def test_serv_roi_collect(dev):
     try:
         assert dev.serv_boot_load(overlay) > 0
         time.sleep(0.5)
-        assert (dev.read_reg(mc.REG_HEARTBEAT) & 0xFF) == 0x42, "roi_collect liveness marker missing"
+        assert (dev.read_reg(mc.REG_HEARTBEAT) & 0xFF) == 0x42, \
+            "roi_collect liveness marker missing"
         glyph = 0
         for _ in range(20):
             glyph = dev.osd_read_cells(1, 17, 1)[0] & 0xFF

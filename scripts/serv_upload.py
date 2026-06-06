@@ -117,7 +117,8 @@ def main():
         blob = open(path, "rb").read()
         t = time.monotonic()
         n = boot_load(mb, blob, reset_first=not args.no_reset)
-        print(f"uploaded {os.path.relpath(path)} ({len(blob)} B, {n} words) in {time.monotonic()-t:.1f}s")
+        print(f"uploaded {os.path.relpath(path)} ({len(blob)} B, {n} words) "
+              f"in {time.monotonic()-t:.1f}s")
         if args.verify:
             time.sleep(0.5)
             print("heartbeat (0xE0) for ~3 s:")

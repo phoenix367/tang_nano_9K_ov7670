@@ -9,8 +9,10 @@ By default it writes a colour PNG montage grouped by label (green border = face,
 red = no-face), upscaled for visibility. `--ascii` instead prints luma previews to
 the terminal (no display / Pillow needed) -- handy over SSH.
 
-    .venv/bin/python demo_mcu_apps/roi_tm/visualize_dataset.py demo_mcu_apps/roi_collect/samples.jsonl
-    .venv/bin/python demo_mcu_apps/roi_tm/visualize_dataset.py demo_mcu_apps/roi_tm/samples_hard.jsonl -o /tmp/hard.png
+    .venv/bin/python demo_mcu_apps/roi_tm/visualize_dataset.py \
+        demo_mcu_apps/roi_collect/samples.jsonl
+    .venv/bin/python demo_mcu_apps/roi_tm/visualize_dataset.py \
+        demo_mcu_apps/roi_tm/samples_hard.jsonl -o /tmp/hard.png
     .venv/bin/python demo_mcu_apps/roi_tm/visualize_dataset.py <dataset> --ascii --per-class 4
 """
 import argparse
@@ -110,7 +112,8 @@ def make_montage(faces, nonfaces, cols, scale, out):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Visualize a face/no-face ROI dataset (samples*.jsonl)")
+    ap = argparse.ArgumentParser(
+        description="Visualize a face/no-face ROI dataset (samples*.jsonl)")
     ap.add_argument("dataset", nargs="?", default=DEFAULT_DATASET, help="JSONL dataset")
     ap.add_argument("-o", "--out", help="output PNG (default: <dataset>.png)")
     ap.add_argument("--cols", type=int, default=20, help="patches per row in the montage")

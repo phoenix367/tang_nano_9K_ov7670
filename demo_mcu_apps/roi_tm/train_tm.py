@@ -85,18 +85,23 @@ def confusion(y_true, y_pred):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Train + export the ROI face-presence Tsetlin Machine")
-    ap.add_argument("-i", "--samples", default=DEFAULT_SAMPLES, help="JSONL dataset (collect_samples.py)")
-    ap.add_argument("--synthetic", action="store_true", help="train on synthetic data (self-test / default model)")
+    ap = argparse.ArgumentParser(
+        description="Train + export the ROI face-presence Tsetlin Machine")
+    ap.add_argument("-i", "--samples", default=DEFAULT_SAMPLES,
+                    help="JSONL dataset (collect_samples.py)")
+    ap.add_argument("--synthetic", action="store_true",
+                    help="train on synthetic data (self-test / default model)")
     ap.add_argument("--clauses", type=int, default=tm.DEFAULT_CLAUSES)
     ap.add_argument("--states", type=int, default=tm.DEFAULT_STATES)
     ap.add_argument("--s", type=float, default=tm.DEFAULT_S)
     ap.add_argument("--T", type=int, default=tm.DEFAULT_T)
     ap.add_argument("--epochs", type=int, default=tm.DEFAULT_EPOCHS)
-    ap.add_argument("--val-split", type=float, default=0.25, help="fraction held out for validation")
+    ap.add_argument("--val-split", type=float, default=0.25,
+                    help="fraction held out for validation")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--threshold", type=int, default=tm.THRESHOLD,
-                    help="decision threshold: face when vote >= this (raise to cut empty-scene flicker)")
+                    help="decision threshold: face when vote >= this "
+                         "(raise to cut empty-scene flicker)")
     ap.add_argument("--augment", type=int, default=0, metavar="N",
                     help="add N photometric augmentations per TRAIN sample (brightness/WB/"
                          "contrast/flip) for luminance robustness; val stays clean")
@@ -125,13 +130,15 @@ def main():
         aug_rng = np.random.default_rng(args.seed + 1)
         tr_rois, tr_y = [], []
         for i in trn:
-            tr_rois.append(rois[i]); tr_y.append(int(Y[i]))
+            tr_rois.append(rois[i])
+            tr_y.append(int(Y[i]))
             for _ in range(args.augment):
-                tr_rois.append(tm.augment(rois[i], aug_rng)); tr_y.append(int(Y[i]))
+                tr_rois.append(tm.augment(rois[i], aug_rng))
+                tr_y.append(int(Y[i]))
         X_trn, Y_trn = tm.featurize_matrix(tr_rois), np.asarray(tr_y, np.int8)
         n_features = X_trn.shape[1]
-    print(f"data: {ntot} samples ({int((Y==1).sum())} face / {int((Y==0).sum())} no-face) from {src}; "
-          f"train {X_trn.shape[0]} (aug x{args.augment}) / val {X_val.shape[0]}")
+    print(f"data: {ntot} samples ({int((Y==1).sum())} face / {int((Y==0).sum())} no-face) "
+          f"from {src}; train {X_trn.shape[0]} (aug x{args.augment}) / val {X_val.shape[0]}")
     if ntot < 8:
         print("WARNING: very few samples -- collect more for a usable model")
 
@@ -161,7 +168,8 @@ def main():
     meta = (f"source={src}  clauses={args.clauses} states={args.states} s={args.s} T={args.T} "
             f"epochs={args.epochs} augment={args.augment}  train_acc={tr_acc:.3f}"
             + (f" val_acc={va_acc:.3f}" if va_acc is not None else ""))
-    tm.export_header(args.header, masks, n_features, machine.pos, threshold=args.threshold, meta=meta)
+    tm.export_header(args.header, masks, n_features, machine.pos,
+                     threshold=args.threshold, meta=meta)
     with open(args.model, "w") as f:
         json.dump({"n_features": n_features, "clauses": args.clauses, "pos": machine.pos,
                    "threshold": args.threshold, "states": args.states, "s": args.s, "T": args.T,

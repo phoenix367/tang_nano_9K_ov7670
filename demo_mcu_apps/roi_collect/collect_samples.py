@@ -22,7 +22,8 @@ Workflow:
 Usage:
     .venv/bin/python demo_mcu_apps/roi_collect/collect_samples.py -p /dev/ttyGowin
     # already running the overlay (or a Modbus-only build, with --draw-box):
-    .venv/bin/python demo_mcu_apps/roi_collect/collect_samples.py -p /dev/ttyGowin --no-load --draw-box
+    .venv/bin/python demo_mcu_apps/roi_collect/collect_samples.py \
+        -p /dev/ttyGowin --no-load --draw-box
 
 Dataset: demo_mcu_apps/roi_collect/samples.jsonl (override with -o). Each line:
     {"label": 0|1, "roi565": [<308 RGB565 ints, row-major over the ROI grid>]}
@@ -40,7 +41,12 @@ import time
 _REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(_REPO, "webapp"))
 from modbus_client import (  # noqa: E402
-    ModbusRTU, DEFAULT_BAUD, DEFAULT_SLAVE, REG_GRAB, REG_OSD_ADDR, REG_OSD_DATA,
+    DEFAULT_BAUD,
+    DEFAULT_SLAVE,
+    REG_GRAB,
+    REG_OSD_ADDR,
+    REG_OSD_DATA,
+    ModbusRTU,
 )
 
 # ---- fixed ROI geometry: MUST match roi_collect.c / roi_tm.c ----
@@ -120,17 +126,21 @@ def draw_box(mb):
     def put(code):
         mb.write_single(REG_OSD_DATA, code)
 
-    go(top, left); put(BX_TL)
+    go(top, left)
+    put(BX_TL)
     for _ in range(left + 1, right):
         put(BX_H)
     put(BX_TR)
-    go(bot, left); put(BX_BL)
+    go(bot, left)
+    put(BX_BL)
     for _ in range(left + 1, right):
         put(BX_H)
     put(BX_BR)
     for r in range(top + 1, bot):
-        go(r, left); put(BX_V)
-        go(r, right); put(BX_V)
+        go(r, left)
+        put(BX_V)
+        go(r, right)
+        put(BX_V)
 
 
 def load_dataset(path):

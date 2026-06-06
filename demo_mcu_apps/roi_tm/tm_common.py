@@ -83,8 +83,10 @@ def featurize(roi565):
             for dr, dc in LBP_OFFSETS:
                 feats[idx] = bright[rr + dr, cc + dc] >= ctr
                 idx += 1
-    feats[idx:idx + COLOR_CELLS] = (r > g5).reshape(-1); idx += COLOR_CELLS
-    feats[idx:idx + COLOR_CELLS] = (r > b).reshape(-1); idx += COLOR_CELLS
+    feats[idx:idx + COLOR_CELLS] = (r > g5).reshape(-1)
+    idx += COLOR_CELLS
+    feats[idx:idx + COLOR_CELLS] = (r > b).reshape(-1)
+    idx += COLOR_CELLS
     feats[idx:idx + COLOR_CELLS] = ((r > g5) & (g5 >= b) & ((r - b) >= 2)).reshape(-1)
     return feats
 

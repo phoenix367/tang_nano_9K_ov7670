@@ -39,11 +39,16 @@ def mcu_mirror(roi565, masks, pos, threshold=tm.THRESHOLD):
     for r in range(tm.DSH):
         for c in range(tm.DSW):
             rs = gs = bs = 0
-            for (rr, cc) in ((2 * r, 2 * c), (2 * r, 2 * c + 1), (2 * r + 1, 2 * c), (2 * r + 1, 2 * c + 1)):
+            for (rr, cc) in ((2 * r, 2 * c), (2 * r, 2 * c + 1),
+                             (2 * r + 1, 2 * c), (2 * r + 1, 2 * c + 1)):
                 p = a[rr * tm.ROI_COLS + cc]
-                rs += (p >> 11) & 0x1F; gs += (p >> 5) & 0x3F; bs += p & 0x1F
+                rs += (p >> 11) & 0x1F
+                gs += (p >> 5) & 0x3F
+                bs += p & 0x1F
             dsBr[r][c] = (rs + gs + bs) >> 2
-            dsR[r][c] = rs >> 2; dsG5[r][c] = gs >> 3; dsB[r][c] = bs >> 2
+            dsR[r][c] = rs >> 2
+            dsG5[r][c] = gs >> 3
+            dsB[r][c] = bs >> 2
     n = tm.N_FEATURES
     nwords = (2 * n + 31) // 32
     lit = [0] * nwords
@@ -68,7 +73,8 @@ def mcu_mirror(roi565, masks, pos, threshold=tm.THRESHOLD):
             setf(dsR[r][c] > dsB[r][c])
     for r in range(tm.DSH):
         for c in range(tm.DSW):
-            setf(dsR[r][c] > dsG5[r][c] and dsG5[r][c] >= dsB[r][c] and (dsR[r][c] - dsB[r][c]) >= 2)
+            setf(dsR[r][c] > dsG5[r][c] and dsG5[r][c] >= dsB[r][c]
+                 and (dsR[r][c] - dsB[r][c]) >= 2)
     vote = 0
     for j in range(masks.shape[0]):
         out = 1

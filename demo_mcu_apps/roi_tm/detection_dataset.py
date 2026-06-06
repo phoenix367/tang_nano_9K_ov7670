@@ -76,7 +76,8 @@ def patch565(img, rect):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Build ROI face/no-face dataset from a YOLO detection set")
+    ap = argparse.ArgumentParser(
+        description="Build ROI face/no-face dataset from a YOLO detection set")
     ap.add_argument("--root", default="/mnt/data/datasets/Face-Detection-Dataset")
     ap.add_argument("--split", default="train", choices=["train", "val"])
     ap.add_argument("-o", "--out", default=DEFAULT_OUT)
@@ -133,7 +134,8 @@ def main():
                 cw = int(ch * ROI_ASPECT)
                 if cw >= W or ch >= H:
                     continue
-                x0 = int(rng.integers(0, W - cw)); y0 = int(rng.integers(0, H - ch))
+                x0 = int(rng.integers(0, W - cw))
+                y0 = int(rng.integers(0, H - ch))
                 rect = (x0, y0, x0 + cw, y0 + ch)
                 if overlaps(rect, boxes_px):
                     continue
