@@ -52,19 +52,20 @@ model, so these steps work as-is.
    ```
 
 2. **Upload it** to the SERV core, either:
-   - **Web app:** the **Firmware** tab → select `build/serv_fw/roi_tm.bin` → Upload, or
-   - **CLI** (uploads + resets the MCU into it via the bootloader mailbox):
+   - **CLI** ([`scripts/serv_upload.py`](../../scripts/serv_upload.py) — uploads + resets
+     the MCU into it via the bootloader mailbox; takes an overlay name or a `.bin` path):
      ```
-     .venv/bin/python -c "import sys; sys.path.insert(0,'webapp'); \
-       from modbus_client import ModbusRTU; mb=ModbusRTU('/dev/ttyGowin'); \
-       print('words:', mb.serv_boot_load(open('build/serv_fw/roi_tm.bin','rb').read())); mb.close()"
+     scripts/serv_upload.py -p /dev/ttyGowin roi_tm           # or --verify to watch 0xE0
      ```
+   - **Web app:** the **Firmware** tab → select `build/serv_fw/roi_tm.bin` → Upload.
+
    (Free the serial port first — stop the web app if it holds `/dev/ttyGowin`.)
 
 3. **Use it.** The overlay draws the ROI box on the LCD; align your face to it. A
    **"FACE"** label lights in the left border while a face is present. The heartbeat
    register `0xE0` encodes the result: `bit7 = present`, `bits[6:0] = vote + 64`
-   (decode `vote = (0xE0 & 0x7F) - 64`). Watch it live:
+   (decode `vote = (0xE0 & 0x7F) - 64`). `serv_upload.py ... --verify` prints `0xE0`
+   for a few seconds; or watch it live:
    ```
    .venv/bin/python -c "import sys,time; sys.path.insert(0,'webapp'); \
      from modbus_client import ModbusRTU,REG_HEARTBEAT as H; mb=ModbusRTU('/dev/ttyGowin'); \

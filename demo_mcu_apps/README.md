@@ -13,8 +13,11 @@ exact register (`word_addr + lane_offset(sel)`) and the value, so any register �
 word-aligned or not — is reachable with normal loads/stores.
 
 CMake builds each overlay to `build/serv_fw/<name>.bin` (part of the
-`serv_firmware` target). Upload one with the web app's **Firmware** tab or
-`modbus_client.serv_boot_load(open(path,'rb').read())`. An overlay that **jumps
+`serv_firmware` target). Upload one with the CLI
+[`scripts/serv_upload.py`](../scripts/serv_upload.py) (e.g.
+`scripts/serv_upload.py -p /dev/ttyGowin <name>`; `--list` shows what's built), the
+web app's **Firmware** tab, or `modbus_client.serv_boot_load(open(path,'rb').read())`.
+An overlay that **jumps
 back to `0x0000`** when finished returns control to the bootloader, so the host
 can load another via the bootloader's re-arm (`osd_hello` does this). An overlay
 that **parks** (loops forever) can't re-arm — but `serv_boot_load` resets the MCU
