@@ -17,6 +17,8 @@ import threading
 import ov7670
 from flask import Flask, Response, jsonify, render_template, request
 from modbus_client import (
+    DEFAULT_BAUD,
+    DEFAULT_SLAVE,
     FRAME_H,
     FRAME_W,
     OSD_ROWS,
@@ -110,6 +112,11 @@ def _classify(e):
     reports disconnected and the UI can prompt a reconnect; transient
     timeouts/CRC are already retried in the client and just surface as errors."""
     global _client
+    # TimeoutError is itself an OSError subclass, but it's an operation timeout
+    # (e.g. no response / the bootloader mailbox didn't drain), NOT a lost port --
+    # keep the connection and just report it.
+    if isinstance(e, TimeoutError):
+        return _error(e)
     if isinstance(e, OSError):
         if _client is not None:
             _client.close()
@@ -123,7 +130,10 @@ def _classify(e):
 # --------------------------------------------------------------------------- #
 @app.route("/")
 def index():
-    return render_template("index.html")
+    # Pre-fill the connect form from platform.json (same source as the gateware)
+    # so the form defaults can't drift from what the device actually uses.
+    return render_template("index.html",
+                           default_baud=DEFAULT_BAUD, default_slave=DEFAULT_SLAVE)
 
 
 @app.route("/api/ports")
@@ -183,8 +193,8 @@ def api_connect():
     port = data.get("port")
     if not port:
         return _error("no port specified")
-    baud = int(data.get("baud", 1000000))
-    slave = int(data.get("slave", 7))
+    baud = int(data.get("baud", DEFAULT_BAUD))
+    slave = int(data.get("slave", DEFAULT_SLAVE))
     timeout = float(data.get("timeout", 1.0))
     with _lock:
         if _client is not None:
@@ -430,6 +440,41 @@ def api_reset_defaults():
         try:
             client = _require_client()
             client.reset_to_defaults()
+        except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError) as e:
+            return _classify(e)
+    return jsonify(ok=True)
+
+
+@app.route("/api/serv/upload", methods=["POST"])
+def api_serv_upload():
+    """Upload an overlay firmware (raw .bin body) to the SERV bootloader and hand
+    it control. The MCU is reset back into the bootloader first, so the upload
+    works regardless of what it was running (including a parked overlay). Requires
+    a SERV-enabled bitstream running the bootloader; otherwise the mailbox never
+    drains and the upload times out (surfaced as an error)."""
+    blob = request.get_data()                    # raw octet-stream
+    if not blob:
+        return _error("no firmware uploaded")
+    if len(blob) > 12288:                        # overlay region 0x1000..0x3FFF (16 KB RAM)
+        return _error(f"overlay too large ({len(blob)} bytes; max 12288)")
+    with _lock:
+        try:
+            client = _require_client()
+            words = client.serv_boot_load(blob)
+        except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError) as e:
+            return _classify(e)
+    return jsonify(ok=True, bytes=len(blob), words=words)
+
+
+@app.route("/api/serv/reset", methods=["POST"])
+def api_serv_reset():
+    """Reset the SERV soft core back into its bootloader (Modbus reg 0xE2). Recovers
+    the MCU from any state -- including a parked overlay -- so the next upload can
+    load any firmware. A no-op on a non-SERV bitstream."""
+    with _lock:
+        try:
+            client = _require_client()
+            client.serv_mcu_reset()
         except (RuntimeError, ModbusError, ValueError, TimeoutError, OSError) as e:
             return _classify(e)
     return jsonify(ok=True)

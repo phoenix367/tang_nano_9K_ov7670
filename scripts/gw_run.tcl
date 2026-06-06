@@ -12,6 +12,13 @@ set stage $::env(STAGE)
 puts "Opening project: $gprj"
 open_project $gprj
 
+# Optional explicit top module. The camera project leaves TOP unset and relies on
+# its gprj's top; the standalone serv_blink project sets TOP=serv_blink.
+if {[info exists ::env(TOP)]} {
+    puts "set_option -top_module $::env(TOP)"
+    set_option -top_module $::env(TOP)
+}
+
 # Placement / routing effort. route_option 2 (high-effort timing-driven routing)
 # recovers ~+8 MHz on `base` and lifts fb_clk from a tight x1.04 to x1.06 vs the
 # Gowin defaults -- it offsets the placement pressure the 27 MHz Wishbone bus added

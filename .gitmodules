@@ -1,3 +1,6 @@
 [submodule "FPGADesignElements"]
 	path = FPGADesignElements
 	url = https://github.com/laforest/FPGADesignElements.git
+[submodule "serv"]
+	path = serv
+	url = https://github.com/olofk/serv.git

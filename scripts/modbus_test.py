@@ -17,6 +17,7 @@ Examples:
 """
 
 import argparse
+import os
 import struct
 import sys
 
@@ -24,6 +25,20 @@ try:
     import serial  # pyserial
 except ImportError:
     sys.exit("error: pyserial not installed -- run: pip install pyserial")
+
+# UART/Modbus defaults from the shared platform.json (same source as the
+# gateware). Fall back to the historical 8-E-1 @ 1 Mbaud / id 7 if this script
+# is run as a standalone copy without the repo's platform.json alongside it.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    import platform_config as _platform
+    DEFAULT_BAUD, DEFAULT_SLAVE = _platform.UART_BAUD, _platform.MODBUS_DEVICE_ID
+    DEFAULT_BYTESIZE = _platform.UART_DATA_BITS
+    DEFAULT_PARITY = _platform.UART_PARITY
+    DEFAULT_STOP = _platform.UART_STOP_BITS
+except Exception:
+    DEFAULT_BAUD, DEFAULT_SLAVE = 1000000, 7
+    DEFAULT_BYTESIZE, DEFAULT_PARITY, DEFAULT_STOP = 8, "E", 1
 
 
 def crc16(data: bytes) -> int:
@@ -52,13 +67,13 @@ class ModbusError(Exception):
 
 
 class ModbusRTU:
-    def __init__(self, port, baud=1000000, slave=7, timeout=1.0):
+    def __init__(self, port, baud=DEFAULT_BAUD, slave=DEFAULT_SLAVE, timeout=1.0):
         if not (0 <= slave <= 247):
             raise ValueError(f"slave id {slave} out of range 0..247")
         self.slave = slave
         self.ser = serial.Serial(
-            port=port, baudrate=baud, bytesize=serial.EIGHTBITS,
-            parity=serial.PARITY_EVEN, stopbits=serial.STOPBITS_ONE,
+            port=port, baudrate=baud, bytesize=DEFAULT_BYTESIZE,
+            parity=DEFAULT_PARITY, stopbits=DEFAULT_STOP,
             timeout=timeout)
 
     def close(self):
@@ -175,8 +190,10 @@ def main():
     ap = argparse.ArgumentParser(description="Modbus RTU test client for the Tang Nano 9K slave")
     ap.add_argument("-p", "--port", default="/dev/ttyGowin",
                     help="serial port (default: /dev/ttyGowin)")
-    ap.add_argument("-b", "--baud", type=int, default=1000000, help="baud rate (default 1000000)")
-    ap.add_argument("-s", "--slave", type=int, default=7, help="slave/unit id (default 7)")
+    ap.add_argument("-b", "--baud", type=int, default=DEFAULT_BAUD,
+                    help=f"baud rate (default {DEFAULT_BAUD})")
+    ap.add_argument("-s", "--slave", type=int, default=DEFAULT_SLAVE,
+                    help=f"slave/unit id (default {DEFAULT_SLAVE})")
     ap.add_argument("--timeout", type=float, default=1.0, help="response timeout s (default 1.0)")
     ap.add_argument("--reg-count", type=int, default=8,
                     help="holding registers on the slave (default 8)")

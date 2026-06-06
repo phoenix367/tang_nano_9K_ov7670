@@ -22,10 +22,10 @@
       </label>
       <button id="refresh-ports" class="ghost" title="Rescan serial ports">&#x21bb;</button>
       <label>Baud
-        <input id="baud" type="number" value="1000000" min="300" step="100">
+        <input id="baud" type="number" value="{{ default_baud }}" min="300" step="100">
       </label>
       <label>Slave&nbsp;id
-        <input id="slave" type="number" value="7" min="0" max="247">
+        <input id="slave" type="number" value="{{ default_slave }}" min="0" max="247">
       </label>
       <button id="connect" class="primary">Connect</button>
       <button id="disconnect" class="danger" disabled>Disconnect</button>
@@ -45,6 +45,7 @@
     <button class="tab" data-tab="color">Color</button>
     <button class="tab" data-tab="capture">Capture</button>
     <button class="tab" data-tab="overlay">OSD overlay</button>
+    <button class="tab" data-tab="firmware">Firmware</button>
   </nav>
 
   <div class="tab-content" id="tab-basic" hidden>
@@ -180,6 +181,28 @@
           <div id="osd-pseudo" class="osd-grid"></div>
         </div>
       </div>
+    </section>
+  </div>
+
+  <div class="tab-content" id="tab-firmware" hidden>
+    <section class="panel">
+      <h2>SERV firmware overlay</h2>
+      <p class="hint">Upload an overlay firmware (a <code>.bin</code> linked at
+        0x1000) to the SERV soft-core bootloader. The MCU copies it into RAM over
+        the Modbus bus and jumps to it. An overlay that returns to the bootloader
+        when done (like <code>osd_hello</code>) can be re-loaded without a reset; one
+        that parks needs a device reset before the next upload. Requires a
+        SERV-enabled bitstream (<code>serv_mcu.enable</code>); e.g.
+        <code>build/serv_fw/osd_hello.bin</code>.</p>
+      <div class="row">
+        <input type="file" id="fw-file" accept=".bin,application/octet-stream">
+        <button id="fw-upload" class="primary">Upload &amp; run</button>
+        <button id="fw-reset" class="ghost" title="Reset the SERV MCU back into its bootloader">Reset MCU</button>
+      </div>
+      <p class="hint">Upload resets the MCU into the bootloader first, so it loads
+        over any running overlay (even one that parks). <b>Reset MCU</b> returns the
+        core to the bootloader on its own.</p>
+      <div id="fw-status" class="hint"></div>
     </section>
   </div>
 

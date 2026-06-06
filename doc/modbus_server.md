@@ -4,7 +4,7 @@ The board runs a **Modbus RTU slave** on the FT2232H channel-B UART so a host PC
 can read/write live OV7670 registers, poll status, and grab full camera frames.
 This document covers the RTL that implements it — `modbus_rtu_slave.sv` (the
 protocol engine) and the **Wishbone bus** behind it (`modbus_cam_backend.sv` as the
-composition root, a `wb_interconnect`, and four peripheral slaves) — their state
+composition root, a `wb_interconnect`, and five peripheral slaves) — their state
 machines, and how they connect to the rest of the design.
 
 For the host-facing register map and usage, see
@@ -26,9 +26,11 @@ flowchart TB
     SYS["wb_sysregs.sv<br/>0xF0/F1/F2/F9/FA"]
     GRAB["wb_grab.sv<br/>0xF3..F8 + ≥0x1000"]
     WOSD["wb_osd.sv<br/>0xFB/FC/FD"]
+    WGPIO["wb_gpio.sv<br/>0xEA/EB"]
     I2C["i2c_control_fsm → OV7670 (SCCB)"]
     CH1["VGA_timing → psram_ch1 (PSRAM ch1)"]
     OSD["VGA_timing → OSDOverlay char buffer"]
+    PINS["GPIO pins 48/49/76/30"]
 
     HOST <-->|"USB / FT2232H ch B"| UART
     UART <-->|"rx/tx bytes"| SLAVE
@@ -37,9 +39,11 @@ flowchart TB
     IC --> SYS
     IC --> GRAB
     IC --> WOSD
+    IC --> WGPIO
     SCCB -->|"camera reg 0x00..0xC9"| I2C
     GRAB -->|"stream pixel ≥0x1000 / grab 0xF3"| CH1
     WOSD -->|"OSD text 0xFB..0xFD"| OSD
+    WGPIO <-->|"4 bidir pins"| PINS
 
     subgraph WB["modbus_cam_backend.sv — Wishbone B4 classic-standard bus (sys_clk)"]
         IC
@@ -47,12 +51,13 @@ flowchart TB
         SYS
         GRAB
         WOSD
+        WGPIO
     end
 ```
 
 `modbus_cam_backend.sv` keeps the same module name and port list it always had,
 but it is now a **thin composition wrapper**: internally it renames the slave's
-`be_*` handshake to a Wishbone master and instantiates the interconnect + four
+`be_*` handshake to a Wishbone master and instantiates the interconnect + five
 slaves. So `camera_control.v` and the integration test
 [`sim/integration/modbus/cam_bridge.sv`](../sim/integration/modbus/cam_bridge.sv)
 are unchanged across the refactor, and that test doubles as a byte-identical
@@ -168,13 +173,13 @@ stays well under the fabric budget (the payload maps to one block RAM; see
 `modbus_cam_backend.sv` was once one monolithic FSM that bundled five jobs behind
 the `be_*` handshake. It is now a thin wrapper around a Wishbone B4
 classic-standard bus: the `be_*`-as-master nets feed `wb_interconnect.sv`, which
-address-decodes to **four independent, individually-testable slaves**. Each
+address-decodes to **five independent, individually-testable slaves**. Each
 concern lives in its own file, and each has its own unit test (see
 [testing.md](testing.md)).
 
 ### `wb_interconnect.sv` — address decode + muxing
 
-Purely combinational: one master, four slaves. It decodes `wb_adr_i` into one
+Purely combinational: one master, five slaves. It decodes `wb_adr_i` into one
 mutually-exclusive per-slave strobe and muxes `dat_r` / `ack` back. The register
 map is byte-identical to before, so the decode uses **explicit constants for the
 scattered `0xFx` block** (never ranges — `F0/F1/F2/F9/FA` go to sysregs while
@@ -183,10 +188,11 @@ scattered `0xFx` block** (never ranges — `F0/F1/F2/F9/FA` go to sysregs while
 | Address(es)                       | Slave         |
 | --------------------------------- | ------------- |
 | `0x0000..0x00C9`                  | `wb_sccb`     |
+| `0xEA, EB`                        | `wb_gpio`     |
 | `0xF0, F1, F2, F9, FA`            | `wb_sysregs`  |
 | `0xF3..F8` and (read) `≥ 0x1000`  | `wb_grab`     |
 | `0xFB, FC, FD`                    | `wb_osd`      |
-| anything else (`0xCA..EF`, `FE/FF`, `0x100..0xFFF`, stream-band writes) | **default: ack with `dat_r = 0`** |
+| anything else (`0xCA..E9`, `EE/EF`, `FE/FF`, `0x100..0xFFF`, stream-band writes) | **default: ack with `dat_r = 0`** |
 
 The default-ack arm is essential: an unmapped address still acks (returning 0), so
 the master never hangs — preserving the old monolith's `default` behaviour. Since
@@ -222,6 +228,26 @@ uptime counter, independent of the bus:
 | `0xF1/0xF2` | read uptime hi/lo (a hi read latches the counter for a coherent pair) |
 | `0xF9`      | read watchdog health `{monitoring, any_hang, cam, mem, lcd}` (from `wd_health`, see [video_datapath.md](video_datapath.md#health-watchdog)) |
 | `0xFA`      | write 1 = reset to defaults — pulse `cam_reinit`, restarting the camera init FSM in `camera_control.v` (re-walks the ROM like power-on) |
+| `0xE0`      | RW scratch / heartbeat. Reads 0 on a default build; on a `SERV_CONTROL` build the SERV co-master increments it (see [serv.md](serv.md#phase-2--serv-as-a-2nd-wishbone-master-in-the-camera-design)) |
+| `0xE2`      | write 1 = reset the SERV MCU — pulse `mcu_reset`, which crosses to `mcu_clk` and restarts the core into its bootloader (recovers a parked overlay so the host can load any firmware). Reads 0; a no-op on a non-SERV build (see [serv.md](serv.md#bootloader-load-an-overlay-from-the-host-at-runtime)) |
+| `0xE4/E8/EC`| SERV bootloader mailbox (`SERV_CONTROL` build): `BOOT_LEN` / `BOOT_DATA` / `BOOT_STATUS` — host streams an overlay firmware to the bootloader (see [serv.md](serv.md#bootloader-load-an-overlay-from-the-host-at-runtime)) |
+
+### `wb_gpio.sv` — 4 bidirectional GPIO pins (`0xEA/0xEB`)
+
+A general-purpose I/O slave: four FPGA pins (Tang Nano 9K pins 48, 49, 76, 30 =
+`gpio[0..3]`) controllable from **either** bus master — the host over Modbus, or the
+SERV core through its `0x40000000` EXT window (`GPIO_DIR`/`GPIO_DATA` in
+[`serv_io.h`](../demo_mcu_apps/common/serv_io.h)).
+
+| Address | Meaning |
+| ------- | ------- |
+| `0xEA` `GPIO_DIR`  | bits[3:0] direction: `1` = output (drive), `0` = input (hi-Z). **Reset 0 → all four pins are inputs.** |
+| `0xEB` `GPIO_DATA` | write bits[3:0] = output latch (driven on pins whose `DIR=1`); read bits[3:0] = live pin levels (after a 2-FF synchroniser) |
+
+Each pin is a tri-state pad in `camera_control.v` (`gpio[i] = dir[i] ? out[i] : 1'bz`).
+Host helpers: `modbus_client.gpio_set_dir/gpio_write/gpio_read`. The pins only exist
+after rebuilding + reflashing the bitstream (`hw_all`); the `.cst` pin-out is in
+`src/camera_ov7670.cst`.
 
 ### `wb_grab.sv` — frame grab + stream (`0xF3..F8`, `≥0x1000`)
 
@@ -232,11 +258,19 @@ a stream pointer and a 256-bit burst buffer:
 
 | Addr        | Action                                                          |
 | ----------- | --------------------------------------------------------------- |
-| `0xF3`      | write 1 = arm a grab; write 2 = single-word ch1 read; read = `{calib,busy}` |
-| `0xF4/0xF5` | write the single-read ch1 address lo/hi (debug)                 |
-| `0xF6/0xF7` | read the single-read ch1 word hi/lo halves (debug)              |
+| `0xF3`      | write 1 = arm a grab; 2 = single-word ch1 read; 3 = single-burst ch1 write; read = `{calib,busy}` |
+| `0xF4/0xF5` | write the ch1 read/write burst address lo/hi (debug)            |
+| `0xF6/0xF7` | read = the ch1 read-back word hi/lo; **write = the ch1 write-data hi/lo** |
 | `0xF8`      | write = rewind the download stream pointer to pixel 0           |
 | `≥0x1000` (read) | return the next 16-bit frame pixel, advance the pointer    |
+
+The **write path** (`0xF6/0xF7` value, `0xF4/0xF5` address, then `0xF3<=3`) makes
+`psram_ch1` write that 32-bit value to every word of the target burst, so a host
+or the SERV MCU can write a known sequence and read it back (the read path above)
+to verify PSRAM — used by `demo_mcu_apps/psram_test` and
+`modbus_client.psram_write`/`psram_read`. (`0xF6/0xF7` keep their read-as-ch1-word
+meaning; the write meaning is new and non-conflicting, so the OV7670/Modbus map is
+unchanged.)
 
 ```mermaid
 stateDiagram-v2

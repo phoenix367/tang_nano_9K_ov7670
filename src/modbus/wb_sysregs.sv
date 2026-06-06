@@ -54,6 +54,12 @@ module wb_sysregs
 
     // pulse: re-run the power-on camera initialization (reset to defaults)
     output reg         cam_reinit,
+    // pulse: host-commanded reset of the SERV MCU (write 0xE2 bit0). Crosses to
+    // the mcu_clk domain in camera_control.v (CDC_Pulse_Synchronizer_2phase) and
+    // re-arms the CPU reset hold -> the MCU restarts into the bootloader, so the
+    // host can recover even a parked overlay and load any firmware. Unused on a
+    // non-SERV build (left unconnected). Reads 0 (write-only, like 0xFA).
+    output reg         mcu_reset,
     // watchdog health bits: [4]=monitoring [3]=any-hang [2]=cam [1]=mem [0]=lcd
     input  wire [4:0]  wd_health
 );
@@ -62,13 +68,34 @@ module wb_sysregs
                       ADDR_UPTIME_HI = 16'h00F1,
                       ADDR_UPTIME_LO = 16'h00F2,
                       ADDR_HEALTH    = 16'h00F9,
-                      ADDR_REINIT    = 16'h00FA;
+                      ADDR_REINIT    = 16'h00FA,
+                      // host-commanded SERV MCU reset (write bit0 -> reset pulse;
+                      // reads 0). Recovers the MCU from any state into the bootloader.
+                      ADDR_MCU_RESET = 16'h00E2,
+                      // Scratch/heartbeat register: a co-master (the SERV soft
+                      // core, Phase 2) writes an incrementing counter here and the
+                      // host reads it back to confirm the CPU is live on the bus.
+                      // Reads 0 on a build without SERV. RW, no side effects.
+                      ADDR_HEARTBEAT = 16'h00E0,
+                      // SERV bootloader mailbox (host = producer, SERV = consumer).
+                      // BOOT_DATA is written only by the host and read only by SERV,
+                      // so the slave tells producer from consumer by wb_we_i.
+                      // Word-aligned register numbers (0xE0/E4/E8/EC) so SERV's
+                      // RV32I lw/sw are aligned (be_addr = byte adr[15:0]).
+                      ADDR_BOOT_LEN    = 16'h00E4,   // host writes overlay length (words) -> start
+                      ADDR_BOOT_DATA   = 16'h00E8,   // host write -> pending; SERV read -> clears
+                      ADDR_BOOT_STATUS = 16'h00EC;   // read: bit1=start, bit0=pending
 
     wire sel = wb_stb_i & wb_cyc_i;       // this slave is addressed this cycle
 
     reg [15:0] uptime;          // free-running seconds-ish, 0 on reset
     reg [15:0] uptime_latch;    // captured on a high-byte read for a coherent pair
     reg [31:0] uptime_div;
+    reg [15:0] heartbeat;       // co-master scratch (0xE0); 0 until something writes it
+    reg [15:0] boot_len;        // overlay length in 16-bit words (host -> SERV)
+    reg [15:0] boot_data;       // current overlay word in the mailbox
+    reg        boot_pending;    // a word is waiting for SERV to consume
+    reg        boot_start;      // host has written BOOT_LEN (upload begun)
 
     // single-cycle slave: acknowledge immediately
     assign wb_ack_o = sel;
@@ -80,6 +107,10 @@ module wb_sysregs
             ADDR_UPTIME_HI: wb_dat_o = {8'h00, uptime[15:8]};
             ADDR_UPTIME_LO: wb_dat_o = {8'h00, uptime_latch[7:0]};
             ADDR_HEALTH:    wb_dat_o = {11'd0, wd_health};
+            ADDR_HEARTBEAT: wb_dat_o = heartbeat;
+            ADDR_BOOT_LEN:    wb_dat_o = boot_len;
+            ADDR_BOOT_DATA:   wb_dat_o = boot_data;
+            ADDR_BOOT_STATUS: wb_dat_o = {14'd0, boot_start, boot_pending};
             default:        wb_dat_o = 16'h0000;     // 0xFA + any unowned address
         endcase
     end
@@ -87,11 +118,18 @@ module wb_sysregs
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             cam_reinit   <= `WRAP_SIM(#1) 1'b0;
+            mcu_reset    <= `WRAP_SIM(#1) 1'b0;
             uptime       <= `WRAP_SIM(#1) 16'h0000;
             uptime_latch <= `WRAP_SIM(#1) 16'h0000;
             uptime_div   <= `WRAP_SIM(#1) 32'h0;
+            heartbeat    <= `WRAP_SIM(#1) 16'h0000;
+            boot_len     <= `WRAP_SIM(#1) 16'h0000;
+            boot_data    <= `WRAP_SIM(#1) 16'h0000;
+            boot_pending <= `WRAP_SIM(#1) 1'b0;
+            boot_start   <= `WRAP_SIM(#1) 1'b0;
         end else begin
             cam_reinit <= `WRAP_SIM(#1) 1'b0;   // 1-cycle pulse default
+            mcu_reset  <= `WRAP_SIM(#1) 1'b0;   // 1-cycle pulse default
 
             // free-running uptime tick (independent of the bus)
             if (uptime_div >= UPTIME_DIV - 1) begin
@@ -108,6 +146,33 @@ module wb_sysregs
                 // write 1 to 0xFA bit0 -> re-run camera init
                 if (wb_we_i && wb_adr_i == ADDR_REINIT && wb_dat_i[0])
                     cam_reinit <= `WRAP_SIM(#1) 1'b1;
+                // write 1 to 0xE2 bit0 -> reset the SERV MCU (-> bootloader)
+                if (wb_we_i && wb_adr_i == ADDR_MCU_RESET && wb_dat_i[0])
+                    mcu_reset <= `WRAP_SIM(#1) 1'b1;
+                // heartbeat (0xE0) is a plain RW scratch register
+                if (wb_we_i && wb_adr_i == ADDR_HEARTBEAT)
+                    heartbeat <= `WRAP_SIM(#1) wb_dat_i;
+
+                // --- bootloader mailbox ---
+                // host writes the overlay length -> begin upload (start). SERV
+                // reads BOOT_LEN to consume it, which CLEARS start -- so an overlay
+                // can jump back to the bootloader and it re-arms for the next upload
+                // (without this it would re-trigger on the stale length and hang).
+                if (wb_we_i && wb_adr_i == ADDR_BOOT_LEN) begin
+                    boot_len   <= `WRAP_SIM(#1) wb_dat_i;
+                    boot_start <= `WRAP_SIM(#1) 1'b1;
+                end else if (!wb_we_i && wb_adr_i == ADDR_BOOT_LEN) begin
+                    boot_start <= `WRAP_SIM(#1) 1'b0;
+                end
+                // host writes a word -> pending; SERV reads it -> consumed.
+                // (the arbiter serializes the bus, so write-set and read-clear of
+                // the same address never collide.)
+                if (wb_we_i && wb_adr_i == ADDR_BOOT_DATA) begin
+                    boot_data    <= `WRAP_SIM(#1) wb_dat_i;
+                    boot_pending <= `WRAP_SIM(#1) 1'b1;
+                end else if (!wb_we_i && wb_adr_i == ADDR_BOOT_DATA) begin
+                    boot_pending <= `WRAP_SIM(#1) 1'b0;
+                end
             end
         end
     end
@@ -140,9 +205,37 @@ module wb_sysregs
             assert (wb_dat_o == {8'h00, uptime_latch[7:0]});
         if (wb_adr_i == ADDR_HEALTH)
             assert (wb_dat_o == {11'd0, wd_health});
+        if (wb_adr_i == ADDR_HEARTBEAT)
+            assert (wb_dat_o == heartbeat);
+        if (wb_adr_i == ADDR_BOOT_LEN)
+            assert (wb_dat_o == boot_len);
+        if (wb_adr_i == ADDR_BOOT_DATA)
+            assert (wb_dat_o == boot_data);
+        if (wb_adr_i == ADDR_BOOT_STATUS)
+            assert (wb_dat_o == {14'd0, boot_start, boot_pending});
         if (wb_adr_i != ADDR_MAGIC && wb_adr_i != ADDR_UPTIME_HI &&
-            wb_adr_i != ADDR_UPTIME_LO && wb_adr_i != ADDR_HEALTH)
+            wb_adr_i != ADDR_UPTIME_LO && wb_adr_i != ADDR_HEALTH &&
+            wb_adr_i != ADDR_HEARTBEAT && wb_adr_i != ADDR_BOOT_LEN &&
+            wb_adr_i != ADDR_BOOT_DATA && wb_adr_i != ADDR_BOOT_STATUS)
             assert (wb_dat_o == 16'h0000);              // incl 0xFA + unowned
+
+        // heartbeat changes only on a write to its own address
+        if (f_past_valid && reset_n && $past(reset_n) && heartbeat != $past(heartbeat))
+            assert ($past(sel) && $past(wb_we_i) && $past(wb_adr_i) == ADDR_HEARTBEAT);
+
+        // boot mailbox flags move only on their defined accesses:
+        if (f_past_valid && reset_n && $past(reset_n)) begin
+            // start sets on a BOOT_LEN write, clears on a BOOT_LEN read (re-arm)
+            if (boot_start && !$past(boot_start))
+                assert ($past(sel) && $past(wb_we_i) && $past(wb_adr_i) == ADDR_BOOT_LEN);
+            if (!boot_start && $past(boot_start))
+                assert ($past(sel) && !$past(wb_we_i) && $past(wb_adr_i) == ADDR_BOOT_LEN);
+            // pending sets on a BOOT_DATA write, clears on a BOOT_DATA read
+            if (boot_pending && !$past(boot_pending))
+                assert ($past(sel) && $past(wb_we_i) && $past(wb_adr_i) == ADDR_BOOT_DATA);
+            if (!boot_pending && $past(boot_pending))
+                assert ($past(sel) && !$past(wb_we_i) && $past(wb_adr_i) == ADDR_BOOT_DATA);
+        end
 
         // --- sequential invariants (only while running, i.e. no reset edge) ---
         if (f_past_valid && reset_n && $past(reset_n)) begin
@@ -162,12 +255,18 @@ module wb_sysregs
             if (cam_reinit)
                 assert ($past(sel) && $past(wb_we_i) &&
                         $past(wb_adr_i) == ADDR_REINIT && $past(wb_dat_i[0]));
+
+            // mcu_reset pulses ONLY in response to a 0xE2 write with bit0 set
+            if (mcu_reset)
+                assert ($past(sel) && $past(wb_we_i) &&
+                        $past(wb_adr_i) == ADDR_MCU_RESET && $past(wb_dat_i[0]));
         end
     end
 
     // reachability (cover task; run with a small UPTIME_DIV so a tick is in reach)
     always @(posedge clk) begin
         cover (cam_reinit);
+        cover (mcu_reset);
         cover (uptime != 16'h0000);        // the uptime counter actually ticked
         cover (uptime_latch != 16'h0000);  // a high-byte read latched a value
     end

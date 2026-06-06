@@ -15,12 +15,19 @@
 // Wishbone B4 classic-standard slave: channel-1 frame grab + streaming download.
 //
 // Split out of the old monolithic modbus_cam_backend. Owns:
-//   * 0xF3 -> write 1 = arm grab, 2 = read-trigger; read: [0]=busy [1]=calib
-//   * 0xF4 -> write: ch1 read addr [15:0]
-//   * 0xF5 -> write: ch1 read addr [20:16]
-//   * 0xF6 -> read: ch1 word [31:16]
-//   * 0xF7 -> read: ch1 word [15:0]
+//   * 0xF3 -> write 1 = arm grab, 2 = read-trigger, 3 = write-trigger;
+//            read: [0]=busy [1]=calib
+//   * 0xF4 -> write: ch1 read/write addr [15:0]
+//   * 0xF5 -> write: ch1 read/write addr [20:16]
+//   * 0xF6 -> read: ch1 word [31:16];  write: ch1 write-data [31:16]
+//   * 0xF7 -> read: ch1 word [15:0];   write: ch1 write-data [15:0]
 //   * 0xF8 -> write: rewind the download stream to ch1 pixel 0
+//
+// The write path (0xF6/0xF7 set the 32-bit value, 0xF4/0xF5 the burst address,
+// 0xF3<=3 triggers) makes psram_ch1 write that value to every word of the target
+// burst -- so the host/MCU can write a known sequence and read it back (read path
+// above) to verify PSRAM. The OV7670/Modbus register map is otherwise unchanged
+// (0xF6/0xF7 stay read-as-ch1-word; the write meaning is new, non-conflicting).
 //   * >= 0x1000 (read) -> the next 16-bit pixel of the captured frame; the pointer
 //     advances so a host walks the whole frame with back-to-back FC03 bursts.
 //
@@ -52,7 +59,9 @@ module wb_grab (
     // channel-1 PSRAM bring-up loopback (to/from psram_ch1 via VGA_timing)
     output reg         grab_arm,        // pulse: capture the next frame into ch1
     output reg         grab_rd_req,     // pulse: read the ch1 burst at grab_rd_addr
-    output reg [20:0]  grab_rd_addr,    // ch1 read address (burst-aligned)
+    output reg         grab_wr_req,     // pulse: write grab_wr_data to the burst at grab_rd_addr
+    output reg [31:0]  grab_wr_data,    // value written to every word of the target burst
+    output reg [20:0]  grab_rd_addr,    // ch1 read/write address (burst-aligned)
     input  wire        grab_busy,
     input  wire [255:0] grab_rd_data,   // full 8-word burst returned by a ch1 read
     input  wire        grab_calib
@@ -97,6 +106,8 @@ module wb_grab (
             wb_dat_o     <= `WRAP_SIM(#1) 16'h0000;
             grab_arm     <= `WRAP_SIM(#1) 1'b0;
             grab_rd_req  <= `WRAP_SIM(#1) 1'b0;
+            grab_wr_req  <= `WRAP_SIM(#1) 1'b0;
+            grab_wr_data <= `WRAP_SIM(#1) 32'd0;
             grab_rd_addr <= `WRAP_SIM(#1) 21'd0;
             s_baddr      <= `WRAP_SIM(#1) 21'd0;
             s_widx       <= `WRAP_SIM(#1) 3'd0;
@@ -106,6 +117,7 @@ module wb_grab (
         end else begin
             grab_arm    <= `WRAP_SIM(#1) 1'b0;   // 1-cycle pulse defaults
             grab_rd_req <= `WRAP_SIM(#1) 1'b0;
+            grab_wr_req <= `WRAP_SIM(#1) 1'b0;
 
             case (state)
                 G_IDLE: begin
@@ -121,6 +133,7 @@ module wb_grab (
                                     if (wb_we_i) begin
                                         if (wb_dat_i[1:0] == 2'd1) grab_arm    <= `WRAP_SIM(#1) 1'b1;
                                         if (wb_dat_i[1:0] == 2'd2) grab_rd_req <= `WRAP_SIM(#1) 1'b1;
+                                        if (wb_dat_i[1:0] == 2'd3) grab_wr_req <= `WRAP_SIM(#1) 1'b1;
                                     end
                                 end
                                 ADDR_RDADDR_LO: begin
@@ -131,10 +144,14 @@ module wb_grab (
                                     wb_dat_o <= `WRAP_SIM(#1) 16'd0;
                                     if (wb_we_i) grab_rd_addr[20:16] <= `WRAP_SIM(#1) wb_dat_i[4:0];
                                 end
-                                ADDR_RDDATA_HI:
+                                ADDR_RDDATA_HI: begin
                                     wb_dat_o <= `WRAP_SIM(#1) grab_rd_data[31:16];
-                                ADDR_RDDATA_LO:
+                                    if (wb_we_i) grab_wr_data[31:16] <= `WRAP_SIM(#1) wb_dat_i;
+                                end
+                                ADDR_RDDATA_LO: begin
                                     wb_dat_o <= `WRAP_SIM(#1) grab_rd_data[15:0];
+                                    if (wb_we_i) grab_wr_data[15:0] <= `WRAP_SIM(#1) wb_dat_i;
+                                end
                                 ADDR_STREAM: begin
                                     // rewind the download stream to ch1 pixel 0
                                     wb_dat_o <= `WRAP_SIM(#1) 16'd0;
@@ -209,6 +226,7 @@ module wb_grab (
             assert (!(wb_ack_o    && $past(wb_ack_o)));
             assert (!(grab_arm    && $past(grab_arm)));
             assert (!(grab_rd_req && $past(grab_rd_req)));
+            assert (!(grab_wr_req && $past(grab_wr_req)));
 
             // FSM progress: every state advances deterministically EXCEPT the two
             // fetch waits, which advance exactly when grab_busy moves. So the only

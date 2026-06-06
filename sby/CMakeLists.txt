@@ -75,3 +75,8 @@ register_formal(wb_osd wb_osd
 # (Full temporal liveness needs an aiger engine -- see SBY_LIVE and sby/README.md.)
 register_formal(wb_grab wb_grab
     SOURCES "${SRC_FOLDER}/modbus/wb_grab.sv")
+
+# wb_gpio bus slave (sequential): single-cycle ack, DIR/DATA write semantics, no
+# foreign write disturbs GPIO state, reset default = all inputs.
+register_formal(wb_gpio wb_gpio
+    SOURCES "${SRC_FOLDER}/modbus/wb_gpio.sv")

@@ -1,0 +1,3 @@
+# captured training data (user/device-specific, not source)
+samples.jsonl
+*.png

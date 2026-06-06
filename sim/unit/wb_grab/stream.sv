@@ -27,7 +27,8 @@ reg  [15:0] adr, dat_w;
 reg         we, stb, cyc;
 wire [15:0] dat_r;
 wire        ack;
-wire        grab_arm, grab_rd_req;
+wire        grab_arm, grab_rd_req, grab_wr_req;
+wire [31:0] grab_wr_data;
 wire [20:0] grab_rd_addr;
 reg         grab_busy;
 reg  [255:0] grab_rd_data;
@@ -41,20 +42,26 @@ wb_grab dut (
     .clk(clk), .reset_n(reset_n),
     .wb_adr_i(adr), .wb_dat_i(dat_w), .wb_dat_o(dat_r),
     .wb_we_i(we), .wb_stb_i(stb), .wb_cyc_i(cyc), .wb_ack_o(ack),
-    .grab_arm(grab_arm), .grab_rd_req(grab_rd_req), .grab_rd_addr(grab_rd_addr),
+    .grab_arm(grab_arm), .grab_rd_req(grab_rd_req),
+    .grab_wr_req(grab_wr_req), .grab_wr_data(grab_wr_data),
+    .grab_rd_addr(grab_rd_addr),
     .grab_busy(grab_busy), .grab_rd_data(grab_rd_data), .grab_calib(grab_calib)
 );
 
 always #5 clk = ~clk;
 
 // count the 1-cycle control pulses
-integer arm_cnt, req_cnt;
+integer arm_cnt, req_cnt, wr_cnt;
 reg [20:0] req_addr;            // grab_rd_addr captured on a req pulse
+reg [20:0] wr_addr;             // grab_rd_addr captured on a write-trigger pulse
+reg [31:0] wr_val;              // grab_wr_data captured on a write-trigger pulse
 always @(posedge clk or negedge reset_n)
-    if (!reset_n) begin arm_cnt <= 0; req_cnt <= 0; req_addr <= 0; end
+    if (!reset_n) begin arm_cnt <= 0; req_cnt <= 0; wr_cnt <= 0;
+                        req_addr <= 0; wr_addr <= 0; wr_val <= 0; end
     else begin
         if (grab_arm) arm_cnt <= arm_cnt + 1;
         if (grab_rd_req) begin req_cnt <= req_cnt + 1; req_addr <= grab_rd_addr; end
+        if (grab_wr_req) begin wr_cnt <= wr_cnt + 1; wr_addr <= grab_rd_addr; wr_val <= grab_wr_data; end
     end
 
 // behavioural ch1 model: enabled only during the stream phase so the manual
@@ -182,8 +189,30 @@ initial begin
         logger.error(module_name, str); errors = errors + 1;
     end
 
+    // 6) write path: 0xF6/0xF7 load the 32-bit write value, 0xF4/0xF5 the burst
+    //    address, 0xF3 write 3 triggers grab_wr_req carrying both.
+    wb_write(16'h00F6, 16'h1234);            // wr_data[31:16]
+    wb_write(16'h00F7, 16'h5678);            // wr_data[15:0]
+    wb_write(16'h00F4, 16'h00A0);            // addr[15:0]
+    wb_write(16'h00F5, 16'h0002);            // addr[20:16]
+    wr_cnt = 0;
+    wb_write(16'h00F3, 16'h0003);            // write-trigger
+    repeat (4) @(posedge clk);
+    if (wr_cnt !== 1) begin
+        $sformat(str, "grab_wr_req pulsed %0d times, expected 1", wr_cnt);
+        logger.error(module_name, str); errors = errors + 1;
+    end
+    if (wr_val !== 32'h1234_5678) begin
+        $sformat(str, "grab_wr_data = %h, expected 12345678", wr_val);
+        logger.error(module_name, str); errors = errors + 1;
+    end
+    if (wr_addr !== 21'h200A0) begin
+        $sformat(str, "write addr = %h, expected 200A0", wr_addr);
+        logger.error(module_name, str); errors = errors + 1;
+    end
+
     if (errors == 0) begin
-        logger.info(module_name, "wb_grab: grab regs + stream ramp + rewind all correct");
+        logger.info(module_name, "wb_grab: grab regs + stream ramp + rewind + write path all correct");
         `TEST_PASS
     end else
         `TEST_FAIL

@@ -9,12 +9,13 @@
 
 `default_nettype wire
 
-// Wishbone B4 classic-standard interconnect: one master, four slaves, on the
+// Wishbone B4 classic-standard interconnect: one master, five slaves, on the
 // 27 MHz bus. Pure combinational address decode + read-data/ack muxing.
 //
 // Address ownership (the register map is byte-identical to the old monolith):
 //   * wb_sccb     0x0000..0x00C9                (OV7670 camera registers)
-//   * wb_sysregs  0xF0,F1,F2,F9,FA              (magic/uptime/health/reinit)
+//   * wb_gpio     0xEA,EB                        (4 bidirectional GPIO pins)
+//   * wb_sysregs  0xE0,E2,E4,E8,EC,F0,F1,F2,F9,FA (heartbeat/mailbox/uptime/health/reinit)
 //   * wb_grab     0xF3..F8 + (read) >= 0x1000   (frame grab + stream download)
 //   * wb_osd      0xFB,FC,FD                    (OSD overlay control)
 //
@@ -44,12 +45,14 @@ module wb_interconnect (
     output wire        sysregs_stb_o,
     output wire        grab_stb_o,
     output wire        osd_stb_o,
+    output wire        gpio_stb_o,
 
     // per-slave ack + read data
     input  wire        sccb_ack_i,    input wire [15:0] sccb_dat_i,
     input  wire        sysregs_ack_i, input wire [15:0] sysregs_dat_i,
     input  wire        grab_ack_i,    input wire [15:0] grab_dat_i,
-    input  wire        osd_ack_i,     input wire [15:0] osd_dat_i
+    input  wire        osd_ack_i,     input wire [15:0] osd_dat_i,
+    input  wire        gpio_ack_i,    input wire [15:0] gpio_dat_i
 );
     wire active = m_cyc_i & m_stb_i;
 
@@ -65,7 +68,12 @@ module wb_interconnect (
                          (m_adr_i >= 16'h0800) & (m_adr_i < 16'h1000);
 
     wire sel_sccb     = active & (m_adr_i <= 16'h00C9);
-    wire sel_sysregs  = active & (   (m_adr_i == 16'h00F0)
+    wire sel_sysregs  = active & (   (m_adr_i == 16'h00E0)   // co-master heartbeat
+                                   | (m_adr_i == 16'h00E2)   // SERV MCU reset (write)
+                                   | (m_adr_i == 16'h00E4)   // bootloader mailbox: len
+                                   | (m_adr_i == 16'h00E8)   //                     data
+                                   | (m_adr_i == 16'h00EC)   //                     status
+                                   | (m_adr_i == 16'h00F0)
                                    | (m_adr_i == 16'h00F1)
                                    | (m_adr_i == 16'h00F2)
                                    | (m_adr_i == 16'h00F9)
@@ -81,12 +89,15 @@ module wb_interconnect (
                                    | (m_adr_i == 16'h00FC)
                                    | (m_adr_i == 16'h00FD))
                       | osd_stream_rd;
-    wire sel_none     = active & ~(sel_sccb | sel_sysregs | sel_grab | sel_osd);
+    wire sel_gpio     = active & (   (m_adr_i == 16'h00EA)   // GPIO direction
+                                   | (m_adr_i == 16'h00EB)); // GPIO data
+    wire sel_none     = active & ~(sel_sccb | sel_sysregs | sel_grab | sel_osd | sel_gpio);
 
     assign sccb_stb_o    = sel_sccb;
     assign sysregs_stb_o = sel_sysregs;
     assign grab_stb_o    = sel_grab;
     assign osd_stb_o     = sel_osd;
+    assign gpio_stb_o    = sel_gpio;
 
     // ack mux: each slave's ack is qualified by its select (defense in depth so an
     // unselected slave can never force the bus), plus the default-ack for gaps.
@@ -94,6 +105,7 @@ module wb_interconnect (
                    | (sel_sysregs & sysregs_ack_i)
                    | (sel_grab    & grab_ack_i)
                    | (sel_osd     & osd_ack_i)
+                   | (sel_gpio    & gpio_ack_i)
                    | sel_none;
 
     // read-data mux: priority select, default 0 for unmapped addresses
@@ -101,6 +113,7 @@ module wb_interconnect (
                    : sel_sysregs ? sysregs_dat_i
                    : sel_grab    ? grab_dat_i
                    : sel_osd     ? osd_dat_i
+                   : sel_gpio    ? gpio_dat_i
                    :               16'h0000;
 
 `ifdef FORMAL
@@ -114,7 +127,10 @@ module wb_interconnect (
     wire f_stream = f_active & ~m_we_i & (m_adr_i >= 16'h1000);   // grab stream READS
     wire f_osd_stream = f_active & ~m_we_i & (m_adr_i >= 16'h0800) & (m_adr_i < 16'h1000);
     wire f_exp_sccb    = f_active & (m_adr_i <= 16'h00C9);
-    wire f_exp_sysregs = f_active & ((m_adr_i == 16'h00F0) | (m_adr_i == 16'h00F1)
+    wire f_exp_sysregs = f_active & ((m_adr_i == 16'h00E0) | (m_adr_i == 16'h00E2)
+                                   | (m_adr_i == 16'h00E4)
+                                   | (m_adr_i == 16'h00E8) | (m_adr_i == 16'h00EC)
+                                   | (m_adr_i == 16'h00F0) | (m_adr_i == 16'h00F1)
                                    | (m_adr_i == 16'h00F2) | (m_adr_i == 16'h00F9)
                                    | (m_adr_i == 16'h00FA));
     wire f_exp_grab    = f_active & (((m_adr_i == 16'h00F3) | (m_adr_i == 16'h00F4)
@@ -124,7 +140,8 @@ module wb_interconnect (
     wire f_exp_osd     = f_active & ((m_adr_i == 16'h00FB) | (m_adr_i == 16'h00FC)
                                    | (m_adr_i == 16'h00FD))
                        | f_osd_stream;
-    wire f_exp_none    = f_active & ~(f_exp_sccb | f_exp_sysregs | f_exp_grab | f_exp_osd);
+    wire f_exp_gpio    = f_active & ((m_adr_i == 16'h00EA) | (m_adr_i == 16'h00EB));
+    wire f_exp_none    = f_active & ~(f_exp_sccb | f_exp_sysregs | f_exp_grab | f_exp_osd | f_exp_gpio);
 
     always @(*) begin
         // 1) routing matches the intended register map (catches decode bugs)
@@ -132,18 +149,19 @@ module wb_interconnect (
         assert (sysregs_stb_o == f_exp_sysregs);
         assert (grab_stb_o    == f_exp_grab);
         assert (osd_stb_o     == f_exp_osd);
+        assert (gpio_stb_o    == f_exp_gpio);
 
         // 2) at most one slave strobe is ever asserted
-        assert ((sccb_stb_o + sysregs_stb_o + grab_stb_o + osd_stb_o) <= 1);
+        assert ((sccb_stb_o + sysregs_stb_o + grab_stb_o + osd_stb_o + gpio_stb_o) <= 1);
 
         // 3) every active access is claimed by exactly one path (a real slave or
         //    the default) -> the bus can never hang on an unmapped address
         if (f_active)
-            assert ((f_exp_sccb + f_exp_sysregs + f_exp_grab + f_exp_osd + f_exp_none) == 1);
+            assert ((f_exp_sccb + f_exp_sysregs + f_exp_grab + f_exp_osd + f_exp_gpio + f_exp_none) == 1);
 
         // 4) idle bus: no strobes, no ack
         if (!f_active)
-            assert (!sccb_stb_o && !sysregs_stb_o && !grab_stb_o && !osd_stb_o && !m_ack_o);
+            assert (!sccb_stb_o && !sysregs_stb_o && !grab_stb_o && !osd_stb_o && !gpio_stb_o && !m_ack_o);
 
         // 5) unmapped address: default path acks immediately with zero read data
         if (f_exp_none)
@@ -154,6 +172,7 @@ module wb_interconnect (
         if (sysregs_stb_o) assert (m_ack_o == sysregs_ack_i && m_dat_o == sysregs_dat_i);
         if (grab_stb_o)    assert (m_ack_o == grab_ack_i    && m_dat_o == grab_dat_i);
         if (osd_stb_o)     assert (m_ack_o == osd_ack_i     && m_dat_o == osd_dat_i);
+        if (gpio_stb_o)    assert (m_ack_o == gpio_ack_i    && m_dat_o == gpio_dat_i);
     end
 
     // reachability sanity (cover task) -- confirms the proof isn't vacuous and
@@ -164,6 +183,7 @@ module wb_interconnect (
         cover (grab_stb_o & ~f_stream);   // an F3..F8 register access
         cover (f_stream);                 // a stream-band read
         cover (osd_stb_o);
+        cover (gpio_stb_o);
         cover (f_exp_none);               // an unmapped / default-ack access
     end
 `endif

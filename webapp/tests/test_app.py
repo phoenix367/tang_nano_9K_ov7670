@@ -13,11 +13,69 @@ def test_ports(client):
     assert r["ok"] and isinstance(r["ports"], list)
 
 
+def test_index_form_defaults_from_platform(client):
+    """The connect form pre-fills baud/slave from platform.json, so the UI
+    defaults can't drift from the gateware (regression guard for the hardcoded
+    value="1000000"/value="7" the template used to carry)."""
+    import platform_config as pc
+
+    tc, _ = client
+    html = tc.get("/").get_data(as_text=True)
+    assert f'id="baud" type="number" value="{pc.UART_BAUD}"' in html
+    assert f'id="slave" type="number" value="{pc.MODBUS_DEVICE_ID}"' in html
+
+
 def test_state_disconnected(client):
     tc, _ = client
     r = tc.get("/api/state").get_json()
     assert r["ok"] and r["connected"] is False
     assert isinstance(r["controls"], list) and r["controls"]
+
+
+def test_serv_upload(client):
+    tc, _ = client
+    _connect(tc)
+    blob = bytes(range(8))                       # 8 bytes -> 4 16-bit words
+    r = tc.post("/api/serv/upload", data=blob,
+                content_type="application/octet-stream").get_json()
+    assert r["ok"] and r["bytes"] == 8 and r["words"] == 4
+
+
+def test_serv_upload_empty_rejected(client):
+    tc, _ = client
+    _connect(tc)
+    r = tc.post("/api/serv/upload", data=b"",
+                content_type="application/octet-stream").get_json()
+    assert not r["ok"]
+
+
+def test_serv_reset(client):
+    """POST /api/serv/reset writes the MCU-reset register (0xE2) and succeeds."""
+    tc, fake = client
+    _connect(tc)
+    r = tc.post("/api/serv/reset").get_json()
+    assert r["ok"]
+    assert fake["slave"].regs.get(0x00E2, 0) == 1   # reset bit landed on the bus
+
+
+def test_serv_upload_timeout_keeps_connection(client, monkeypatch):
+    """A mailbox-drain timeout (e.g. the bootloader isn't waiting -- a parked
+    overlay is running, or this isn't a SERV build) must surface as an error
+    WITHOUT dropping the connection. TimeoutError is an OSError subclass, so this
+    guards against it being misread as a lost port."""
+    import modbus_client
+
+    tc, _ = client
+    _connect(tc)
+
+    def boom(self, blob, **kw):
+        raise TimeoutError("bootloader did not drain")
+    monkeypatch.setattr(modbus_client.ModbusRTU, "serv_boot_load", boom)
+
+    res = tc.post("/api/serv/upload", data=b"\x00\x00",
+                  content_type="application/octet-stream")
+    assert res.status_code != 503 and not res.get_json()["ok"]   # error, not disconnect
+    assert tc.get("/api/state").get_json()["connected"] is True   # still connected
 
 
 def test_connect_then_state(client):

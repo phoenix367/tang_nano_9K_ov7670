@@ -41,10 +41,17 @@ def test_write_takes_low_byte_only(rtu):
     assert slave.regs[0x55] == 0xAB
 
 
-def test_illegal_address_raises_modbus_exception(rtu):
+def test_address_bound_is_platform_addr_limit(rtu):
+    """The slave accepts addresses below MODBUS_ADDR_LIMIT and rejects at/above
+    it -- derived from platform.json (modbus.addr_limit), not a hardcoded 0x1100,
+    so this tracks the config instead of going stale if the bound changes."""
     c, _ = rtu
+    limit = modbus_client.MODBUS_ADDR_LIMIT
+    # last in-range address (inside the stream band) is served, not rejected
+    c.read_holding(limit - 1, 1)
+    # the first out-of-range address raises illegal-data-address (code 2)
     with pytest.raises(ModbusError) as ei:
-        c.read_holding(0x1100, 1)               # past REG_COUNT (above the stream band)
+        c.read_holding(limit, 1)
     assert ei.value.code == 0x02
 
 

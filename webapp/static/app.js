@@ -106,7 +106,7 @@ function enterState(next, info) {
   if (conn) {
     showTab(currentTab);
   } else {
-    for (const t of ["basic", "color", "capture", "overlay"]) $("#tab-" + t).hidden = true;
+    for (const t of ["basic", "color", "capture", "overlay", "firmware"]) $("#tab-" + t).hidden = true;
     clearGrabCanvas();          // drop any grabbed frame from a prior session
     $("#board-health").hidden = true;
   }
@@ -133,7 +133,7 @@ function connStatus(msg, cls) {
 
 function showTab(name) {
   currentTab = name;
-  for (const t of ["basic", "color", "capture", "overlay"]) $("#tab-" + t).hidden = (t !== name);
+  for (const t of ["basic", "color", "capture", "overlay", "firmware"]) $("#tab-" + t).hidden = (t !== name);
   document.querySelectorAll(".tab").forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === name);
   });
@@ -802,6 +802,46 @@ async function resetDefaults() {
   }
 }
 
+// --------------------------------------------------------------- SERV firmware
+// Upload an overlay firmware to the SERV bootloader (raw .bin, posted as
+// octet-stream). An overlay that returns to the bootloader (e.g. osd_hello)
+// reset first, so it loads over any running overlay (even one that parks).
+async function uploadFirmware() {
+  const f = $("#fw-file").files[0];
+  const status = $("#fw-status");
+  if (!f) { status.textContent = "Choose a .bin file first."; return; }
+  const buf = await f.arrayBuffer();
+  status.textContent = `Uploading ${f.name} (${buf.byteLength} bytes)…`;
+  try {
+    const res = await fetch("/api/serv/upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: buf,
+    });
+    const j = await res.json();
+    if (!j.ok) throw new Error(j.error || "upload failed");
+    status.textContent = `Loaded ${j.words} words (${j.bytes} bytes) — overlay running.`;
+    toast("Firmware loaded");
+  } catch (e) {
+    status.textContent = `Upload failed: ${e.message}`;
+    toast("Upload failed");
+  }
+}
+
+// Reset the SERV MCU back into its bootloader (recovers a parked overlay).
+async function resetMcu() {
+  const status = $("#fw-status");
+  status.textContent = "Resetting MCU…";
+  try {
+    await api("/api/serv/reset", { method: "POST" });
+    status.textContent = "MCU reset — back in the bootloader, ready for an upload.";
+    toast("MCU reset");
+  } catch (e) {
+    status.textContent = `Reset failed: ${e.message}`;
+    toast("Reset failed");
+  }
+}
+
 // --------------------------------------------------------------- OSD overlay
 async function loadOsdState() {
   try {
@@ -1075,6 +1115,8 @@ async function init() {
   $("#raw-dump").addEventListener("click", dumpRegisters);
   $("#grab").addEventListener("click", grabFrame);
   $("#grab-cancel").addEventListener("click", cancelGrab);
+  $("#fw-upload").addEventListener("click", uploadFirmware);
+  $("#fw-reset").addEventListener("click", resetMcu);
   $("#osd-send").addEventListener("click", sendOsd);
   $("#osd-clear").addEventListener("click", clearOsd);
   $("#osd-sparrow").addEventListener("click", () => drawArt(OSD_SPARROW));

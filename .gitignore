@@ -2,6 +2,11 @@ build/
 impl/
 *.user
 src/platform_config.vh
+src/build_config.vh
+camera_ov7670.gprj
+src/camera_control.sdc
+serv_soc/serv_blink.v
+serv_soc/impl/
 sim/Testing/
 .venv/
 __pycache__/
@@ -9,3 +14,5 @@ node_modules/
 sby/*/
 *.bkp
 
+serv_soc/overlay.ld
+serv_soc/overlay_c.ld

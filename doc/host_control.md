@@ -64,6 +64,16 @@ FT2232H channel B.
 | Exceptions       | `0x01` illegal function, `0x02` illegal address, `0x03` illegal value |
 | Read-burst cap   | a single `0x03` reads ≤ 125 registers (response payload in BSRAM) |
 
+The clock, slave id, address bound (`addr_limit`), FC03 read ceiling
+(`max_read_qty`) and UART framing are defined once in [`platform.json`](../platform.json)
+(`clock` / `modbus` / `uart` sections) and flow to **both** sides: CMake bakes them
+into the gateware via `src/platform_config.vh`, and the host reads the same file
+through [`platform_config.py`](../platform_config.py), so the web app
+([`webapp/modbus_client.py`](../webapp/modbus_client.py)) and the CLI scripts
+([`scripts/modbus_test.py`](../scripts/modbus_test.py),
+[`scripts/frame_grab.py`](../scripts/frame_grab.py)) default to the right baud/parity/id
+without hardcoding. Change `platform.json` and the RTL and host stay in lockstep.
+
 Instead of an internal register file, the server runs with `EXTERNAL_BACKEND=1`:
 every holding-register access is handed to
 [`src/modbus/modbus_cam_backend.sv`](../src/modbus/modbus_cam_backend.sv), which performs **one
@@ -145,6 +155,21 @@ The 16-bit uptime (`0xF1`/`0xF2`) is `0` at reset and free-runs (~1 Hz); read th
 high byte first (it latches the low byte for a coherent pair). A host that sees
 it jump **backward** knows the board was reset (its registers reverted to
 defaults) and should re-read its settings.
+
+### GPIO (4 bidirectional pins)
+
+Two more bridge registers expose 4 general-purpose pins (`wb_gpio`; Tang Nano 9K
+pins 48/49/76/30). They power up as inputs.
+
+| Addr  | Access | Meaning                                                        |
+| ----- | ------ | -------------------------------------------------------------- |
+| `0xEA`| R/W    | Direction, bits[3:0]: `1` = output (drive), `0` = input (hi-Z). Reset `0` = all inputs |
+| `0xEB`| R/W    | **Write** bits[3:0] = output latch (driven where dir=1); **read** bits[3:0] = live pin levels |
+
+`modbus_client` helpers: `gpio_set_dir(mask)`, `gpio_write(value)`, `gpio_read()`,
+`gpio_get_dir()`. The pins are shared with the SERV core — see
+[serv.md](serv.md) and the [`gpio_blink`](../demo_mcu_apps/gpio_blink/gpio_blink.c)
+MCU demo.
 
 ## Board health (watchdog)
 

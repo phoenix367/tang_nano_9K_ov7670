@@ -8,19 +8,53 @@ returns {0x00, reg_byte}. The RTU framing/CRC come from pymodbus
 pymodbus responses/exceptions to the small API the app and tests use.
 """
 
+import os
+import struct
+import sys
 import time
 
+# repo root (parent of webapp/) on the path -> read the shared platform.json
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from osd_charset import osd_byte, osd_char
 from pymodbus import FramerType
 from pymodbus.client import ModbusSerialClient
 from pymodbus.exceptions import ConnectionException, ModbusException
 
+import platform_config as _platform
+
+# UART/Modbus defaults come from platform.json (same source as the gateware).
+DEFAULT_BAUD = _platform.UART_BAUD
+DEFAULT_SLAVE = _platform.MODBUS_DEVICE_ID
+# Address bound the FPGA slave enforces (FC03/06/10): the same 0x1100 span the
+# gateware checks. MAX_READ_QTY is the device's FC03 ceiling; note read_holding()
+# still clamps to the Modbus-spec 125 below, which is stricter.
+MODBUS_ADDR_LIMIT = _platform.MODBUS_ADDR_LIMIT
+MODBUS_MAX_READ_QTY = _platform.MODBUS_MAX_READ_QTY
+
 # Reserved bridge registers above the OV7670 0x00..0xC9 range (see
 # src/modbus/modbus_cam_backend.sv). The frame-grab feature captures a camera frame
 # into PSRAM channel 1 and streams it back over FC03.
 CAM_REG_MAX = 0x00C9   # highest OV7670 register (the 1:1-mapped camera range is 0x00..0xC9)
-REG_GRAB    = 0x00F3   # write 1 = arm a grab; read bit0 = busy, bit1 = ch1 calibrated
+REG_GRAB    = 0x00F3   # write 1 = arm a grab, 2 = ch1 read, 3 = ch1 write;
+                       # read bit0 = busy, bit1 = ch1 calibrated
+REG_GRAB_ADDR_LO = 0x00F4   # write: ch1 read/write burst address [15:0]
+REG_GRAB_ADDR_HI = 0x00F5   # write: ch1 read/write burst address [20:16]
+REG_GRAB_DATA_HI = 0x00F6   # read: ch1 word [31:16]; write: ch1 write-data [31:16]
+REG_GRAB_DATA_LO = 0x00F7   # read: ch1 word [15:0];  write: ch1 write-data [15:0]
 REG_STREAM  = 0x00F8   # write = rewind the download stream to pixel 0
+REG_HEARTBEAT = 0x00E0 # RW scratch; on a SERV_CONTROL build the SERV co-master
+                       # increments it so the host can confirm the CPU is live
+                       # on the bus. Reads 0 on a default (Modbus-only) build.
+REG_MCU_RESET   = 0x00E2   # write bit0 = reset the SERV MCU (-> bootloader); reads 0
+# demo_mcu_apps/calc opcodes (host -> MCU command word0)
+CALC_ADD, CALC_SUB, CALC_MUL, CALC_DIV, CALC_SQRT, CALC_RECIP, CALC_POW = range(7)
+# SERV bootloader mailbox (SERV_CONTROL build). The bootloader polls these as a
+# bus master; the host pushes an overlay firmware word-by-word. See doc/serv.md.
+REG_BOOT_LEN    = 0x00E4   # write overlay length (16-bit words) -> begins upload
+REG_BOOT_DATA   = 0x00E8   # write next overlay word (host); SERV consumes it
+REG_BOOT_STATUS = 0x00EC   # read: bit1 = upload started, bit0 = word pending
+REG_GPIO_DIR  = 0x00EA # bits[3:0] GPIO direction (1=output, 0=input); reset 0 = all inputs
+REG_GPIO_DATA = 0x00EB # write bits[3:0] = output latch; read bits[3:0] = live pin levels
 REG_HEALTH  = 0x00F9   # read = watchdog health bits (see read_health)
 REG_REINIT  = 0x00FA   # write 1 = re-run camera init (reset all registers to defaults)
 REG_OSD_CTRL = 0x00FB  # write bit0 = enable, bit1 = clear; read bit0 = enable
@@ -77,7 +111,7 @@ class ModbusRTU:
     (ModbusError for protocol exceptions, OSError for a lost port, TimeoutError
     for no/garbled response after retries)."""
 
-    def __init__(self, port, baud=1000000, slave=7, timeout=1.0, retries=2):
+    def __init__(self, port, baud=DEFAULT_BAUD, slave=DEFAULT_SLAVE, timeout=1.0, retries=2):
         if not (0 <= slave <= 247):
             raise ValueError(f"slave id {slave} out of range 0..247")
         self.port = port
@@ -87,9 +121,9 @@ class ModbusRTU:
             port,
             framer=FramerType.RTU,
             baudrate=baud,
-            bytesize=8,
-            parity="E",
-            stopbits=1,
+            bytesize=_platform.UART_DATA_BITS,
+            parity=_platform.UART_PARITY,
+            stopbits=_platform.UART_STOP_BITS,
             timeout=timeout,
             retries=retries + 1,        # pymodbus re-sends transient failures
         )
@@ -170,6 +204,74 @@ class ModbusRTU:
             "lcd_hang":    bool(v & 0x01),
         }
 
+    def serv_mcu_reset(self):
+        """Reset the SERV soft core (write 0xE2 bit0). The MCU restarts into its
+        bootloader regardless of what it was running -- so this recovers even an
+        overlay that parks (loops forever), letting the host then load any
+        firmware. Requires a SERV_CONTROL build; a no-op on a Modbus-only build
+        (the register reads 0 and nothing is wired to it)."""
+        self.write_single(REG_MCU_RESET, 0x0001)
+
+    def serv_boot_load(self, blob, reset_first=True, poll_timeout=2.0):
+        """Upload an overlay firmware to the SERV bootloader and hand it control.
+
+        `blob` is the raw overlay image (a .bin linked at 0x1000). It is packed
+        into little-endian 16-bit words and streamed through the mailbox; the
+        bootloader copies them into RAM and jumps to the overlay once it has
+        received all of them.
+
+        With `reset_first` (default) the MCU is reset back into the bootloader
+        before the upload, so loading works regardless of what the MCU was running
+        -- including over an overlay that parks. Pass `reset_first=False` to rely
+        on the bootloader re-arming itself (only works if the running overlay
+        returned to the bootloader, e.g. osd_hello). Requires a SERV_CONTROL build
+        running the bootloader (see doc/serv.md). Returns the number of words sent.
+        """
+        data = bytes(blob)
+        if len(data) % 2:
+            data += b"\x00"                       # pad to a whole 16-bit word
+        words = [data[i] | (data[i + 1] << 8) for i in range(0, len(data), 2)]
+        if reset_first:
+            self.serv_mcu_reset()                 # -> bootloader, waiting for an overlay
+            time.sleep(0.01)                      # let the CPU re-run its power-on hold
+        self.write_single(REG_BOOT_LEN, len(words))   # length -> start the upload
+        for w in words:
+            deadline = time.monotonic() + poll_timeout
+            while self.read_holding(REG_BOOT_STATUS, 1)[0] & 0x01:   # wait empty
+                if time.monotonic() > deadline:
+                    raise TimeoutError(
+                        "SERV bootloader did not drain the mailbox -- the bootloader "
+                        "isn't waiting for an overlay. An overlay that returns to the "
+                        "bootloader (e.g. osd_hello) re-loads without a reset; one that "
+                        "parks needs a device reset first (or this isn't a SERV build)")
+            self.write_single(REG_BOOT_DATA, w)
+        return len(words)
+
+    def serv_calc(self, op, a, b=0.0, timeout=2.0):
+        """Send a floating-point operation to the `calc` overlay and read the result.
+
+        `op` is one of the CALC_* opcodes; `a`,`b` are floats (b ignored by unary
+        ops). The command is 5 little-endian 16-bit words (opcode + the two operands
+        as IEEE-754 bits) streamed through the bootloader mailbox; the MCU writes the
+        32-bit result as 4 raw bytes to OSD row 16 and bumps the heartbeat as a done
+        signal. Returns the float result. Requires the calc overlay loaded (and the
+        16 KB SERV RAM build). See demo_mcu_apps/calc."""
+        self.write_single(REG_HEARTBEAT, 0xFF)        # done-sentinel
+        pa = struct.unpack("<HH", struct.pack("<f", float(a)))
+        pb = struct.unpack("<HH", struct.pack("<f", float(b)))
+        for w in (op, pa[0], pa[1], pb[0], pb[1]):
+            deadline = time.monotonic() + timeout
+            while self.read_holding(REG_BOOT_STATUS, 1)[0] & 0x01:   # wait drained
+                if time.monotonic() > deadline:
+                    raise TimeoutError("calc mailbox not drained (is the calc overlay running?)")
+            self.write_single(REG_BOOT_DATA, w)
+        deadline = time.monotonic() + timeout
+        while (self.read_reg(REG_HEARTBEAT) & 0xFF) == 0xFF:         # wait for done
+            if time.monotonic() > deadline:
+                raise TimeoutError("calc did not complete")
+        cells = self.osd_read_cells(16, 0, 4)                       # raw IEEE-754 bytes
+        return struct.unpack("<f", bytes(c & 0xFF for c in cells))[0]
+
     def dump_registers(self):
         """Read every OV7670 register (0x00..0xC9) and return {addr: value}.
 
@@ -190,6 +292,24 @@ class ModbusRTU:
         to its ROM default). The device reloads its config over the next tens of
         ms; re-read the settings afterwards to reflect the reverted state."""
         self.write_single(REG_REINIT, 1)
+
+    # ---- GPIO (4 bidirectional pins, wb_gpio 0xEA/0xEB) ----------------------
+    def gpio_set_dir(self, mask):
+        """Set the 4-pin direction (bits[3:0]): 1 = output (drive), 0 = input (hi-Z).
+        Reset default is 0 (all inputs)."""
+        self.write_single(REG_GPIO_DIR, mask & 0x0F)
+
+    def gpio_write(self, value):
+        """Set the output latch (bits[3:0]); pins configured as outputs drive it."""
+        self.write_single(REG_GPIO_DATA, value & 0x0F)
+
+    def gpio_read(self):
+        """Read the live pin levels (bits[3:0]) -- inputs and driven outputs alike."""
+        return self.read_holding(REG_GPIO_DATA, 1)[0] & 0x0F
+
+    def gpio_get_dir(self):
+        """Read back the direction register (bits[3:0], 1 = output)."""
+        return self.read_holding(REG_GPIO_DIR, 1)[0] & 0x0F
 
     # ---- OSD text overlay (8x16 font, 60x17 char grid on the LCD) ------------
     def osd_enabled(self):
@@ -259,6 +379,37 @@ class ModbusRTU:
     def grab_busy(self):
         """True while a grab is still capturing into ch1."""
         return bool(self.read_holding(REG_GRAB, 1)[0] & 0x01)
+
+    def _grab_wait_idle(self, timeout=1.0):
+        deadline = time.monotonic() + timeout
+        while self.grab_busy():
+            if time.monotonic() > deadline:
+                raise TimeoutError("ch1 PSRAM op did not complete (busy stuck)")
+            time.sleep(0.001)
+
+    def psram_write(self, addr, value, timeout=1.0):
+        """Write a 32-bit `value` to every word of the ch1 PSRAM burst at `addr`
+        (burst-aligned, step 16). Loads the value (0xF6/0xF7) + address (0xF4/0xF5)
+        then triggers the write (0xF3<=3) and waits for completion. SERV_CONTROL
+        is not required -- the write port is unconditional gateware."""
+        value &= 0xFFFFFFFF
+        self.write_single(REG_GRAB_DATA_HI, (value >> 16) & 0xFFFF)
+        self.write_single(REG_GRAB_DATA_LO, value & 0xFFFF)
+        self.write_single(REG_GRAB_ADDR_LO, addr & 0xFFFF)
+        self.write_single(REG_GRAB_ADDR_HI, (addr >> 16) & 0x1F)
+        self.write_single(REG_GRAB, 3)              # write-trigger
+        self._grab_wait_idle(timeout)
+
+    def psram_read(self, addr, timeout=1.0):
+        """Read word 0 of the ch1 PSRAM burst at `addr` and return it as a 32-bit
+        int (0xF6 = high half, 0xF7 = low half). Pairs with psram_write."""
+        self.write_single(REG_GRAB_ADDR_LO, addr & 0xFFFF)
+        self.write_single(REG_GRAB_ADDR_HI, (addr >> 16) & 0x1F)
+        self.write_single(REG_GRAB, 2)              # read-trigger
+        self._grab_wait_idle(timeout)
+        hi = self.read_holding(REG_GRAB_DATA_HI, 1)[0] & 0xFFFF
+        lo = self.read_holding(REG_GRAB_DATA_LO, 1)[0] & 0xFFFF
+        return (hi << 16) | lo
 
     def grab_frame(self, progress=None, timeout=3.0, should_cancel=None):
         """Capture a fresh camera frame into ch1 and stream it to the host.

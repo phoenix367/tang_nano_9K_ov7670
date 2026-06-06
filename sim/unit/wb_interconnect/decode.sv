@@ -20,13 +20,13 @@ module main();
 localparam LOG_LEVEL = `DEFAULT_LOG_LEVEL;
 
 localparam [15:0] D_SCCB = 16'hAAAA, D_SYS = 16'h5555,
-                  D_GRAB = 16'h1234, D_OSD = 16'h0FF0;
+                  D_GRAB = 16'h1234, D_OSD = 16'h0FF0, D_GPIO = 16'hC3C3;
 
 reg  [15:0] m_adr;
 reg         m_we, m_stb, m_cyc;
 wire        m_ack;
 wire [15:0] m_dat;
-wire        sccb_stb, sysregs_stb, grab_stb, osd_stb;
+wire        sccb_stb, sysregs_stb, grab_stb, osd_stb, gpio_stb;
 
 integer errors;
 string  module_name, str;
@@ -36,34 +36,36 @@ wb_interconnect dut (
     .m_adr_i(m_adr), .m_we_i(m_we), .m_stb_i(m_stb), .m_cyc_i(m_cyc),
     .m_ack_o(m_ack), .m_dat_o(m_dat),
     .sccb_stb_o(sccb_stb), .sysregs_stb_o(sysregs_stb),
-    .grab_stb_o(grab_stb), .osd_stb_o(osd_stb),
+    .grab_stb_o(grab_stb), .osd_stb_o(osd_stb), .gpio_stb_o(gpio_stb),
     .sccb_ack_i(1'b1),    .sccb_dat_i(D_SCCB),
     .sysregs_ack_i(1'b1), .sysregs_dat_i(D_SYS),
     .grab_ack_i(1'b1),    .grab_dat_i(D_GRAB),
-    .osd_ack_i(1'b1),     .osd_dat_i(D_OSD)
+    .osd_ack_i(1'b1),     .osd_dat_i(D_OSD),
+    .gpio_ack_i(1'b1),    .gpio_dat_i(D_GPIO)
 );
 
 task automatic err(input string label, input string what);
     begin
-        $sformat(str, "%s: wrong %s (sccb=%b sys=%b grab=%b osd=%b ack=%b)",
-                 label, what, sccb_stb, sysregs_stb, grab_stb, osd_stb, m_ack);
+        $sformat(str, "%s: wrong %s (sccb=%b sys=%b grab=%b osd=%b gpio=%b ack=%b)",
+                 label, what, sccb_stb, sysregs_stb, grab_stb, osd_stb, gpio_stb, m_ack);
         logger.error(module_name, str); errors = errors + 1;
     end
 endtask
 
-// expected one-hot strobe code: 0=none,1=sccb,2=sysregs,3=grab,4=osd
+// expected one-hot strobe code: 0=none,1=sccb,2=sysregs,3=grab,4=osd,5=gpio
 task automatic check(input [15:0] a, input wv, input integer who,
                      input [15:0] exp_dat, input string label);
-    reg [3:0] sv;
+    reg [4:0] sv;
     begin
         m_adr = a; m_we = wv; m_cyc = 1'b1; m_stb = 1'b1; #1;
-        sv = {osd_stb, grab_stb, sysregs_stb, sccb_stb};
+        sv = {gpio_stb, osd_stb, grab_stb, sysregs_stb, sccb_stb};
         case (who)
-            1: if (sv !== 4'b0001) begin err(label, "sccb_stb"); end
-            2: if (sv !== 4'b0010) begin err(label, "sysregs_stb"); end
-            3: if (sv !== 4'b0100) begin err(label, "grab_stb"); end
-            4: if (sv !== 4'b1000) begin err(label, "osd_stb"); end
-            default: if (sv !== 4'b0000) begin err(label, "no strobe"); end
+            1: if (sv !== 5'b00001) begin err(label, "sccb_stb"); end
+            2: if (sv !== 5'b00010) begin err(label, "sysregs_stb"); end
+            3: if (sv !== 5'b00100) begin err(label, "grab_stb"); end
+            4: if (sv !== 5'b01000) begin err(label, "osd_stb"); end
+            5: if (sv !== 5'b10000) begin err(label, "gpio_stb"); end
+            default: if (sv !== 5'b00000) begin err(label, "no strobe"); end
         endcase
         if (m_ack !== 1'b1) err(label, "ack high");
         if (m_dat !== exp_dat) begin
@@ -87,6 +89,23 @@ initial begin
     check(16'h0000, 1'b0, 1, D_SCCB, "0x00 camera");
     check(16'h0050, 1'b1, 1, D_SCCB, "0x50 camera write");
     check(16'h00C9, 1'b0, 1, D_SCCB, "0xC9 camera top");
+
+    // co-master heartbeat register routes to sysregs
+    check(16'h00E0, 1'b1, 2, D_SYS,  "0xE0 heartbeat write -> sysregs");
+    check(16'h00E0, 1'b0, 2, D_SYS,  "0xE0 heartbeat read -> sysregs");
+    // host-commanded SERV MCU reset (write-only) routes to sysregs
+    check(16'h00E2, 1'b1, 2, D_SYS,  "0xE2 mcu_reset write -> sysregs");
+    // SERV bootloader mailbox (0xE4/E8/EC) routes to sysregs
+    check(16'h00E4, 1'b1, 2, D_SYS,  "0xE4 boot_len -> sysregs");
+    check(16'h00E8, 1'b1, 2, D_SYS,  "0xE8 boot_data write -> sysregs");
+    check(16'h00E8, 1'b0, 2, D_SYS,  "0xE8 boot_data read -> sysregs");
+    check(16'h00EC, 1'b0, 2, D_SYS,  "0xEC boot_status -> sysregs");
+
+    // GPIO registers route to wb_gpio
+    check(16'h00EA, 1'b1, 5, D_GPIO, "0xEA gpio dir write -> gpio");
+    check(16'h00EA, 1'b0, 5, D_GPIO, "0xEA gpio dir read -> gpio");
+    check(16'h00EB, 1'b1, 5, D_GPIO, "0xEB gpio data write -> gpio");
+    check(16'h00EB, 1'b0, 5, D_GPIO, "0xEB gpio data read -> gpio");
 
     // the 0xFx split
     check(16'h00F0, 1'b0, 2, D_SYS,  "0xF0 magic");

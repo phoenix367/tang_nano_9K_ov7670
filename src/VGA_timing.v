@@ -47,6 +47,8 @@ module VGA_timing
     // channel-1 frame grab / readout (sys_clk domain)
     input                  grab_arm,
     input                  grab_rd_req,
+    input                  grab_wr_req,
+    input  [31:0]          grab_wr_data,
     input  [20:0]          grab_rd_addr,
     output                 grab_busy,
     output [255:0]         grab_rd_data,
@@ -160,6 +162,8 @@ module VGA_timing
         .srst_n(nRST),
         .grab_arm(grab_arm),
         .rd_req(grab_rd_req),
+        .wr_req(grab_wr_req),
+        .wr_data(grab_wr_data),
         .rd_addr(grab_rd_addr),
         .busy(grab_busy),
         .rd_data_o(grab_rd_data),

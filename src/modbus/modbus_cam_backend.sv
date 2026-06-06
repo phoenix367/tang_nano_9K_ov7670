@@ -61,6 +61,9 @@ module modbus_cam_backend
 
     // pulse: re-run the power-on camera initialization (wb_sysregs)
     output wire        cam_reinit,
+    // pulse: host-commanded SERV MCU reset (wb_sysregs 0xE2); crosses to mcu_clk
+    // in camera_control.v. Unconnected on a non-SERV build.
+    output wire        mcu_reset,
 
     // OSD text overlay (LCD): enable bit + character-buffer write port (wb_osd)
     output wire        osd_enable,
@@ -73,12 +76,20 @@ module modbus_cam_backend
     // channel-1 PSRAM bring-up loopback (wb_grab, to/from psram_ch1 via VGA_timing)
     output wire        grab_arm,
     output wire        grab_rd_req,
+    output wire        grab_wr_req,
+    output wire [31:0] grab_wr_data,
     output wire [20:0] grab_rd_addr,
     input  wire        grab_busy,
     input  wire [255:0] grab_rd_data,
     input  wire        grab_calib,
     // health watchdog status (wb_sysregs reg 0xF9)
-    input  wire [4:0]  wd_health
+    input  wire [4:0]  wd_health,
+
+    // 4 bidirectional GPIO pins (wb_gpio, 0xEA/0xEB). gpio_dir=1 drives gpio_out;
+    // gpio_in is the live pad level. Tri-stated by the IOBUFs in camera_control.v.
+    output wire [3:0]  gpio_dir,
+    output wire [3:0]  gpio_out,
+    input  wire [3:0]  gpio_in
 );
     // ---- be_* -> Wishbone master nets (1:1 rename) ----
     wire        m_cyc;
@@ -93,9 +104,9 @@ module modbus_cam_backend
     assign m_dat_w = be_wdata;
 
     // ---- per-slave bus fan-out ----
-    wire        sccb_stb,    sysregs_stb,    grab_stb,    osd_stb;
-    wire        sccb_ack,    sysregs_ack,    grab_ack,    osd_ack;
-    wire [15:0] sccb_dat,    sysregs_dat,    grab_dat,    osd_dat;
+    wire        sccb_stb,    sysregs_stb,    grab_stb,    osd_stb,    gpio_stb;
+    wire        sccb_ack,    sysregs_ack,    grab_ack,    osd_ack,    gpio_ack;
+    wire [15:0] sccb_dat,    sysregs_dat,    grab_dat,    osd_dat,    gpio_dat;
 
     wb_interconnect xbar (
         .m_adr_i(m_adr),
@@ -108,10 +119,12 @@ module modbus_cam_backend
         .sysregs_stb_o(sysregs_stb),
         .grab_stb_o(grab_stb),
         .osd_stb_o(osd_stb),
+        .gpio_stb_o(gpio_stb),
         .sccb_ack_i(sccb_ack),       .sccb_dat_i(sccb_dat),
         .sysregs_ack_i(sysregs_ack), .sysregs_dat_i(sysregs_dat),
         .grab_ack_i(grab_ack),       .grab_dat_i(grab_dat),
-        .osd_ack_i(osd_ack),         .osd_dat_i(osd_dat)
+        .osd_ack_i(osd_ack),         .osd_dat_i(osd_dat),
+        .gpio_ack_i(gpio_ack),       .gpio_dat_i(gpio_dat)
     );
 
     wb_sccb sccb (
@@ -130,6 +143,7 @@ module modbus_cam_backend
         .wb_adr_i(m_adr), .wb_dat_i(m_dat_w), .wb_dat_o(sysregs_dat),
         .wb_we_i(m_we), .wb_stb_i(sysregs_stb), .wb_cyc_i(m_cyc), .wb_ack_o(sysregs_ack),
         .cam_reinit(cam_reinit),
+        .mcu_reset(mcu_reset),
         .wd_health(wd_health)
     );
 
@@ -137,7 +151,9 @@ module modbus_cam_backend
         .clk(clk), .reset_n(reset_n),
         .wb_adr_i(m_adr), .wb_dat_i(m_dat_w), .wb_dat_o(grab_dat),
         .wb_we_i(m_we), .wb_stb_i(grab_stb), .wb_cyc_i(m_cyc), .wb_ack_o(grab_ack),
-        .grab_arm(grab_arm), .grab_rd_req(grab_rd_req), .grab_rd_addr(grab_rd_addr),
+        .grab_arm(grab_arm), .grab_rd_req(grab_rd_req),
+        .grab_wr_req(grab_wr_req), .grab_wr_data(grab_wr_data),
+        .grab_rd_addr(grab_rd_addr),
         .grab_busy(grab_busy), .grab_rd_data(grab_rd_data), .grab_calib(grab_calib)
     );
 
@@ -148,6 +164,13 @@ module modbus_cam_backend
         .osd_enable(osd_enable), .osd_wr_en(osd_wr_en),
         .osd_wr_addr(osd_wr_addr), .osd_wr_data(osd_wr_data),
         .osd_rb_addr(osd_rb_addr), .osd_rb_data(osd_rb_data)
+    );
+
+    wb_gpio gpio (
+        .clk(clk), .reset_n(reset_n),
+        .wb_adr_i(m_adr), .wb_dat_i(m_dat_w), .wb_dat_o(gpio_dat),
+        .wb_we_i(m_we), .wb_stb_i(gpio_stb), .wb_cyc_i(m_cyc), .wb_ack_o(gpio_ack),
+        .gpio_dir(gpio_dir), .gpio_out(gpio_out), .gpio_in(gpio_in)
     );
 
 endmodule
