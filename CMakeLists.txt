@@ -411,6 +411,17 @@ if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
         VERBATIM
     )
 
+    # gpio_blink: drive the 4 wb_gpio pins from the MCU (C, no libgcc).
+    set(SERV_GPIO_BLINK_BIN "${SERV_FW_DIR}/gpio_blink.bin")
+    add_custom_command(
+        OUTPUT  ${SERV_GPIO_BLINK_BIN}
+        COMMAND ${SERV_C_BUILD} ${DEMO_DIR}/gpio_blink/gpio_blink.c -o ${SERV_FW_DIR}/gpio_blink.elf
+        COMMAND ${RISCV_OBJCOPY} -O binary ${SERV_FW_DIR}/gpio_blink.elf ${SERV_GPIO_BLINK_BIN}
+        DEPENDS ${DEMO_DIR}/gpio_blink/gpio_blink.c ${SERV_C_CRT} ${SERV_C_HDR} ${SERV_SOC_DIR}/overlay_c.ld
+        COMMENT "Building demo_mcu_apps/gpio_blink overlay (C, MCU-driven GPIO)"
+        VERBATIM
+    )
+
     # psram_test: PSRAM write/read/verify with progress bars, in C.
     set(SERV_PSRAM_TEST_BIN "${SERV_FW_DIR}/psram_test.bin")
     add_custom_command(
@@ -513,7 +524,8 @@ if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
     add_custom_target(serv_firmware DEPENDS ${SERV_BOOT_HEX} ${SERV_OVERLAY_BIN}
                       ${SERV_OSD_HELLO_BIN} ${SERV_PSRAM_TEST_BIN} ${SERV_C_HELLO_BIN}
                       ${SERV_MOTION_BIN} ${SERV_MOTION_C_BIN} ${SERV_CALC_BIN} ${SERV_SKIN_BIN}
-                      ${SERV_LBPH_BIN} ${SERV_ROI_BIN} ${SERV_ROI_COLLECT_BIN} ${SERV_ROI_TM_BIN})
+                      ${SERV_LBPH_BIN} ${SERV_ROI_BIN} ${SERV_ROI_COLLECT_BIN} ${SERV_ROI_TM_BIN}
+                      ${SERV_GPIO_BLINK_BIN})
     if (SERV_CONTROL)
         add_dependencies(hw_synth serv_firmware)
         add_dependencies(hw_all   serv_firmware)
