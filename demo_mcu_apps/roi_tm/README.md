@@ -30,11 +30,20 @@ room to spare (the model is a table of 32-bit clause masks).
 
 2. **Train.**
    ```
-   .venv/bin/python demo_mcu_apps/roi_tm/train_tm.py            # train on samples.jsonl
+   .venv/bin/python demo_mcu_apps/roi_tm/train_tm.py                       # train on samples.jsonl
+   .venv/bin/python demo_mcu_apps/roi_tm/train_tm.py --augment 3           # + luminance augmentation
    .venv/bin/python demo_mcu_apps/roi_tm/train_tm.py --clauses 96 --epochs 300
    ```
    Reports train/validation accuracy and writes **`tm_model.h`** (baked into the
    overlay) and `tm_model.json` (inspection). Needs `numpy`.
+
+   **`--augment N`** adds N photometric copies per training sample — random
+   brightness, per-channel white-balance jitter, contrast, and horizontal flip (in
+   RGB565 space, re-quantized). The colour features (especially the absolute
+   `R−B≥2` skin cue) drift with exposure and the OV7670's wobbly AWB; augmenting
+   across those makes the model robust to luminance instead of memorising the
+   dataset's lighting. The committed model uses `--augment 3`. Validation stays
+   clean (un-augmented), so the reported accuracy is honest.
 
 3. **Deploy** — see the next section. (A trained `tm_model.h` is already committed,
    so you can deploy the demo *without* collecting/training first.)

@@ -97,46 +97,57 @@ def main():
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--threshold", type=int, default=tm.THRESHOLD,
                     help="decision threshold: face when vote >= this (raise to cut empty-scene flicker)")
+    ap.add_argument("--augment", type=int, default=0, metavar="N",
+                    help="add N photometric augmentations per TRAIN sample (brightness/WB/"
+                         "contrast/flip) for luminance robustness; val stays clean")
     ap.add_argument("--header", default=DEFAULT_HEADER)
     ap.add_argument("--model", default=DEFAULT_MODEL)
     args = ap.parse_args()
 
+    rng = np.random.default_rng(args.seed)
     if args.synthetic:
         X, Y = synthetic()
-        src = "synthetic"
+        idx = rng.permutation(X.shape[0])
+        nval = int(round(X.shape[0] * args.val_split))
+        val, trn = idx[:nval], idx[nval:]
+        X_trn, Y_trn, X_val, Y_val = X[trn], Y[trn], X[val], Y[val]
+        n_features, src, ntot = X.shape[1], "synthetic", X.shape[0]
     else:
         rois, Y = load_samples(args.samples)
-        X = tm.featurize_matrix(rois)
-        src = os.path.relpath(args.samples)
-    n_features = X.shape[1]
-    print(f"data: {X.shape[0]} samples x {n_features} features  ({int((Y==1).sum())} face / "
-          f"{int((Y==0).sum())} no-face)  from {src}")
-    if X.shape[0] < 8:
-        print("WARNING: very few samples -- collect more for a usable model "
-              "(this run just exercises the pipeline)")
-
-    # stratified-ish split
-    rng = np.random.default_rng(args.seed)
-    idx = rng.permutation(X.shape[0])
-    nval = int(round(X.shape[0] * args.val_split))
-    val, trn = idx[:nval], idx[nval:]
-    if len(trn) == 0:
-        trn, val = idx, np.array([], dtype=int)
+        src, ntot = os.path.relpath(args.samples), len(rois)
+        idx = rng.permutation(ntot)
+        nval = int(round(ntot * args.val_split))
+        val, trn = (idx[:nval], idx[nval:]) if nval < ntot else (np.array([], int), idx)
+        X_val = (tm.featurize_matrix([rois[i] for i in val]) if len(val)
+                 else np.zeros((0, tm.N_FEATURES), bool))
+        Y_val = Y[val]
+        # training split: each sample + N photometric augmentations (val stays clean)
+        aug_rng = np.random.default_rng(args.seed + 1)
+        tr_rois, tr_y = [], []
+        for i in trn:
+            tr_rois.append(rois[i]); tr_y.append(int(Y[i]))
+            for _ in range(args.augment):
+                tr_rois.append(tm.augment(rois[i], aug_rng)); tr_y.append(int(Y[i]))
+        X_trn, Y_trn = tm.featurize_matrix(tr_rois), np.asarray(tr_y, np.int8)
+        n_features = X_trn.shape[1]
+    print(f"data: {ntot} samples ({int((Y==1).sum())} face / {int((Y==0).sum())} no-face) from {src}; "
+          f"train {X_trn.shape[0]} (aug x{args.augment}) / val {X_val.shape[0]}")
+    if ntot < 8:
+        print("WARNING: very few samples -- collect more for a usable model")
 
     machine = tm.TsetlinMachine(n_features, clauses=args.clauses, states=args.states,
                                 s=args.s, T=args.T, seed=args.seed)
     print(f"training: {args.clauses} clauses, s={args.s}, T={args.T}, {args.epochs} epochs ...")
-    machine.fit(X[trn], Y[trn], epochs=args.epochs,
+    machine.fit(X_trn, Y_trn, epochs=args.epochs,
                 log=lambda ep, acc: print(f"  epoch {ep:4d}: train acc {acc:.3f}"))
 
     masks = machine.masks()
-    tr_pred = machine.predict(X[trn])
-    tr_acc = float((tr_pred == Y[trn]).mean())
+    tr_acc = float((machine.predict(X_trn) == Y_trn).mean())
     line = f"train acc {tr_acc:.3f}"
-    if len(val):
-        va_pred = machine.predict(X[val])
-        va_acc = float((va_pred == Y[val]).mean())
-        tp, tn, fp, fn = confusion(Y[val], va_pred)
+    if len(Y_val):
+        va_pred = machine.predict(X_val)
+        va_acc = float((va_pred == Y_val).mean())
+        tp, tn, fp, fn = confusion(Y_val, va_pred)
         line += f"   val acc {va_acc:.3f}  (tp={tp} tn={tn} fp={fp} fn={fn})"
     else:
         va_acc = None
@@ -148,7 +159,7 @@ def main():
           f"{masks.shape[1]} words/clause ({masks.size * 4} bytes)")
 
     meta = (f"source={src}  clauses={args.clauses} states={args.states} s={args.s} T={args.T} "
-            f"epochs={args.epochs}  train_acc={tr_acc:.3f}"
+            f"epochs={args.epochs} augment={args.augment}  train_acc={tr_acc:.3f}"
             + (f" val_acc={va_acc:.3f}" if va_acc is not None else ""))
     tm.export_header(args.header, masks, n_features, machine.pos, threshold=args.threshold, meta=meta)
     with open(args.model, "w") as f:

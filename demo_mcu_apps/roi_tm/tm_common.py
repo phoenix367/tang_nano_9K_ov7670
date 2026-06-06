@@ -94,6 +94,35 @@ def featurize_matrix(rois):
     return np.stack([featurize(r) for r in rois]).astype(bool)
 
 
+def augment(roi565, rng, bright=(0.55, 1.7), wb=0.15, contrast=(0.75, 1.30), flip=True):
+    """Photometrically augment an ROI patch (in RGB565 space) for luminance/colour
+    robustness. Simulates what varies on the device but not in the dataset: exposure
+    /lighting (global gain), the OV7670's wobbly white balance (per-channel gain),
+    contrast, and left/right pose (flip). Returns a new RGB565 patch (list of ints).
+
+    The colour features (R>G, R>B, skin R-B>=2) are the luminance-sensitive ones --
+    a global gain barely moves R>G but shrinks the absolute R-B at low light, so
+    training across gains teaches the threshold to generalise."""
+    a = np.asarray(roi565, dtype=np.int64).reshape(ROI_ROWS, ROI_COLS)
+    R = ((a >> 11) & 0x1F) * (255.0 / 31)
+    G = ((a >> 5) & 0x3F) * (255.0 / 63)
+    B = (a & 0x1F) * (255.0 / 31)
+    if flip and rng.random() < 0.5:
+        R, G, B = R[:, ::-1], G[:, ::-1], B[:, ::-1]
+    g = rng.uniform(*bright)
+    R *= g * rng.uniform(1 - wb, 1 + wb)        # global gain + per-channel WB jitter
+    G *= g * rng.uniform(1 - wb, 1 + wb)
+    B *= g * rng.uniform(1 - wb, 1 + wb)
+    c = rng.uniform(*contrast)
+    R = (R - 128) * c + 128
+    G = (G - 128) * c + 128
+    B = (B - 128) * c + 128
+    r5 = np.clip(R, 0, 255).astype(np.int64) >> 3
+    g6 = np.clip(G, 0, 255).astype(np.int64) >> 2
+    b5 = np.clip(B, 0, 255).astype(np.int64) >> 3
+    return ((r5 << 11) | (g6 << 5) | b5).reshape(-1).tolist()
+
+
 def nwords(nlit):
     return (nlit + 31) // 32
 
