@@ -95,6 +95,8 @@ def main():
     ap.add_argument("--epochs", type=int, default=tm.DEFAULT_EPOCHS)
     ap.add_argument("--val-split", type=float, default=0.25, help="fraction held out for validation")
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--threshold", type=int, default=tm.THRESHOLD,
+                    help="decision threshold: face when vote >= this (raise to cut empty-scene flicker)")
     ap.add_argument("--header", default=DEFAULT_HEADER)
     ap.add_argument("--model", default=DEFAULT_MODEL)
     args = ap.parse_args()
@@ -148,10 +150,10 @@ def main():
     meta = (f"source={src}  clauses={args.clauses} states={args.states} s={args.s} T={args.T} "
             f"epochs={args.epochs}  train_acc={tr_acc:.3f}"
             + (f" val_acc={va_acc:.3f}" if va_acc is not None else ""))
-    tm.export_header(args.header, masks, n_features, machine.pos, meta=meta)
+    tm.export_header(args.header, masks, n_features, machine.pos, threshold=args.threshold, meta=meta)
     with open(args.model, "w") as f:
         json.dump({"n_features": n_features, "clauses": args.clauses, "pos": machine.pos,
-                   "threshold": tm.THRESHOLD, "states": args.states, "s": args.s, "T": args.T,
+                   "threshold": args.threshold, "states": args.states, "s": args.s, "T": args.T,
                    "epochs": args.epochs, "train_acc": tr_acc, "val_acc": va_acc,
                    "masks": masks.astype(np.uint32).tolist()}, f)
     print(f"wrote {os.path.relpath(args.header)} and {os.path.relpath(args.model)}")
