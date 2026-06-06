@@ -5,6 +5,59 @@ when you need to change it. For a high-level pitch see the
 [README](../README.md); for build / test / program mechanics see
 [build.md](build.md).
 
+## Solution components
+
+The design is two cooperating subsystems inside `CameraControl_TOP` — a **video
+datapath** (camera → PSRAM frame buffer → resize → LCD) and a **27 MHz control
+plane** (a Wishbone bus reached by the host over Modbus *and* by an on-chip SERV
+RISC-V core) — plus a health watchdog. External interfaces: the OV7670 camera, the
+LCD panel, the host USB-UART, and 4 GPIO pins.
+
+```mermaid
+flowchart TB
+    WEBAPP["Host PC<br/>web app / CLIs<br/>(Modbus RTU master)"]
+    CAMERA["OV7670 camera"]
+    PANEL["4.3&quot; 480×272 LCD"]
+    HDR["GPIO header<br/>pins 48/49/76/30"]
+
+    subgraph FPGA["CameraControl_TOP — Gowin GW1NR-9C"]
+        direction TB
+        subgraph VIDEO["Video datapath (see video_datapath.md)"]
+            PIXP["cam_pixel_processor<br/>→ RGB565"]
+            VBUF[("PSRAM<br/>3-frame buffer")]
+            RESZ["resize + pillarbox"]
+            OSDOV["osd_overlay"]
+            LCDC["lcd_controller<br/>VGA_timing"]
+            PIXP --> VBUF --> RESZ --> OSDOV --> LCDC
+        end
+        subgraph CTRL["Control plane — Wishbone B4 bus (27 MHz, see modbus_server.md)"]
+            RTU["modbus_rtu_slave"]
+            ARB2["be_arbiter"]
+            XBAR["wb_interconnect<br/>addr decode"]
+            SCCB2["wb_sccb"]
+            SYS2["wb_sysregs"]
+            GRAB2["wb_grab"]
+            OSD2["wb_osd"]
+            GPIO2["wb_gpio"]
+            SERV["SERV RV32 MCU<br/>30 MHz (serv.md)"]
+            RTU --> ARB2 --> XBAR
+            SERV -->|"serv_wb_cdc"| ARB2
+            XBAR --> SCCB2 & SYS2 & GRAB2 & OSD2 & GPIO2
+        end
+        I2CM["i2c_control_fsm<br/>SCCB master"]
+        WDOG["watchdog"]
+    end
+
+    WEBAPP <-->|"USB-UART 1 Mbaud"| RTU
+    CAMERA -->|"pixel bytes"| PIXP
+    SCCB2 --> I2CM -->|"SCCB"| CAMERA
+    GRAB2 -->|"ch1 grab / stream"| VBUF
+    OSD2 --> OSDOV
+    GPIO2 <-->|"4 bidir pins"| HDR
+    LCDC --> PANEL
+    WDOG -.->|"health → 0xF9 + LED"| SYS2
+```
+
 ## Target and constraints
 
 - **FPGA:** Gowin GW1NR-9C, part `GW1NR-LV9QN88PC6/I5` (Tang Nano 9K).
@@ -135,9 +188,9 @@ every holding-register access is handed to
 [`src/modbus/modbus_cam_backend.sv`](../src/modbus/modbus_cam_backend.sv) over a small
 request/ready handshake. That handshake is a **Wishbone B4 classic-standard**
 master cycle, and `modbus_cam_backend` is a thin wrapper around a
-`wb_interconnect` that address-decodes to four peripheral slaves
-(`wb_sccb`, `wb_sysregs`, `wb_grab`, `wb_osd`), all in the 27 MHz `sys_clk`
-domain. A camera-register access routes to `wb_sccb`, which turns it into one
+`wb_interconnect` that address-decodes to five peripheral slaves
+(`wb_sccb`, `wb_sysregs`, `wb_grab`, `wb_osd`, `wb_gpio`), all in the 27 MHz
+`sys_clk` domain. A camera-register access routes to `wb_sccb`, which turns it into one
 SCCB transaction. The mapping is **Direct 1:1** — the Modbus holding-register
 address *is* the OV7670 register number (`0x00..0xC9`); a write uses the
 low byte of the value, a read returns `{8'h00, reg_byte}`. See
@@ -176,6 +229,22 @@ register `0xF3`), then serves it back as 8-word burst reads;
 `≥ 0x1000` band. A full frame downloads in ~10 s at 1 Mbaud. The capture
 costs no extra PSRAM read bandwidth and needs no arbiter changes — see
 [video_datapath.md](video_datapath.md#frame-grab-and-host-download).
+
+### SERV co-processor and GPIO
+
+On a SERV build (`platform.json` `serv_mcu.enable`, default true) a bit-serial RV32
+soft core ([`src/serv/serv_cpu.v`](../src/serv/serv_cpu.v), on its own 30 MHz
+`mcu_clk`) is a **second Wishbone master** on the same bus: `serv_wb_cdc` crosses
+its accesses into the 27 MHz domain and `be_arbiter` serialises them against the
+Modbus master, so the MCU reaches every `wb_*` slave through a `0x40000000` window.
+SERV boots a bootloader that loads firmware **overlays from the host at runtime**
+(mailbox regs `0xE4/E8/EC`) — no reflash. See [serv.md](serv.md) and the demos in
+[`demo_mcu_apps/`](../demo_mcu_apps/) (motion detection, a float calculator, and
+`roi_tm`, an on-device Tsetlin-Machine face-presence classifier).
+
+`wb_gpio` ([`src/modbus/wb_gpio.sv`](../src/modbus/wb_gpio.sv)) is a fifth slave: 4
+bidirectional GPIO pins (reg `0xEA` direction / `0xEB` data; pins 48/49/76/30, hi-Z
+inputs at reset), tri-stated in `camera_control.v` and driveable from either master.
 
 ## Capture path
 
@@ -323,6 +392,7 @@ shape of the connections.
 | `debug_led`   | 13        |                    |
 | `led_out`     | 10        |                    |
 | `led_out1`    | 11        |                    |
+| `gpio[3:0]`   | 48 49 76 30 | `wb_gpio` bidirectional GPIO (regs 0xEA/0xEB) |
 
 PSRAM (`O_psram_*` / `IO_psram_*`) is routed to the GW1NR-9C's
 on-package HyperRAM through the Gowin
@@ -353,7 +423,8 @@ src/                  Synthesizable RTL
    PositionScaler_horz.sv, PositionScaler_vert.sv,
    ov7670_default.sv, ov7670_regs.vh, debug_pattern_generator{,2}.sv,
    uart.sv, modbus_rtu_slave.sv, modbus_cam_backend.sv,
-   wb_interconnect.sv, wb_sccb.sv, wb_sysregs.sv, wb_grab.sv, wb_osd.sv,
+   wb_interconnect.sv, wb_sccb.sv, wb_sysregs.sv, wb_grab.sv, wb_osd.sv, wb_gpio.sv,
+   serv/ (SERV RV32 co-master: serv_cpu.v, serv_wb_cdc.v, be_arbiter.v),
    camera_ov7670.cst, camera_control.sdc, …)
 
 sim/                  Icarus Verilog testbenches and behavioural models

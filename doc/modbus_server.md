@@ -4,7 +4,7 @@ The board runs a **Modbus RTU slave** on the FT2232H channel-B UART so a host PC
 can read/write live OV7670 registers, poll status, and grab full camera frames.
 This document covers the RTL that implements it — `modbus_rtu_slave.sv` (the
 protocol engine) and the **Wishbone bus** behind it (`modbus_cam_backend.sv` as the
-composition root, a `wb_interconnect`, and four peripheral slaves) — their state
+composition root, a `wb_interconnect`, and five peripheral slaves) — their state
 machines, and how they connect to the rest of the design.
 
 For the host-facing register map and usage, see
@@ -26,9 +26,11 @@ flowchart TB
     SYS["wb_sysregs.sv<br/>0xF0/F1/F2/F9/FA"]
     GRAB["wb_grab.sv<br/>0xF3..F8 + ≥0x1000"]
     WOSD["wb_osd.sv<br/>0xFB/FC/FD"]
+    WGPIO["wb_gpio.sv<br/>0xEA/EB"]
     I2C["i2c_control_fsm → OV7670 (SCCB)"]
     CH1["VGA_timing → psram_ch1 (PSRAM ch1)"]
     OSD["VGA_timing → OSDOverlay char buffer"]
+    PINS["GPIO pins 48/49/76/30"]
 
     HOST <-->|"USB / FT2232H ch B"| UART
     UART <-->|"rx/tx bytes"| SLAVE
@@ -37,9 +39,11 @@ flowchart TB
     IC --> SYS
     IC --> GRAB
     IC --> WOSD
+    IC --> WGPIO
     SCCB -->|"camera reg 0x00..0xC9"| I2C
     GRAB -->|"stream pixel ≥0x1000 / grab 0xF3"| CH1
     WOSD -->|"OSD text 0xFB..0xFD"| OSD
+    WGPIO <-->|"4 bidir pins"| PINS
 
     subgraph WB["modbus_cam_backend.sv — Wishbone B4 classic-standard bus (sys_clk)"]
         IC
@@ -47,12 +51,13 @@ flowchart TB
         SYS
         GRAB
         WOSD
+        WGPIO
     end
 ```
 
 `modbus_cam_backend.sv` keeps the same module name and port list it always had,
 but it is now a **thin composition wrapper**: internally it renames the slave's
-`be_*` handshake to a Wishbone master and instantiates the interconnect + four
+`be_*` handshake to a Wishbone master and instantiates the interconnect + five
 slaves. So `camera_control.v` and the integration test
 [`sim/integration/modbus/cam_bridge.sv`](../sim/integration/modbus/cam_bridge.sv)
 are unchanged across the refactor, and that test doubles as a byte-identical
@@ -168,13 +173,13 @@ stays well under the fabric budget (the payload maps to one block RAM; see
 `modbus_cam_backend.sv` was once one monolithic FSM that bundled five jobs behind
 the `be_*` handshake. It is now a thin wrapper around a Wishbone B4
 classic-standard bus: the `be_*`-as-master nets feed `wb_interconnect.sv`, which
-address-decodes to **four independent, individually-testable slaves**. Each
+address-decodes to **five independent, individually-testable slaves**. Each
 concern lives in its own file, and each has its own unit test (see
 [testing.md](testing.md)).
 
 ### `wb_interconnect.sv` — address decode + muxing
 
-Purely combinational: one master, four slaves. It decodes `wb_adr_i` into one
+Purely combinational: one master, five slaves. It decodes `wb_adr_i` into one
 mutually-exclusive per-slave strobe and muxes `dat_r` / `ack` back. The register
 map is byte-identical to before, so the decode uses **explicit constants for the
 scattered `0xFx` block** (never ranges — `F0/F1/F2/F9/FA` go to sysregs while

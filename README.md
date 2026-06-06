@@ -23,6 +23,16 @@ the whole row, centred with black side borders.
 >   over Modbus, with a hardware clear sweep.
 > - **Device health checking** — an on-chip watchdog monitors the camera,
 >   memory and LCD subsystems and reports health to the host (and a status LED).
+> - **Programmable RISC-V co-processor** — a [SERV](https://github.com/olofk/serv)
+>   bit-serial RV32 soft core runs as a 2nd master on the same Wishbone bus; the
+>   host uploads firmware **overlays at runtime** (no reflash) via a bootloader
+>   mailbox. Bundled demos: motion detection, a floating-point calculator, and an
+>   on-device face-presence classifier.
+> - **On-device ML face presence** — [`roi_tm`](demo_mcu_apps/roi_tm/) classifies
+>   face / no-face in a fixed region of interest with a **Tsetlin Machine** (purely
+>   bitwise inference) on the soft core, trained offline on a host pipeline.
+> - **Bidirectional GPIO** — 4 general-purpose pins on the Wishbone bus,
+>   controllable from both the host (Modbus) and the SERV core.
 
 The frame geometry (input/screen size, emit row size) is configured in
 [`platform.json`](platform.json), from which CMake generates the
@@ -65,15 +75,19 @@ flowchart LR
     subgraph WB["modbus_cam_backend — Wishbone B4 bus (27 MHz sys_clk)"]
         IC["wb_interconnect<br/>addr decode"]
         IC --> SCCB["wb_sccb<br/>0x00–0xC9"]
-        IC --> SYS["wb_sysregs<br/>0xF0/F1/F2/F9/FA"]
+        IC --> SYS["wb_sysregs<br/>0xE0/E2/E4/E8/EC/F0–F2/F9/FA"]
         IC --> GRAB["wb_grab<br/>0xF3–F8, ≥0x1000"]
         IC --> WOSD["wb_osd<br/>0xFB/FC/FD"]
+        IC --> WGPIO["wb_gpio<br/>0xEA/EB"]
     end
 
-    MB <-->|"be_* = WB master"| IC
+    MB <-->|"be_* = WB master"| ARBM["be_arbiter"]
+    ARBM --> IC
+    MCU["SERV RV32 MCU<br/>(30 MHz, 2nd master)"] <-->|"serv_wb_cdc"| ARBM
     SCCB -->|"SCCB"| CAM
     GRAB -->|"ch1 grab / frame stream"| VB
     WOSD -->|"text overlay"| LCD
+    WGPIO <-->|"4 pins"| PINS["GPIO 48/49/76/30"]
 
     WD["watchdog<br/>health monitor (27 MHz)"]
     CAM -.->|"vsync heartbeat"| WD
@@ -93,9 +107,10 @@ to [ov7670_default.sv](src/ov7670_default.sv) file for configuration details.
 After power-on init, the host control plane (live camera registers, status,
 frame grab/download, and the OSD overlay) runs over a **Wishbone B4
 classic-standard bus** on the 27 MHz clock: the Modbus slave's backend handshake
-is the bus master, and `modbus_cam_backend` decodes it to four peripheral slaves
-(`wb_sccb`, `wb_sysregs`, `wb_grab`, `wb_osd`). See
-[doc/modbus_server.md](doc/modbus_server.md) for detail.
+is the bus master, and `modbus_cam_backend` decodes it to five peripheral slaves
+(`wb_sccb`, `wb_sysregs`, `wb_grab`, `wb_osd`, `wb_gpio`). On a SERV build a second
+RV32 master (the soft core, via `serv_wb_cdc` + `be_arbiter`) shares the same bus.
+See [doc/modbus_server.md](doc/modbus_server.md) and [doc/serv.md](doc/serv.md).
 
 Video buffer implements circular buffer for 3 frames. Frames have 640x480 size 
 with 16-bit RGB565 pixels. Clock frequency for video buffer logi is 67.5 MHz.
@@ -218,7 +233,10 @@ levels, FTDI udev setup on Linux, GtkWave dumps — see
 - **[doc/webapp_manual.md](doc/webapp_manual.md)** — web-app walkthrough
   (connection, controls, color, capture, board health) with screenshots.
 - **[doc/modbus_server.md](doc/modbus_server.md)** — Modbus RTU slave +
-  camera-backend RTL (state machines, register map, connections).
+  camera-backend RTL (state machines, register map incl. GPIO, connections).
+- **[doc/serv.md](doc/serv.md)** — the SERV RISC-V co-processor: bus crossing,
+  bootloader/overlay loading, and the firmware demos in
+  [`demo_mcu_apps/`](demo_mcu_apps/) (incl. the `roi_tm` face-presence pipeline).
 - **[doc/video_datapath.md](doc/video_datapath.md)** — `VGA_timing`
   internals: PSRAM channels, arbiter, DMA, frame grab, watchdog.
 - **[doc/testing.md](doc/testing.md)** — simulation testbench layout,

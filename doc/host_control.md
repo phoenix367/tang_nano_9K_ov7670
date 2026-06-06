@@ -156,6 +156,21 @@ high byte first (it latches the low byte for a coherent pair). A host that sees
 it jump **backward** knows the board was reset (its registers reverted to
 defaults) and should re-read its settings.
 
+### GPIO (4 bidirectional pins)
+
+Two more bridge registers expose 4 general-purpose pins (`wb_gpio`; Tang Nano 9K
+pins 48/49/76/30). They power up as inputs.
+
+| Addr  | Access | Meaning                                                        |
+| ----- | ------ | -------------------------------------------------------------- |
+| `0xEA`| R/W    | Direction, bits[3:0]: `1` = output (drive), `0` = input (hi-Z). Reset `0` = all inputs |
+| `0xEB`| R/W    | **Write** bits[3:0] = output latch (driven where dir=1); **read** bits[3:0] = live pin levels |
+
+`modbus_client` helpers: `gpio_set_dir(mask)`, `gpio_write(value)`, `gpio_read()`,
+`gpio_get_dir()`. The pins are shared with the SERV core — see
+[serv.md](serv.md) and the [`gpio_blink`](../demo_mcu_apps/gpio_blink/gpio_blink.c)
+MCU demo.
+
 ## Board health (watchdog)
 
 A hardware **health watchdog** (`src/watchdog.sv`) continuously monitors an

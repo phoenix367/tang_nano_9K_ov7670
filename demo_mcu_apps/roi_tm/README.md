@@ -14,13 +14,12 @@ room to spare (the model is a table of 32-bit clause masks).
 
 ## The loop
 
-```
- ┌── collect_samples.py ──┐      ┌── train_tm.py ──┐      ┌── roi_tm.c ──┐
- │ label face/no-face ROI │ ───► │ train TM, export │ ──► │ bitwise infer │
- │  -> samples.jsonl      │      │  -> tm_model.h    │     │  on live ROI  │
- └────────────────────────┘      └───────────────────┘     └──────────────┘
-        (roi_collect overlay        (host, numpy)            (SERV overlay)
-         draws the box)
+```mermaid
+flowchart LR
+    C["<b>collect_samples.py</b><br/>label face / no-face ROI<br/>→ samples.jsonl<br/><i>(roi_collect overlay draws the box)</i>"]
+    T["<b>train_tm.py</b><br/>train TM + export<br/>→ tm_model.h<br/><i>(host, numpy)</i>"]
+    R["<b>roi_tm.c</b><br/>bitwise inference on the live ROI<br/>→ FACE / no-face<br/><i>(SERV overlay)</i>"]
+    C -->|"collect"| T -->|"build + deploy"| R
 ```
 
 1. **Collect.** Upload the `roi_collect` overlay (draws the box, parks) and run
