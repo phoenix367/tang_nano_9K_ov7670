@@ -92,6 +92,47 @@ The hardware smoke test `test_serv_roi_tm` in
 [`../../webapp/tests/test_device_hw.py`](../../webapp/tests/test_device_hw.py) also
 uploads and checks it (`OV7670_PORT=/dev/ttyGowin OV7670_SERV=1 pytest -k roi_tm`).
 
+## The committed model (exact recipe)
+
+The `tm_model.h` checked in here was trained as follows (the header's first comment
+line records the same provenance):
+
+**Dataset** — the Kaggle *Face Detection Dataset* (fareselmenshawii,
+<https://www.kaggle.com/datasets/fareselmenshawii/face-detection-dataset>), a
+YOLO-format set (`images/` + `labels/`, class 0 = face). Converted to the device's
+22×14 RGB565 ROI format with [`detection_dataset.py`](detection_dataset.py):
+
+```
+python demo_mcu_apps/roi_tm/detection_dataset.py \
+    --root /mnt/data/datasets/Face-Detection-Dataset --split train \
+    --faces 4000 --nonfaces 4000 --min-face-px 32 --margin 1.3 --seed 1 \
+    -o demo_mcu_apps/roi_tm/samples_det.jsonl
+# scanned 1653 train images -> 8000 samples (4000 face bbox crops / 4000 background crops)
+```
+
+**Training** — [`train_tm.py`](train_tm.py) on that dataset:
+
+```
+python demo_mcu_apps/roi_tm/train_tm.py -i demo_mcu_apps/roi_tm/samples_det.jsonl \
+    --clauses 64 --s 3.9 --T 20 --epochs 100 --states 100 \
+    --val-split 0.2 --augment 3 --threshold 4 --seed 1
+```
+
+| parameter | value | |
+| --- | --- | --- |
+| features | 591 | ÷2 luma LBP (360) + ÷2 colour (231) |
+| clauses | 64 | 32 face (+1) / 32 non-face (−1) |
+| `s` / `T` / states | 3.9 / 20 / 100 | specificity / vote target / TA states |
+| epochs | 100 | |
+| augment | ×3 | brightness / WB / contrast / flip per train sample |
+| threshold | +4 | face when net vote ≥ 4 |
+| val split | 0.2 | seed 1 (deterministic; re-running reproduces the masks) |
+| **result** | train 0.812 / **val 0.812** | sparse model ~2 KB, overlay ~3.9 KB |
+
+Training is deterministic (fixed seeds), so re-running the two commands regenerates
+the identical `tm_model.h`. The dataset JSONL is git-ignored (rebuild it from the
+source). See **Experiments & findings** below for why these values were chosen.
+
 ## Why it stays in sync
 
 [`tm_common.py`](tm_common.py) is the single source of truth for the three things
