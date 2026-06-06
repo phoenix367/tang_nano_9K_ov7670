@@ -14,7 +14,7 @@
  * The ROI geometry (grid step, ROI cell bounds, pillarbox LUTs) is byte-identical
  * to roi_presence.c, so the cells the host samples here are exactly the cells the
  * trained classifier will see in roi_presence. The overlay also raises the camera
- * AGC ceiling + enables AWB (same as roi_presence/skin_detect) for a usable image.
+ * AGC ceiling + enables AWB (same as roi_presence) for a usable image.
  *
  * Parks; reset the MCU (0xE2) to stop. Host-uploaded overlay -- no reflash.
  */

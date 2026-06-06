@@ -468,16 +468,6 @@ if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
         COMMENT "Building demo_mcu_apps/calc overlay (C + libgcc soft-float, linked at the overlay base)"
         VERBATIM
     )
-    # skin_detect: skin-region detector with an OSD bounding box (C, no libgcc).
-    set(SERV_SKIN_BIN "${SERV_FW_DIR}/skin_detect.bin")
-    add_custom_command(
-        OUTPUT  ${SERV_SKIN_BIN}
-        COMMAND ${SERV_C_BUILD} ${DEMO_DIR}/skin_detect/skin_detect.c -o ${SERV_FW_DIR}/skin_detect.elf
-        COMMAND ${RISCV_OBJCOPY} -O binary ${SERV_FW_DIR}/skin_detect.elf ${SERV_SKIN_BIN}
-        DEPENDS ${DEMO_DIR}/skin_detect/skin_detect.c ${SERV_C_CRT} ${SERV_C_HDR} ${SERV_SOC_DIR}/overlay_c.ld
-        COMMENT "Building demo_mcu_apps/skin_detect overlay (C, linked at the overlay base)"
-        VERBATIM
-    )
     # lbph_bench: benchmark LBPH feature computation on the soft core (C, no libgcc).
     set(SERV_LBPH_BIN "${SERV_FW_DIR}/lbph_bench.bin")
     add_custom_command(
@@ -523,7 +513,7 @@ if (RISCV_GCC AND EXISTS "${SERV_DIR}/servant/servant.v")
     )
     add_custom_target(serv_firmware DEPENDS ${SERV_BOOT_HEX} ${SERV_OVERLAY_BIN}
                       ${SERV_OSD_HELLO_BIN} ${SERV_PSRAM_TEST_BIN} ${SERV_C_HELLO_BIN}
-                      ${SERV_MOTION_BIN} ${SERV_MOTION_C_BIN} ${SERV_CALC_BIN} ${SERV_SKIN_BIN}
+                      ${SERV_MOTION_BIN} ${SERV_MOTION_C_BIN} ${SERV_CALC_BIN}
                       ${SERV_LBPH_BIN} ${SERV_ROI_BIN} ${SERV_ROI_COLLECT_BIN} ${SERV_ROI_TM_BIN}
                       ${SERV_GPIO_BLINK_BIN})
     if (SERV_CONTROL)

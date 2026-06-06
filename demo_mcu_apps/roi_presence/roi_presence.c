@@ -15,12 +15,12 @@
  * The ROI box is drawn once via the pillarbox-correct OSD map (cols 7..51). A
  * "FACE" label in the left border lights up while a face is present. Heartbeat
  * (0xE0) = (skin_count << 1) | present, for the host. Parks; reset (0xE2) to stop.
- * The overlay raises the camera AGC ceiling + AWB at startup (as skin_detect does).
+ * The overlay raises the camera AGC ceiling + AWB at startup for a usable image.
  */
 #include <stdint.h>
 #include "serv_io.h"
 
-/* sample grid (matches skin_detect): cam_col = cc*16, cam_row = rr*30 */
+/* sample grid: cam_col = cc*16, cam_row = rr*30 */
 #define COL_STEP 16
 #define ROW_STEP 19200
 
