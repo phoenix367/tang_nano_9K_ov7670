@@ -108,11 +108,13 @@ the host and MCU must agree on **bit-for-bit**:
   is in word `k>>5` at position `k&31`. Same packing in `pack_literals()` and the C.
 - **voting** — clauses `0..TM_POS-1` vote +1, the rest −1; face when `vote ≥ TM_THRESHOLD`.
 
-[`test_tm_pipeline.py`](test_tm_pipeline.py) locks this down: it reimplements
-roi_tm.c's *integer* inference in Python and asserts it equals the numpy reference
-(`infer_packed`) over many random inputs, checks the feature definition is
-division-free-exact, round-trips the exported header, and confirms the TM learns a
-separable problem. Run it with:
+[`test_tm_pipeline.py`](test_tm_pipeline.py) locks this down: it **compiles the real
+`roi_features.h`** with gcc and asserts its literal vector equals the Python
+`featurize`/`pack_literals` bit-for-bit over many random inputs (this exercises the
+actual C — a Python "mirror" once *missed* a macro variable-shadowing bug that
+broke every colour feature on-device), checks featurize shape/determinism,
+round-trips the exported (sparse) header, and confirms the TM learns a separable
+problem. Run it with:
 
 ```
 .venv/bin/python -m pytest demo_mcu_apps/roi_tm/test_tm_pipeline.py -v
@@ -145,32 +147,56 @@ for *any* classifier on luma alone (a RandomForest upper-bound confirms it's a
 resolution limit, not the TM); **adding colour features lifts it to ~0.84 (RF) /
 0.82 (TM)** — colour is the main face-vs-background signal at this resolution.
 
-The LBP features are clearly learnable at 22×14. More clauses help on the hard set
-(holdout: 64→0.93, 128→0.95, 200→0.965) but the masks grow `clauses × 23 × 4` B and
-must fit the ~15 KB overlay RAM — so **64 is the safe default, ~128 the practical
-ceiling** (~12 KB masks); 200 (18 KB) needs a bigger MCU RAM build. These are still
-*optimistic* (cropped/centred faces, dataset backgrounds ≠ your room); real accuracy
-needs `collect_samples.py` captures. Both downloads + `scikit-learn`/`pillow` are dev
-requirements (LFW ≈200 MB, CIFAR ≈170 MB, cached under the sklearn data home).
+The easy/hard numbers are *optimistic* (cropped/centred faces, dataset backgrounds ≠
+your room); honest real-world accuracy needs `collect_samples.py` captures on your
+own camera. `scikit-learn`/`pillow` are dev requirements; LFW (≈200 MB) and CIFAR
+(≈170 MB) download once into the sklearn data home.
+
+## Experiments & findings
+
+The current design (64-clause TM, ÷2 luma LBP + ÷2 colour = 591 features, sparse
+masks, threshold +4, photometric augmentation) is the result of these experiments —
+recorded so the dead ends aren't re-explored:
+
+| # | Tried | Result | Decision |
+| --- | --- | --- | --- |
+| 1 | **Feature ablation** on the detection set (RF upper-bound) | luma LBP only 0.77; +brightness-thermometer 0.78; **+colour 0.84**; full-res LBP 0.79 | **colour is the lever** at this resolution; keep it |
+| 2 | **Clauses** 64 vs 128 (same data) | 0.817 vs 0.816 | no gain → **64 clauses**; the TM, not capacity, is the cap |
+| 3 | **Higher resolution** (full-res 22×14 colour, 1284 feats) | RF 0.84→0.85 but **TM 0.817→0.809** even at 128 clauses | helps RF, not the TM → reverted; keep ÷2 colour |
+| 4 | **Sparse (CSR) masks** vs dense `[64][37]` table | overlay 11.2 KB → 3.9 KB, faster inference | **adopted** (clauses include ~15 of ~1200 literals) |
+| 5 | **Decision threshold** 0 → +4 | empty-scene flicker near vote 0 removed | **threshold +4** (empty −6…−13, face +12…+21) |
+| 6 | **Luminance augmentation** (`--augment`) | brightened-val 0.783 → 0.791, clean unchanged | **adopted** (`--augment 3`); colour bits drift with exposure/AWB |
+| 7 | **Graph Tsetlin Machine** (cair/HierarchicalGraphTsetlinMachine) | GPU-only; crashes on this Pascal GTX 1050; and its message-passing inference doesn't map to the MCU's bitwise loop | **abandoned** — not deployable here |
+
+**Bottom line:** on a hard real detection set the *features/classifier* cap around
+**0.82** at 22×14 (a RandomForest reaches ~0.84; the TM ~0.82 and is the part that
+actually fits the MCU). Resolution and clause count are not the bottleneck — colour
+features and matched data are. The biggest remaining lever is on-device capture
+(`collect_samples.py`) so the model learns *your* camera's colour/exposure.
 
 ## Files
 
 | File | Role |
 | --- | --- |
-| `tm_common.py` | featurize, the numpy TM (train + reference inference), bit-packing, header export — shared by trainer and tests. |
-| `train_tm.py` | CLI: load `samples.jsonl` → train → evaluate → emit `tm_model.h` + `tm_model.json`. `--synthetic` self-tests the whole path. |
-| `roi_tm.c` | SERV overlay: read ROI → featurize → bitwise TM inference → OSD label + heartbeat. |
-| `tm_model.h` | **Generated.** Clause masks + sizes. A default (trained on synthetic data) is committed so the build works before you retrain — its face predictions are meaningless until you train on real captures. |
+| `tm_common.py` | featurize, the numpy TM (train + reference inference), bit-packing, `augment()`, sparse-header export — shared by trainer and tests. |
+| `train_tm.py` | CLI: load `samples.jsonl` → train → evaluate → emit `tm_model.h` + `tm_model.json`. `--augment N` (luminance robustness), `--threshold`, `--synthetic` (self-test). |
+| `roi_features.h` | the ROI→literal featurize in C, **shared** by `roi_tm.c` and the host compile-test (single source, so C and Python can't drift). |
+| `roi_tm.c` | SERV overlay: read ROI → `roi_featurize()` → bitwise TM vote → OSD (FACE / FPS / F-N counters) + heartbeat. |
+| `tm_model.h` | **Generated** (sparse CSR: `tm_clause_len` + `tm_lit`). The committed model is trained on the YOLO detection set (`--augment 3`), so the demo deploys and detects faces as-is; regenerate with `train_tm.py` to retrain. |
 | `detection_dataset.py` | Build the device-format dataset from a YOLO **face-detection** set (e.g. `/mnt/data/datasets/Face-Detection-Dataset`): crops face bboxes (face) + non-overlapping regions (no-face) from the same images → real in-context faces + real backgrounds. The best source for this task. |
 | `visualize_dataset.py` | Render a `samples*.jsonl` dataset: a colour PNG montage grouped by label (`--ascii` for terminal luma previews). Eyeball alignment / balance / mislabels. |
 | `test_tm_pipeline.py` | Pure-host pipeline tests (no hardware). |
 
 ## Notes
 
-- The committed `tm_model.h` is a **placeholder** from `--synthetic`. It builds and
-  runs, but won't recognise faces until you collect data and retrain.
-- The model is ~`TM_CLAUSES × TM_NWORDS × 4` bytes of `.rodata` (default 64×20×4 =
-  5 KB), uploaded word-by-word through the bootloader mailbox — a one-time ~10 s
-  upload. Bigger `--clauses` ⇒ larger/slower upload, more capacity.
-- Changing the ROI size means retraining: `roi_tm.c` has a `#if TM_N != ROI_CELLS`
-  guard that fails the build if `tm_model.h` no longer matches the geometry.
+- The committed `tm_model.h` is a **real model** (detection-set, `--augment 3`), so
+  `roi_tm` detects faces out of the box; retrain on your own captures to close the
+  domain gap to your camera.
+- The model is stored **sparse** (CSR: per-clause literal-index lists) — ~2 KB of
+  `.rodata`, ~3.9 KB overlay, uploaded through the bootloader mailbox in ~2–3 s.
+- Changing the feature geometry means retraining: `roi_features.h` has a
+  `#if TM_N != FEATURE_COUNT` guard that fails the build if `tm_model.h` no longer
+  matches.
+- `roi_features.h` (featurize) and `tm_common.featurize` must stay in lockstep — the
+  compile-and-diff test guards it; the OV7670 outputs colour (RGB565), so the colour
+  features assume a colour camera.
