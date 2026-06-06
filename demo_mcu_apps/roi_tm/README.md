@@ -36,14 +36,48 @@ room to spare (the model is a table of 32-bit clause masks).
    Reports train/validation accuracy and writes **`tm_model.h`** (baked into the
    overlay) and `tm_model.json` (inspection). Needs `numpy`.
 
-3. **Deploy.**
+3. **Deploy** — see the next section. (A trained `tm_model.h` is already committed,
+   so you can deploy the demo *without* collecting/training first.)
+
+## Deploy roi_tm to the device
+
+`roi_tm` is a **host-uploaded SERV overlay** — no FPGA reflash needed, just a
+SERV-enabled bitstream already on the board (`platform.json` `serv_mcu.enable=true`;
+see [`../../doc/serv.md`](../../doc/serv.md)). The committed `tm_model.h` is a ready
+model, so these steps work as-is.
+
+1. **Build the overlay** (compiles the committed `tm_model.h` into the binary):
    ```
-   cmake --build build --target serv_firmware     # compiles tm_model.h into roi_tm.bin
+   cmake --build build --target serv_firmware     # -> build/serv_fw/roi_tm.bin (~3.9 KB)
    ```
-   Upload `build/serv_fw/roi_tm.bin` (web app Firmware tab, or `serv_boot_load`). The
-   MCU draws the box, and a **"FACE"** label lights in the left border while a face
-   is present. Heartbeat `0xE0` = `bit7 = present`, `bits[6:0] = vote + 64` (host
-   decodes `vote = (0xE0 & 0x7F) - 64`).
+
+2. **Upload it** to the SERV core, either:
+   - **Web app:** the **Firmware** tab → select `build/serv_fw/roi_tm.bin` → Upload, or
+   - **CLI** (uploads + resets the MCU into it via the bootloader mailbox):
+     ```
+     .venv/bin/python -c "import sys; sys.path.insert(0,'webapp'); \
+       from modbus_client import ModbusRTU; mb=ModbusRTU('/dev/ttyGowin'); \
+       print('words:', mb.serv_boot_load(open('build/serv_fw/roi_tm.bin','rb').read())); mb.close()"
+     ```
+   (Free the serial port first — stop the web app if it holds `/dev/ttyGowin`.)
+
+3. **Use it.** The overlay draws the ROI box on the LCD; align your face to it. A
+   **"FACE"** label lights in the left border while a face is present. The heartbeat
+   register `0xE0` encodes the result: `bit7 = present`, `bits[6:0] = vote + 64`
+   (decode `vote = (0xE0 & 0x7F) - 64`). Watch it live:
+   ```
+   .venv/bin/python -c "import sys,time; sys.path.insert(0,'webapp'); \
+     from modbus_client import ModbusRTU,REG_HEARTBEAT as H; mb=ModbusRTU('/dev/ttyGowin'); \
+     [print('vote',(mb.read_reg(H)&0x7F)-64,'present',mb.read_reg(H)>>7) or time.sleep(0.4) for _ in range(40)]"
+   ```
+   Empty scene → a clearly negative vote (no-face); face filling the box → vote rises
+   past `TM_THRESHOLD` (+4) → `present=1`. A valid live heartbeat decodes to a vote in
+   `[-32, +32]`; `0x00` (vote −64) means the overlay isn't running (MCU still in the
+   bootloader) — re-upload.
+
+The hardware smoke test `test_serv_roi_tm` in
+[`../../webapp/tests/test_device_hw.py`](../../webapp/tests/test_device_hw.py) also
+uploads and checks it (`OV7670_PORT=/dev/ttyGowin OV7670_SERV=1 pytest -k roi_tm`).
 
 ## Why it stays in sync
 
