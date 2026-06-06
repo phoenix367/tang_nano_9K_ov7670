@@ -103,6 +103,8 @@ appears composited over the camera image in real time.
 
 ## Firmware
 
+![Firmware tab](images/webapp_firmware.png)
+
 On a SERV-enabled bitstream (`serv_mcu.enable`, see
 [serv.md](serv.md#bootloader-load-an-overlay-from-the-host-at-runtime)) the
 device boots a bootloader for its on-board RISC-V soft core. The **Firmware** tab
@@ -115,6 +117,12 @@ including one that **parks** (loops forever). A standalone **Reset MCU** button
 returns the core to the bootloader on its own. On a non-SERV bitstream the upload
 times out (the bootloader mailbox never drains), reported as an error in the
 status line.
+
+The build emits a range of demo overlays under `build/serv_fw/` you can upload
+here — `overlay_heartbeat.bin` and `osd_hello.bin` (bring-up), `gpio_blink.bin`
+(toggles the GPIO pins), and `roi_tm.bin` (the on-device Tsetlin-Machine face
+presence detector). See [serv.md](serv.md) and the per-app
+[`demo_mcu_apps/`](../demo_mcu_apps/) READMEs.
 
 ## Resilience
 

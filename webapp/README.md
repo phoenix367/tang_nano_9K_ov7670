@@ -11,9 +11,12 @@ Features:
 - **Pick a serial port** (auto-detected, plus the project's `/dev/ttyGowin`
   symlink) and connect; the connect step sanity-reads the Product ID.
 - **Tabbed UI** once connected: a **Basic controls** tab (identity, controls,
-  raw register access), a **Color** tab (gamma curve + color matrix), and a
+  raw register access), a **Color** tab (gamma curve + color matrix), a
   **Capture** tab (grab a 640×480 frame into PSRAM ch1, stream it back over
-  Modbus, draw it to a canvas, save as PNG).
+  Modbus, draw it to a canvas, save as PNG), an **OSD overlay** tab (compose
+  white 8×16 text over the live video), and a **Firmware** tab (upload an
+  overlay firmware to the SERV soft-core bootloader, on a SERV-enabled
+  bitstream).
 - **Read camera settings** — identity registers (PID/VER/MIDH/MIDL) and the
   decoded value of every control.
 - **Change specific controls** — brightness, contrast, gain, exposure, the
