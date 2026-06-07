@@ -268,9 +268,10 @@ levels, FTDI udev setup on Linux, GtkWave dumps — see
 
 ## Working demo
 
-Here is a short video to demonstrate how the whole setup is working.
+Here is a short video to demonstrate how the whole setup is working (click to
+watch on YouTube):
 
-https://github.com/phoenix367/tang_nano_9K_ov7670/assets/2589419/772c0f9f-d9df-424a-a7af-923fc6d49a3e
+[![Watch the demo on YouTube](https://img.youtube.com/vi/immtERNpudU/maxresdefault.jpg)](https://youtu.be/immtERNpudU)
 
 ## Known issues
 
