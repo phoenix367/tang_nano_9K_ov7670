@@ -486,6 +486,90 @@ write stream into ch1 to capture a full frame and serves it back as 8-word burst
 reads. `modbus_cam_backend.sv` streams that frame to the host over Modbus FC03
 (stream band `≥ 0x1000`) — see [host_control.md](host_control.md#frame-grab-and-download).
 
+## Repository components
+
+How the repo's parts fit together as software/build components (the FPGA datapath
+itself is in [Solution components](#solution-components) above). `platform.json` is
+the single source of truth both the gateware and the host read; CMake is the
+orchestrator that generates the config headers, builds the gateware + MCU firmware,
+and drives the test suites. This is a **PlantUML** component diagram (rendered with
+a PlantUML tool; it does not render inline on GitHub):
+
+```plantuml
+@startuml
+title Repository components (software / build, not the FPGA datapath)
+skinparam componentStyle rectangle
+skinparam shadowing false
+left to right direction
+
+artifact "platform.json\n(single source of truth:\ngeometry / clock / modbus / uart / serv_mcu)" as PJ
+
+package "Build  (CMakeLists.txt)" as BUILD {
+  [CMake configure] as CM
+  [platform_config.vh\n(generated)] as PCVH
+  [build_config.vh\n(generated)] as BCVH
+}
+
+package "Gateware  (src/)" as GW {
+  [camera_control.v  (top)] as TOP
+  [Video datapath\nVGA_timing / VideoController / FSMs / resize] as VID
+  [Control plane\nmodbus_rtu_slave + wb_interconnect + wb_* slaves] as CTRL
+  [SERV co-master\nserv_cpu / serv_wb_cdc / be_arbiter] as SERVHW
+  [Gowin IP\nrPLL / PSRAM PHY / FIFO / BSRAM] as IP
+}
+
+package "MCU firmware" as FW {
+  [serv_soc/\nbootloader + standalone blink] as BL
+  [demo_mcu_apps/*\noverlays: roi_tm, gpio_blink, motion, calc, ...] as OV
+  [common/\ncrt0.S + serv_io.h] as CRT
+}
+
+package "Host tooling" as HOST {
+  [webapp/\napp.py + modbus_client.py + ov7670.py + static] as WEB
+  [scripts/\nmodbus_test / frame_grab / serv_upload] as SCR
+  [platform_config.py] as PCPY
+}
+
+package "Verification" as VER {
+  [sim/  iverilog testbenches + models] as SIM
+  [webapp/tests  pytest (hardware-in-the-loop)] as PYT
+  [sby/  yosys formal proofs] as SBY
+}
+
+package "Submodules" as SUB {
+  [serv/] as SERVMOD
+  [FPGADesignElements/] as FDE
+}
+
+' --- generation / build orchestration ---
+PJ --> CM
+PJ --> PCPY
+CM --> PCVH
+CM --> BCVH
+PCVH ..> GW : included by
+BCVH ..> GW : included by
+CM ..> GW : synth / PnR (Gowin)
+CM ..> FW : riscv-gcc -> .hex/.bin
+CM ..> SIM : ctest
+CM ..> SBY : ctest -L formal
+
+' --- dependencies ---
+SERVMOD ..> SERVHW
+FDE ..> GW
+OV ..> CRT
+PCPY ..> WEB
+PCPY ..> SCR
+
+' --- runtime relationships ---
+HOST ..> CTRL : Modbus RTU / UART
+WEB ..> BL : upload overlays\n(bootloader mailbox)
+OV ..> SERVHW : runs on
+SIM ..> GW : exercises RTL
+PYT ..> HOST : drives device via
+SBY ..> CTRL : proves
+@enduml
+```
+
 ## Source-tree organization
 
 ```
