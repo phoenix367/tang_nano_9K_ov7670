@@ -129,21 +129,22 @@ low bits are scaling values — preserve them (defaults `0x3A`/`0x35`), e.g. wri
 
 ## Reserved registers (above the OV7670 map)
 
-Addresses `0xF0`–`0xFD` are **bridge** registers, answered directly (no SCCB
-cycle, served even during camera init) so a host can identify the firmware,
-detect a hard reset, drive the [frame grab](#frame-grab-and-download), read
-[board health](#board-health-watchdog), and write the [OSD text
-overlay](#osd-text-overlay). The download stream band (`≥ 0x1000`) is
-covered in [Frame grab and download](#frame-grab-and-download).
+Addresses in the `0xE0`–`0xFD` band are **bridge** registers, answered directly
+(no SCCB cycle, served even during camera init) so a host can identify the
+firmware, detect a hard reset, drive the [frame grab](#frame-grab-and-download),
+read [board health](#board-health-watchdog), write the [OSD text
+overlay](#osd-text-overlay), drive the [GPIO pins](#gpio-4-bidirectional-pins),
+and control the [SERV MCU](#serv-mcu-and-firmware-overlays). The download stream
+band (`≥ 0x1000`) is covered in [Frame grab and download](#frame-grab-and-download).
 
 | Addr  | Access | Meaning                                                        |
 | ----- | ------ | -------------------------------------------------------------- |
 | `0xF0`| R      | Firmware magic — reads `0xA5` (confirms you're talking to this bridge) |
 | `0xF1`| R      | Uptime, high byte                                              |
 | `0xF2`| R      | Uptime, low byte                                              |
-| `0xF3`| R/W    | Write `1` = arm a frame grab, `2` = trigger a single-word ch1 read. Read: bit0 = grab busy, bit1 = ch1 calibrated |
-| `0xF4`/`0xF5`| W | Single-read ch1 address, low / high (debug)                    |
-| `0xF6`/`0xF7`| R | Single-read ch1 word, high / low halves (debug)                |
+| `0xF3`| R/W    | Write `1` = arm a frame grab, `2` = trigger a single-burst ch1 read, `3` = trigger a single-burst ch1 write. Read: bit0 = grab busy, bit1 = ch1 calibrated |
+| `0xF4`/`0xF5`| W | ch1 burst address for the `0xF3`=2/3 read/write, low / high                |
+| `0xF6`/`0xF7`| R/W | **Read** = ch1 word from the last `0xF3`=2 read (high / low halves); **write** = the 32-bit value `0xF3`=3 writes to every word of the addressed burst |
 | `0xF8`| W      | Rewind the [download stream](#frame-grab-and-download) to pixel 0 |
 | `0xF9`| R      | [Watchdog board health](#board-health-watchdog) (bit-field, below) |
 | `0xFA`| W      | Write `1` = reset to defaults — re-run the power-on camera init (reloads every OV7670 register from ROM) |
@@ -170,6 +171,32 @@ pins 48/49/76/30). They power up as inputs.
 `gpio_get_dir()`. The pins are shared with the SERV core — see
 [serv.md](serv.md) and the [`gpio_blink`](../demo_mcu_apps/gpio_blink/gpio_blink.c)
 MCU demo.
+
+### SERV MCU and firmware overlays
+
+On a SERV build (`platform.json` `serv_mcu.enable`, default true) the on-board
+RISC-V soft core is reachable through five more bridge registers — a scratch /
+heartbeat, a reset, and a three-register bootloader **mailbox** the host uses to
+upload a firmware **overlay at runtime** (no reflash). All are answered directly
+(no SCCB). On a non-SERV bitstream they still exist but do nothing useful (an
+upload times out because the mailbox never drains).
+
+| Addr  | Access | Meaning                                                        |
+| ----- | ------ | -------------------------------------------------------------- |
+| `0xE0`| R/W    | Heartbeat / scratch for host↔MCU signalling — a running overlay can post liveness or a result here (e.g. `roi_tm` writes its face-presence verdict). On hardware only the **low byte** round-trips on the live bus |
+| `0xE2`| W      | Write bit0 = **reset the SERV MCU** back into its bootloader (recovers it from any state, including a parked overlay); reads `0` |
+| `0xE4`| W      | `BOOT_LEN` — overlay length in 16-bit words; writing it **begins** an upload |
+| `0xE8`| W      | `BOOT_DATA` — next overlay word (host writes; the MCU consumes it) |
+| `0xEC`| R      | `BOOT_STATUS` — bit1 = upload started, bit0 = word **pending** (flow control: wait for bit0 = 0 before writing the next word) |
+
+**Upload protocol:** reset the MCU (`0xE2`) → write `BOOT_LEN` (`0xE4`) → for each
+16-bit little-endian word of the `.bin`, poll `BOOT_STATUS` (`0xEC`) until
+`pending` clears, then write `BOOT_DATA` (`0xE8`). The bootloader copies the words
+into RAM and jumps to the overlay at `0x1000`. `modbus_client` wraps this as
+`serv_mcu_reset()` and `serv_boot_load(blob)`; the [`serv_upload.py`](#command-line-client)
+CLI and the web app's [Firmware tab](#web-app) drive it too. See
+[serv.md](serv.md) for the bootloader/overlay design and the firmware demos in
+[`demo_mcu_apps/`](../demo_mcu_apps/).
 
 ## Board health (watchdog)
 
@@ -333,6 +360,9 @@ Capabilities:
   **Send to display** / **Clear** buttons and a **Show overlay** toggle; the text
   is composited over the live video on the LCD (see [OSD text
   overlay](#osd-text-overlay)).
+- **Firmware tab** — on a SERV build, **Upload & run** an overlay firmware
+  (`.bin`) to the soft-core bootloader, or **Reset MCU** back into the bootloader
+  (see [SERV MCU and firmware overlays](#serv-mcu-and-firmware-overlays)).
 - **Board health** — the Connection panel shows a health row, refreshed by the
   heartbeat, with an overall chip (Healthy / HANG / starting…) plus per-subsystem
   LCD / Memory / Camera chips decoded from the [watchdog](#board-health-watchdog)
@@ -366,4 +396,13 @@ it (binary PPM always, plus PNG if Pillow is installed):
 
 ```sh
 scripts/frame_grab.py --port /dev/ttyGowin -o frame.ppm
+```
+
+[`scripts/serv_upload.py`](../scripts/serv_upload.py) uploads a SERV firmware
+overlay (by built-overlay name or `.bin` path) to the soft core and runs it:
+
+```sh
+scripts/serv_upload.py --list                            # list built overlays
+scripts/serv_upload.py -p /dev/ttyGowin roi_tm --verify  # upload + run (then verify)
+scripts/serv_upload.py -p /dev/ttyGowin --reset-only     # MCU -> bootloader
 ```

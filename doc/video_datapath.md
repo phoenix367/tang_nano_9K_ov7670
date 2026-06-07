@@ -35,7 +35,7 @@ flowchart TB
     PIPE["ch0 1-cycle pipeline reg<br/>cmd_0_p … wr_data0_p"]
     PHY["Video_frame_buffer<br/>psram_…_2ch IP (HyperRAM PHY)"]
     CH1["psram_ch1<br/>ch1 engine: grab-mirror + burst reads"]
-    MB["grab_arm / grab_rd_*<br/>(from Modbus, sys_clk)"]
+    MB["grab_arm / grab_rd_* / grab_wr_*<br/>(from Modbus, sys_clk)"]
     OSDW["osd_enable / osd_wr_*<br/>(from Modbus, sys_clk)"]
 
     subgraph VGA_timing
@@ -341,8 +341,22 @@ to `sys_clk` on the completion toggle). The backend buffers that burst and serve
 up to 125 pixels per FC03 response out of BSRAM. A full 640×480 frame
 (307,200 px, ~614 KB) downloads in ~10 s at 1 Mbaud.
 
-The same `grab_rd_*` interface also backs the single-word debug read at
-registers `0xF4`–`0xF7` (it just returns word 0 of the addressed burst).
+### Arbitrary ch1 read/write (debug + PSRAM test)
+
+The same ch1 engine also backs a **single-burst read/write** at registers
+`0xF4`–`0xF7`, independent of the grab/stream path:
+
+- `0xF4`/`0xF5` set the ch1 burst address (`[15:0]` / `[20:16]`).
+- A `0xF3` write of **`2`** (`grab_rd_req`) reads that burst — word 0 comes back on
+  `0xF6`/`0xF7` (high / low halves).
+- A `0xF3` write of **`3`** (`grab_wr_req`) writes the 32-bit value in `0xF6`/`0xF7`
+  to *every* word of that burst, sequenced by the **`S_WBURST`** state, which mirrors
+  `FrameUploader`'s proven ch0 write timing (`WR_HOLD = TCMD + WORDS + CACHE_DELAY`).
+
+This lets a host or the SERV MCU write a known sequence into free ch1 PSRAM and read
+it back — exercised by the [`psram_test`](../demo_mcu_apps/psram_test/psram_test.c)
+demo and the `psram_write_read_roundtrip` hardware test. The write meaning of
+`0xF6`/`0xF7` is additive: a *read* still returns the latched ch1 word.
 
 ### `psram_ch1` state machine
 
@@ -351,19 +365,21 @@ stateDiagram-v2
     [*] --> S_IDLE
     S_IDLE --> S_GWAIT: grab_start (0xF3=1)
     S_IDLE --> S_RCMD: rd_start (stream / 0xF3=2)
+    S_IDLE --> S_WBURST: wr_start (0xF3=3)
     S_GWAIT --> S_GCAP: grab_active ↑ (fresh frame start)
     S_GCAP --> S_GCAP: mirror ch0 writes into ch1 (addr += 16)
     S_GCAP --> S_GDRAIN: grab_active ↓
     S_GDRAIN --> S_IDLE: flush the tap (+5 cycles)
     S_RCMD --> S_RDAT: issue read
     S_RDAT --> S_IDLE: collect 8 words → 256-bit burst (CDC to sys_clk)
+    S_WBURST --> S_IDLE: write the 32-bit value to every word of the burst (WR_HOLD)
 ```
 
 CDC between the `sys_clk` control side (Modbus) and the `fb_clk` PHY side uses
-toggle handshakes: a request toggle is set on `grab_arm`/`rd_req`, synchronized
-with 2–3 flops on `fb_clk`, and edge-detected to start the op; a completion
-toggle returns the other way to clear `busy` and latch the result. `calib1`
-(ch1 calibrated) is likewise synced out as `grab_calib`.
+toggle handshakes: a request toggle is set on `grab_arm`/`rd_req`/`wr_req`,
+synchronized with 2–3 flops on `fb_clk`, and edge-detected to start the op; a
+completion toggle returns the other way to clear `busy` and latch the result.
+`calib1` (ch1 calibrated) is likewise synced out as `grab_calib`.
 
 ## Health watchdog
 

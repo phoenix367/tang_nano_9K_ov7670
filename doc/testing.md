@@ -45,16 +45,26 @@ sim/
 │   │   └── countdown.sv             cycle count to delay_done + syn_rst restart
 │   ├── arbiter/
 │   │   └── round_robin.sv           grant / hold / mask / round-robin (width 2)
+│   ├── be_arbiter/
+│   │   └── two_master.sv           host-priority 2-master arbiter; owner-lock vs mid-transaction preemption
 │   ├── cam_pixel_processor/
 │   │   └── frame_sequence.sv        start / per-row / end command framing
+│   ├── osd/
+│   │   └── overlay.sv              osd_overlay compositing: passthrough vs white glyph pixels (disabled / blank / lit)
+│   ├── serv_wb_cdc/
+│   │   └── crossing.sv             SERV ext-bus (mcu_clk) → backend (sys_clk) CDC: word + byte-lane resolve across async clocks
 │   ├── uart/
 │   │   └── frame.sv                 8-E-1 UART: loopback + parity/frame error paths
+│   ├── watchdog/
+│   │   └── health.sv               three heartbeats: no-hang while alive, sticky hang on stall, startup grace, blink
+│   ├── wb_gpio/
+│   │   └── regs.sv                 4-pin bidirectional GPIO: reset = inputs, dir/data regs, output latch, live pin read-back
 │   ├── wb_interconnect/
-│   │   └── decode.sv                Wishbone address decode → per-slave strobe, dat/ack mux, default-ack
+│   │   └── decode.sv                Wishbone address decode → per-slave strobe (5 slaves incl. gpio), dat/ack mux, default-ack
 │   ├── wb_sccb/
 │   │   └── transaction.sv           Wishbone SCCB slave vs i2c stack + slave model: write/read + init gate
 │   ├── wb_sysregs/
-│   │   ├── regs.sv                  magic / uptime (coherent pair) / health / cam_reinit pulse
+│   │   ├── regs.sv                  magic / uptime (coherent pair) / health / cam_reinit + mcu_reset (0xE2) pulse
 │   │   └── health.sv               wd_health exposed on 0xF9: bit layout sweep + non-destructive / live passthrough
 │   ├── wb_grab/
 │   │   └── stream.sv                grab regs F3..F8 + stream-band ramp walk + rewind (stubbed ch1)
@@ -75,12 +85,16 @@ sim/
         └── borders{,_full,_vmap}.sv vertical resize + pillarbox pixel mapping
 ```
 
-The five `wb_*` unit tests cover the Wishbone bus that replaced the monolithic
+The `wb_*` unit tests cover the Wishbone bus that replaced the monolithic
 backend (see [modbus_server.md](modbus_server.md)). `wb_interconnect/decode`
-stubs the slaves and checks every address routes correctly (including the
-scattered `0xFx` split and the default-ack for unmapped gaps); the per-slave
-tests verify behaviour in isolation. `modbus/cam_bridge` exercises the whole
-composed bus end to end and is the byte-identical guard for the register map.
+stubs the slaves and checks every address routes correctly to its slave
+(`wb_sccb`, `wb_sysregs`, `wb_grab`, `wb_osd`, `wb_gpio` — including the scattered
+`0xEx`/`0xFx` split and the default-ack for unmapped gaps); the per-slave tests
+(`wb_sccb`, `wb_sysregs` ×2, `wb_grab`, `wb_osd`, `wb_gpio`) verify behaviour in
+isolation. On the SERV side, `be_arbiter/two_master` checks the host-priority,
+owner-locked 2-master arbiter and `serv_wb_cdc/crossing` checks the MCU's
+`mcu_clk`→`sys_clk` word/byte-lane access CDC. `modbus/cam_bridge` exercises the
+whole composed bus end to end and is the byte-identical guard for the register map.
 
 The I2C test passes per-test extra sources (the opencores I2C core + the
 behavioural `i2c_slave_model`) to `register_test` after the test path —
@@ -147,12 +161,19 @@ suites open the **real UART** and exercise a connected board:
   `webapp/modbus_client.py` (a thin wrapper over **pymodbus**, the same path the
   web app uses): firmware magic, OV7670 identity, the free-running uptime,
   register read/write (8-bit, reversible), the illegal-address exception, the
-  health watchdog, the OSD overlay (enable/cursor/clear), plus the slow frame
-  grab and re-init.
+  health watchdog, the OSD overlay (enable/cursor/clear/read-back), the ch1 PSRAM
+  write/read round-trip, plus the slow frame grab and re-init.
 - `webapp/tests/test_device_conformance.py` — drives the device with a **vanilla
   pymodbus `ModbusSerialClient`** (no project wrapper), confirming the FPGA slave
   interoperates with a reference-grade RTU master at the protocol level (FC03/06,
   register values, exception code 2, multi-register bursts, wrong-slave silence).
+
+The SERV firmware-overlay tests in `test_device_hw.py` are gated separately on
+**`OV7670_SERV=1`** (they need a SERV co-master bitstream): they upload an overlay
+through the bootloader mailbox and check the result — `osd_hello` / `c_hello` on
+the OSD, the re-upload-without-reset path, the soft-float `calc`, `motion`(+ C
+twin), `roi_collect`, `roi_tm` face presence, `lbph_bench`, the PSRAM demo, and
+MCU-reset recovery of a parked overlay. They skip on a non-SERV build.
 
 The tests **skip** unless `OV7670_PORT` names a connected board, so they're
 inert in the normal `pytest` run. To run them against hardware:
@@ -164,6 +185,9 @@ OV7670_PORT=/dev/ttyGowin .venv/bin/python -m pytest \
 
 # or by marker: all hardware tests, skipping the slow/disruptive ones
 OV7670_PORT=/dev/ttyGowin .venv/bin/python -m pytest webapp/tests -m "hardware and not slow" -v
+
+# include the SERV firmware-overlay tests (needs a SERV co-master bitstream)
+OV7670_PORT=/dev/ttyGowin OV7670_SERV=1 .venv/bin/python -m pytest webapp/tests/test_device_hw.py -v
 ```
 
 Optional env: `OV7670_BAUD` (default 1000000), `OV7670_SLAVE` (default 7). Each
@@ -174,8 +198,8 @@ if the port can't open or the firmware magic (`0xF0` → `0xA5`) doesn't match.
 ## Formal verification
 
 Separate from the simulations, the self-contained single-clock control modules
-(`wb_interconnect`, `arbiter`, `watchdog`, `wb_sysregs`, `wb_osd`, `wb_grab`)
-carry **formal property proofs**. The properties live in the RTL behind
+(`wb_interconnect`, `arbiter`, `watchdog`, `wb_sysregs`, `wb_osd`, `wb_grab`,
+`wb_gpio`) carry **formal property proofs**. The properties live in the RTL behind
 `` `ifdef FORMAL `` — so Gowin synthesis and the Icarus sims never see them — and
 are proven by yosys's built-in SAT engine (exhaustive for the combinational
 module, k-induction for the sequential FSMs), no external SMT solver required:
@@ -193,9 +217,10 @@ in [`sby/README.md`](../sby/README.md).
 `register_test()` attaches two labels to every test: the scope
 (`unit` / `integration`) and the DUT or topic name (the first path
 component). They show up under `ctest -L <label>` and are listed in
-the per-test summary at the end of a run. The current labels are
-`unit`, `integration`, `buffer_controller`, `debug_pattern_generator`,
-`lcd_controller`, `frame_roundtrip`.
+the per-test summary at the end of a run. Besides the two scope labels
+(`unit`, `integration`), there is one label per DUT / topic — e.g.
+`buffer_controller`, `wb_gpio`, `serv_wb_cdc`, `pillarbox` — so
+`ctest -L wb_gpio` runs just that module's tests.
 
 ## Adding a new test
 
@@ -389,34 +414,17 @@ on `mem_controller_rdy` won't emit until the consumer asserts ready.
 If the DUT log says "Start frame …" but no further state transitions
 fire, that's almost always a missing handshake on the testbench side.
 
-## Why some tests aren't here
+## Known coverage gaps
 
-The pre-restructure tree had 23 ctest cases; the baseline keeps 7
-because:
-
-- 14 tests referenced `VideoController` ports that no longer exist
-  (`load_rd_en`, `load_queue_empty`, `load_queue_data`,
-  `frame_uploader.frame_addr_inc`). Most were variations on the same
-  FIFO-drain scenario and had been superseded by the integration
-  tests anyway. They were deleted in the restructure commit; the
-  history is still in git if you want to look.
-- One test (`frame_buffer_test_read_frame_23x17_2`, renamed to
-  `read_23x17_alt` during the move) depends on the horizontal
-  scaler; the horizontal resize/pillarbox path now lives in the
-  baseline and is covered by the `integration/pillarbox/*` tests.
-- One (`frame_buffer_test_read_write_frame_23x17`) used the
-  pre-refactor port list and would have needed a full rewrite to
-  cover the same write+read scenario; deferred.
-
-The remaining gap is the camera **write** path *through PSRAM* —
-`unit/cam_pixel_processor/frame_sequence.sv` now covers the camera
-front end (it drives an OV7670-like byte stream and checks the
-start / per-row / end command framing across the clk_cam→clk_mem
-CDC), but there's still no green test that carries those pixels all
-the way into PSRAM through `FrameUploader`. Adding one is on the menu
-but blocked on a `DPG2 ↔ FrameUploader` handshake question (DPG2
-doesn't emit until its consumer asserts ready, but `FrameUploader`
-only asserts ready after seeing `command_data_valid`).
+The camera **write** path *through PSRAM* has no end-to-end test.
+`unit/cam_pixel_processor/frame_sequence.sv` covers the camera front
+end (it drives an OV7670-like byte stream and checks the start /
+per-row / end command framing across the clk_cam→clk_mem CDC), but no
+test carries those pixels all the way into PSRAM through
+`FrameUploader`. Adding one is blocked on a `DPG2 ↔ FrameUploader`
+handshake question (DPG2 doesn't emit until its consumer asserts
+ready, but `FrameUploader` only asserts ready after seeing
+`command_data_valid`).
 
 The `cam_pixel_processor` test deliberately stops at the command
 framing and does **not** assert the packed RGB565 bytes: the IP

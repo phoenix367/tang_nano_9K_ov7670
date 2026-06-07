@@ -203,9 +203,3 @@ closes 30 MHz (×2.09) and the mcu↔sys crossings are false-pathed (`setup<0 = 
 with SERV on its own clock the 27 MHz base Fmax sits ~50 MHz (vs ~41 when SERV
 shared sys_clk). With `serv_mcu.enable=false` the camera is unchanged on real
 paths.
-
-## Next steps (not yet implemented)
-
-Full firmware Modbus stack (SERV as the host *interface*, not just a co-master) —
-SERV would parse RTU frames over the UART and bridge to `wb_*`, replacing
-`modbus_rtu_slave`. See [modbus_server.md](modbus_server.md).
