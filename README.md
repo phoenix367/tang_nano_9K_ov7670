@@ -273,10 +273,57 @@ watch on YouTube):
 
 [![Watch the demo on YouTube](https://img.youtube.com/vi/immtERNpudU/maxresdefault.jpg)](https://youtu.be/immtERNpudU)
 
-## Known issues
+## Known issues and limitations
+
+**Hardware**
 
 * Resistors are used for logic level converting. Need to replace them
   with a specialized level-shifter IC.
+
+**Memory access (PSRAM / HyperRAM)**
+
+* The on-package HyperRAM is driven through the Gowin PHY IP, and channel 0
+  (the live frame buffer) has only four arbiter slots — all taken by the
+  upload/download FSMs. There is no general-purpose DMA or scratch path into
+  channel 0; the "free" capacity is reachable only on channel 1 via the
+  `wb_grab` port.
+* **The SERV MCU's path to PSRAM is bandwidth-limited.** The `wb_grab` read
+  port exposes only word 0 (2 pixels) of each burst, so the MCU reads roughly
+  one pixel per burst. On-MCU algorithms that need a whole frame (e.g. dense
+  LBPH face recognition) must copy it pixel-by-pixel into the 16 KB MCU RAM
+  first — slow enough that on-device ML is restricted to a small fixed ROI
+  rather than full-frame detection (the large PSRAM solves the *capacity*
+  problem, not the *compute/bandwidth* one).
+* Host frame grab is slow and monopolizes the bus: a full 640×480 RGB565 frame
+  is ~614 KB and takes ~10 s at 1 Mbaud, during which no other Modbus traffic
+  can run.
+* The `fb_clk` ceiling is set by the vendor PSRAM IP's write timing, not user
+  logic, so there is little headroom to push the memory/video clocks higher.
+* Three hold violations remain inside the HyperRAM IP's calibration FSM
+  (`u_psram_init`); they are internal to the vendor IP and cannot be cleared
+  from user-side constraints (documented in `src/camera_control.sdc`). They do
+  not affect steady-state operation.
+
+**Video pipeline**
+
+* The 3-frame circular buffer decouples the camera and LCD rates by **dropping**
+  frames (when the writer outruns the reader) or **repeating** them (reader
+  outruns writer) — smooth, but not frame-accurate.
+* Resize is **downscale-only** with pillarbox borders (640×480 → 480×272,
+  preserving 4:3); there is no upscale path, and the horizontal resizer needs a
+  skid buffer plus border-emit throttling to avoid a store-FIFO-full race.
+
+**SERV co-processor (MCU)**
+
+* The bit-serial core is only ~0.5–1 MIPS — fine for control/glue and tiny ML
+  gates, but not heavy compute; libgcc soft-float is especially slow.
+* No hardware timer or interrupts (the `servant` MTIMER is stripped,
+  `i_timer_irq` tied low); timing is derived from the ~1 Hz uptime counter or
+  from frame cadence.
+* The heartbeat register `0xE0` only round-trips its **low byte** on the live
+  bus, so MCU↔host status is 8 bits per slot.
+* Overlay upload is lock-step (poll-per-word over Modbus, ~2 transactions per
+  16-bit word) — fine for the small demo overlays, but seconds for a large one.
 
 ## License
 
