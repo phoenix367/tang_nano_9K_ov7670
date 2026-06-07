@@ -185,6 +185,28 @@ registers, watchdog, frame grab, and LED map, and
 **[doc/webapp_manual.md](doc/webapp_manual.md)** for the web-app walkthrough with
 screenshots.
 
+## MCU firmware demos
+
+On a SERV-enabled build (`serv_mcu.enable`, the default) the RISC-V soft core
+boots a bootloader and runs **firmware overlays uploaded from the host at
+runtime** — no reflash. Build them with the `serv_firmware` target (→
+`build/serv_fw/*.bin`) and upload with the web app's **Firmware** tab,
+`scripts/serv_upload.py`, or `modbus_client.serv_boot_load()`. Each lives under
+[`demo_mcu_apps/`](demo_mcu_apps/); see [doc/serv.md](doc/serv.md).
+
+| Demo | Lang | What it does |
+| ---- | ---- | ------------ |
+| [`roi_tm`](demo_mcu_apps/roi_tm/) | C | Fixed-ROI **face presence** via a Tsetlin Machine (bitwise inference); the deploy end of the collect → train pipeline. Shows FACE/—, FPS and vote counts on the OSD. |
+| [`roi_collect`](demo_mcu_apps/roi_collect/) | C | Draws the ROI alignment box (same region `roi_tm` classifies) and parks, so `collect_samples.py` can capture training samples. |
+| [`gpio_blink`](demo_mcu_apps/gpio_blink/) | C | Drives the four `wb_gpio` pins (48/49/76/30) from the MCU; the host watches them change over Modbus — both masters share the slave. |
+| [`motion`](demo_mcu_apps/motion/) | asm | Background-subtraction **motion detector** (hand-written reference). |
+| [`motion_c`](demo_mcu_apps/motion_c/) | C | The motion detector in C — a head-to-head asm-vs-C FPS comparison on the bit-serial core. |
+| [`osd_hello`](demo_mcu_apps/osd_hello/) | asm | First overlay: writes "Hello from MCU!!!" to the OSD, then returns to the bootloader (re-loadable without a reset). |
+| [`c_hello`](demo_mcu_apps/c_hello/) | C | Same idea as `osd_hello` in C (sets up a stack + `.bss` via the common `crt0.S`). |
+| [`calc`](demo_mcu_apps/calc/) | C | Host-driven IEEE-754 **soft-float calculator** (libgcc soft-float on RV32I; needs the 16 KB RAM build). |
+| [`psram_test`](demo_mcu_apps/psram_test/) | C | Exercises channel-1 PSRAM through the `wb_grab` port with live progress bars on the OSD. |
+| [`lbph_bench`](demo_mcu_apps/lbph_bench/) | C | Benchmarks LBPH face-feature computation on SERV to judge on-MCU face-recognition feasibility. |
+
 ## How to build
 
 Clone the repo with submodules (the `FPGADesignElements` library is a
