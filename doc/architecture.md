@@ -74,31 +74,40 @@ for cosmetic reasons.
 
 ## Clock plan
 
-A single Gowin rPLL ([`src/gowin_rpll/memory_rpll.v`](../src/gowin_rpll/memory_rpll.v))
-fans the 27 MHz crystal out into the four clocks the design needs:
+The 27 MHz crystal (`sys_clk`, the `.sdc` `base` clock) is the root. The memory
+rPLL `SDRAM_rPLL` ([`src/gowin_rpll/memory_rpll.v`](../src/gowin_rpll/memory_rpll.v))
+derives the PSRAM and LCD clocks from it; on a **SERV build** a second rPLL
+`MCU_rPLL` ([`src/gowin_rpll/mcu_rpll.v`](../src/gowin_rpll/mcu_rpll.v)) adds the
+soft-core clock:
 
-| Clock           | Frequency | Driven by         | Used for                                      |
-| --------------- | --------- | ----------------- | --------------------------------------------- |
-| `sys_clk`       | 27 MHz    | Crystal           | System logic, I2C, OV7670 XCLK                |
-| `memory_clk`    | 135 MHz   | rPLL ×5           | PSRAM HyperRAM PHY                            |
-| `fb_clk`        | 67.5 MHz  | `memory_clk` ÷ 2  | Frame buffer arbiter, FrameDownloader/Uploader|
-| `lcd_clock`     | 13.5 MHz  | `sys_clk` ÷ 2     | LCD pixel clock                               |
-| `video_clk_i`   | 27 MHz    | Camera PCLK input | OV7670 capture side                           |
+| Clock                       | Frequency | Driven by                              | Used for                                       |
+| --------------------------- | --------- | -------------------------------------- | ---------------------------------------------- |
+| `sys_clk` (`base`)          | 27 MHz    | Crystal (port)                         | System logic, I2C, control-plane bus, OV7670 XCLK |
+| `memory_clk`                | 135 MHz   | `SDRAM_rPLL` ×5 (CLKOUT)               | PSRAM HyperRAM PHY                             |
+| `fb_clk`                    | 67.5 MHz  | `memory_clk` ÷ 2 (PSRAM IP `clkdiv`)   | Frame-buffer arbiter, FrameDownloader/Uploader |
+| `screen_clk` (`lcd_clock`)  | 13.5 MHz  | `SDRAM_rPLL` ÷ 10 (CLKOUTD)            | LCD pixel clock (`LCD_CLK`) + OSD/screen domain |
+| `video_clk_i` (`video_clock`)| 27 MHz   | Camera PCLK (input port)               | OV7670 capture side                            |
+| `mcu_clk`                   | 30 MHz    | `MCU_rPLL` ×10⁄9 — **SERV build only**  | SERV RV32 soft core                            |
 
 ```mermaid
 flowchart LR
-    XTAL["27 MHz crystal"] --> SYS["sys_clk<br/>27 MHz"]
-    XTAL --> RPLL["rPLL<br/>memory_rpll"]
-    RPLL -->|"×5"| MEM["memory_clk<br/>135 MHz"]
+    XTAL["27 MHz crystal"] --> SYS["sys_clk / base<br/>27 MHz"]
+    SYS --> RPLL["SDRAM_rPLL"]
+    RPLL -->|"×5 · CLKOUT"| MEM["memory_clk<br/>135 MHz"]
+    RPLL -->|"÷10 · CLKOUTD"| LCDK["screen_clk / lcd_clock<br/>13.5 MHz → LCD_CLK"]
     MEM -->|"÷2"| FB["fb_clk<br/>67.5 MHz"]
-    SYS -->|"÷2"| LCDK["lcd_clock<br/>13.5 MHz"]
+    SYS -.->|"SERV build"| MPLL["MCU_rPLL"]
+    MPLL -->|"×10⁄9"| MCU["mcu_clk<br/>30 MHz"]
     PCLK["OV7670 PCLK"] --> VID["video_clk_i<br/>27 MHz"]
 ```
 
-`memory_clk` and `sys_clk` are declared as **exclusive** clock groups
-in the `.sdc`; `lcd_clock`→`video_clock` and
-`video_clock`→`memory_clock` paths are marked `false_path` since
-buffer crossings rely on CDC primitives, not single-cycle paths.
+`memory_clock` and `base` are declared as **exclusive** clock groups in the `.sdc`;
+the `lcd_clock`→`video_clock` and `video_clock`→`memory_clock` paths are marked
+`false_path` since those buffer crossings rely on CDC primitives, not single-cycle
+paths. On a SERV build `mcu_clk` is declared **asynchronous** to every other clock
+group — `serv_wb_cdc` owns the crossing into `sys_clk`. (The `.sdc` models
+`lcd_clock` as `base ÷ 2` — numerically the same 13.5 MHz — rather than as the PLL
+CLKOUTD it physically is.)
 
 Crossings between domains use the `CDC_*` and `Pulse_*` / `Pipeline_*`
 primitives from the [`FPGADesignElements/`](../FPGADesignElements)
@@ -230,21 +239,95 @@ register `0xF3`), then serves it back as 8-word burst reads;
 costs no extra PSRAM read bandwidth and needs no arbiter changes — see
 [video_datapath.md](video_datapath.md#frame-grab-and-host-download).
 
-### SERV co-processor and GPIO
+## MCU subsystem and peripherals
 
-On a SERV build (`platform.json` `serv_mcu.enable`, default true) a bit-serial RV32
-soft core ([`src/serv/serv_cpu.v`](../src/serv/serv_cpu.v), on its own 30 MHz
-`mcu_clk`) is a **second Wishbone master** on the same bus: `serv_wb_cdc` crosses
-its accesses into the 27 MHz domain and `be_arbiter` serialises them against the
-Modbus master, so the MCU reaches every `wb_*` slave through a `0x40000000` window.
-SERV boots a bootloader that loads firmware **overlays from the host at runtime**
-(mailbox regs `0xE4/E8/EC`) — no reflash. See [serv.md](serv.md) and the demos in
-[`demo_mcu_apps/`](../demo_mcu_apps/) (motion detection, a float calculator, and
-`roi_tm`, an on-device Tsetlin-Machine face-presence classifier).
+On a SERV build (`platform.json` `serv_mcu.enable`, default true) an on-chip
+RISC-V soft core becomes a **second master** on the control-plane bus. This
+section covers the core, how it reaches the bus, and the peripherals it and the
+host share. (On a non-SERV build the core and its CDC are excluded; the host
+remains the only master and the same peripherals are reachable over Modbus.)
 
-`wb_gpio` ([`src/modbus/wb_gpio.sv`](../src/modbus/wb_gpio.sv)) is a fifth slave: 4
-bidirectional GPIO pins (reg `0xEA` direction / `0xEB` data; pins 48/49/76/30, hi-Z
-inputs at reset), tri-stated in `camera_control.v` and driveable from either master.
+### SERV RV32 soft core
+
+The MCU is [olofk/serv](https://github.com/olofk/serv) — a **bit-serial RV32I**
+core (no hardware multiply/divide, no FPU; floating point is libgcc soft-float),
+so it is tiny (~0.5–1 MIPS) but fits comfortably alongside the video datapath.
+
+- [`src/serv/serv_cpu.v`](../src/serv/serv_cpu.v) is SERV's `servant` SoC **minus
+  its on-chip timer / GPIO / address mux** — the unified RAM stays, and the core's
+  external Wishbone port (`o_wb_ext_*`) is routed out to the camera bus instead.
+- Runs on its own **30 MHz `mcu_clk`** (`MCU_rPLL`), decoupled from the 27 MHz bus.
+- **16 KB unified I/D RAM**: a 4 KB bootloader at `0x0000` plus up to 12 KB for the
+  loaded overlay + stack at `0x1000` (the larger size lets soft-float overlays such
+  as `demo_mcu_apps/calc` fit).
+- Boots a bootloader that loads firmware **overlays from the host at runtime** (no
+  reflash) through the `wb_sysregs` mailbox, then jumps to `0x1000`. A host write to
+  `0xE2` (`MCU reset`) restarts the core back into the bootloader from any state.
+- **No timer or interrupts.** This variant strips SERV's `MTIMER`, and `i_timer_irq`
+  is tied to `1'b0`, so there is no periodic interrupt or cycle counter on the MCU.
+  Code that needs a time base reads the free-running **uptime** counter (`0xF1/0xF2`,
+  ~1 Hz) over the bus, or paces off frame cadence — the `motion` / `roi_tm` demos
+  report FPS this way because their loop is grab-bound, not timer-driven.
+
+See [serv.md](serv.md) for the bring-up, bootloader/overlay protocol, and the
+firmware demos in [`demo_mcu_apps/`](../demo_mcu_apps/) (motion detection, a
+soft-float calculator, GPIO blink, and `roi_tm`, an on-device Tsetlin-Machine
+face-presence classifier).
+
+### Reaching the bus (CDC + arbiter)
+
+SERV drives a word-addressed Wishbone port on `mcu_clk`; two shims connect it to
+the 27 MHz register backend:
+
+- **`serv_wb_cdc`** ([`src/serv/serv_wb_cdc.v`](../src/serv/serv_wb_cdc.v)) crosses
+  `mcu_clk` → `sys_clk` and maps SERV's word access (word address + byte-enables)
+  onto the byte-addressed backend: `be_addr = word_addr + lane_offset(sel)`, with the
+  data extracted/placed at that lane. This lets RV32I `lw`/`sw` reach any register,
+  aligned or not (covered by `sim/unit/serv_wb_cdc`).
+- **`be_arbiter`** ([`src/modbus/be_arbiter.v`](../src/modbus/be_arbiter.v))
+  multiplexes the Modbus host (master 0) and SERV (master 1) onto the single
+  `modbus_cam_backend` `be_*` port. The **host has priority**; whichever master is
+  granted is **owner-locked until the transaction completes** (no mid-transaction
+  preemption), so the two never corrupt each other.
+
+The MCU addresses peripherals through an **EXT window at `0x40000000`** — the low 16
+bits are the register number, so `*(volatile uint16_t *)(0x40000000 + 0xE0)` is the
+same heartbeat register the host reads at Modbus address `0xE0`. The C accessors are
+in [`demo_mcu_apps/common/serv_io.h`](../demo_mcu_apps/common/serv_io.h).
+
+### Peripherals (shared `wb_*` slaves)
+
+Both masters see the identical five-slave map decoded by
+[`wb_interconnect`](../src/modbus/wb_interconnect.sv) (per-address equality, not
+ranges, so `wb_grab`'s `0xF3–F8` isn't swallowed by a naïve `0xF0–FA` range):
+
+| Slave | Address(es) | Function |
+| ----- | ----------- | -------- |
+| [`wb_sccb`](../src/modbus/wb_sccb.sv) | `0x00`–`0xC9` | OV7670 camera registers, one SCCB transaction each (Direct 1:1). |
+| [`wb_sysregs`](../src/modbus/wb_sysregs.sv) | `0xE0,E2,E4,E8,EC,F0,F1,F2,F9,FA` | Status + control: `0xF0` magic `0xA5`, `0xF1/F2` uptime, `0xF9` watchdog health, `0xFA` re-run camera init, `0xE0` co-master heartbeat scratch, `0xE2` MCU reset, `0xE4/E8/EC` bootloader mailbox (len / data / status). |
+| [`wb_grab`](../src/modbus/wb_grab.sv) | `0xF3`–`0xF8`, read band `≥ 0x1000` | Frame-grab arm + channel-1 PSRAM burst write/read + the pixel stream the host downloads. |
+| [`wb_osd`](../src/modbus/wb_osd.sv) | `0xFB,FC,FD` | OSD text overlay: control (enable/clear), cursor, character (auto-increment). |
+| [`wb_gpio`](../src/modbus/wb_gpio.sv) | `0xEA,EB` | 4 bidirectional GPIO pins (below). |
+
+The watchdog health word (`0xF9`) and the uptime counter (`0xF1/F2`,
+`UPTIME_DIV ≈ sys_clk` for a ~1 Hz tick) are produced in the bridge itself; an
+access to one slave's address never disturbs another's (every side-effect is
+qualified by `stb & cyc`).
+
+### GPIO (`wb_gpio`)
+
+[`wb_gpio`](../src/modbus/wb_gpio.sv) exposes **4 bidirectional pins** — Tang Nano
+9K pins **48 / 49 / 76 / 30** = `gpio[3:0]` — to both masters:
+
+- `0xEA` **`GPIO_DIR`** — bits `[3:0]`, `1` = output (drive), `0` = input. Resets to
+  `0`, so every pin is a **hi-Z input** at power-on.
+- `0xEB` **`GPIO_DATA`** — a write sets the value driven on output pins; a read
+  returns the **live pin levels**, passed through a 2-FF synchroniser first.
+
+The pins are tri-stated in `camera_control.v` (`gpio[i] = gpio_dir[i] ? gpio_out[i]
+: 1'bz`). Either master can own them: `demo_mcu_apps/gpio_blink` walks a pattern
+from the MCU while the host watches over Modbus, and the host can equally drive them
+itself (`modbus_client.gpio_*`). Coverage: `sim/unit/wb_gpio` + a `FORMAL` block.
 
 ## Capture path
 
