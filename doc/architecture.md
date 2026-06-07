@@ -496,7 +496,7 @@ and drives the test suites.
 
 ![Repository components](images/repo_components.svg)
 
-> Rendered from [`images/repo_components.puml`](images/repo_components.puml) (PlantUML) — edit the `.puml` and re-render to update the SVG.
+> Rendered from [`diagrams/repo_components.puml`](diagrams/repo_components.puml) (PlantUML) — edit the `.puml` and re-render to update `images/repo_components.svg`.
 
 ## Source-tree organization
 
